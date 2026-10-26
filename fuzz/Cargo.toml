@@ -1,0 +1,32 @@
+[package]
+name = "freeqrent-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+rqrr = "0.11"
+freeqrent = { path = "../crates/freeqrent" }
+
+# Its own workspace, so nightly-only fuzzing stays out of the main build.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "encode_text"
+path = "fuzz_targets/encode_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encode_segments"
+path = "fuzz_targets/encode_segments.rs"
+test = false
+doc = false
+bench = false

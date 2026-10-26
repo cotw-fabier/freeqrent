@@ -430,37 +430,45 @@ impl Builder {
         let dark = |x: usize, y: usize| self.modules[y * size + x];
         let mut score = 0;
 
-        // Rules 1 and 3, on rows then columns.
+        // Rules 1 and 3, on rows then columns, from run lengths. Each line
+        // is framed by light runs as long as the symbol, standing in for the
+        // quiet zone.
+        let mut runs: Vec<(bool, usize)> = Vec::with_capacity(size + 2);
         for transpose in [false, true] {
             for a in 0..size {
-                let at = |b: usize| if transpose { dark(a, b) } else { dark(b, a) };
-                let mut run = 0;
-                let mut run_color = false;
+                runs.clear();
+                runs.push((false, size));
                 for b in 0..size {
-                    let c = at(b);
-                    if b > 0 && c == run_color {
-                        run += 1;
-                    } else {
-                        if run >= 5 {
-                            score += 3 + (run - 5);
-                        }
-                        run = 1;
-                        run_color = c;
+                    let c = if transpose { dark(a, b) } else { dark(b, a) };
+                    match runs.last_mut() {
+                        Some((color, len)) if *color == c => *len += 1,
+                        _ => runs.push((c, 1)),
                     }
                 }
-                if run >= 5 {
-                    score += 3 + (run - 5);
+                match runs.last_mut() {
+                    Some((false, len)) => *len += size,
+                    _ => runs.push((false, size)),
                 }
 
-                // 1:1:3:1:1 finder-like runs with four light modules on one
-                // side. Outside the symbol counts as light.
-                let at_padded = |b: isize| b >= 0 && (b as usize) < size && at(b as usize);
-                const PATTERN: [bool; 7] = [true, false, true, true, true, false, true];
-                for start in -4isize..size as isize {
-                    if (0..7).all(|k| at_padded(start + k as isize) == PATTERN[k]) {
-                        let light_before = (1..=4).all(|k| !at_padded(start - k));
-                        let light_after = (7..11).all(|k| !at_padded(start + k));
-                        score += 40 * (light_before as u32 + light_after as u32);
+                // Rule 1: runs of five or more, framing excluded.
+                let last = runs.len() - 1;
+                for (i, &(_, len)) in runs.iter().enumerate() {
+                    let len = len - size * (usize::from(i == 0) + usize::from(i == last));
+                    if len >= 5 {
+                        score += 3 + (len - 5) as u32;
+                    }
+                }
+
+                // Rule 3: dark:light:dark:light:dark runs in ratio 1:1:3:1:1
+                // (any width n), with light of at least 4n on one side and n
+                // on the other. Counted once per qualifying side.
+                for w in runs.windows(7).filter(|w| !w[0].0) {
+                    let n = w[1].1;
+                    let core = w[2].1 == n && w[3].1 == 3 * n && w[4].1 == n && w[5].1 == n;
+                    if core {
+                        let (before, after) = (w[0].1, w[6].1);
+                        score += 40 * u32::from(before >= 4 * n && after >= n);
+                        score += 40 * u32::from(after >= 4 * n && before >= n);
                     }
                 }
             }

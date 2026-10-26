@@ -1,0 +1,27 @@
+# cargo deny check — licenses, advisories, bans, sources.
+# The core's zero-dependency rule is enforced separately by
+# scripts/check-core-deps.sh (cargo-deny can't scope a ban to one crate).
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+# Permissive licenses only. Later crates (image, verify, bindings) will need
+# some of these; unused ones are fine.
+allow = ["MIT", "Apache-2.0", "Unicode-3.0", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "ISC"]
+unused-allowed-license = "allow"
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

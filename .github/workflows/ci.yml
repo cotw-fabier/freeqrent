@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: thumbv7em-none-eabihf
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+      - run: cargo test --workspace --all-features
+      - run: cargo test --workspace
+      - name: no_std (bare metal)
+        run: |
+          cargo build -p freeqrent --no-default-features --target thumbv7em-none-eabihf
+          cargo build -p freeqrent --no-default-features --features kanji --target thumbv7em-none-eabihf
+      - run: scripts/check-core-deps.sh
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92
+      - run: cargo build -p freeqrent --all-features
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - name: Fuzz smoke test (60 s per target)
+        working-directory: fuzz
+        run: |
+          cargo fuzz run encode_text -- -max_total_time=60 -max_len=600
+          cargo fuzz run encode_segments -- -max_total_time=60 -max_len=600

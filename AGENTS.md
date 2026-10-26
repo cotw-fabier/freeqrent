@@ -27,6 +27,10 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-features --all-targets -- -D warnings
 cargo test --workspace --all-features
 cargo build -p freeqrent --no-default-features   # no_std build
+scripts/check-core-deps.sh                        # core stays dependency-free
+cargo deny check
 ```
+
+CI (`.github/workflows/ci.yml`) also builds for a bare-metal target, checks the MSRV (1.92), and runs each fuzz target for 60 s. Fuzz locally with `cd fuzz && cargo +nightly fuzz run encode_text`.
 
 Never weaken or delete a test to get green. Never present a TODO stub as done.

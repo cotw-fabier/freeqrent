@@ -24,4 +24,5 @@ kanji = []
 workspace = true
 
 [dev-dependencies]
+qrcodegen = "1.8"
 rqrr = "0.11.0"
