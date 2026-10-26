@@ -2,6 +2,16 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026164853 · M5 · Device results for S01–S69
+
+- Scanned: S01–S46 with a Pixel 10 Pro XL (Google Lens) and an iPad mini (iOS Camera, the sheet's "iPhone Camera" column). Both read 45 of 46; S32 (art mode, standard grid, `color:6`, v14 M) failed on iOS and was slow on Lens.
+- Slow, both devices: everything at v14 and up on a picture, S31–S37 (art on standard and dense grids, ECC L and Q, halftone with a logo). Also slow: S26 (art, v14) on iOS and S25 (halftone, v7) on Lens. Fast: every family without a picture, art on the sparse grid (S29–S30, v8–9), Develop (S27) and the unsteered picture (S38) at v7.
+- The bench passes all of these, so for pictures its degraded render isn't strict enough: what separates fast from slow is the version (the grid), not the bench verdict.
+- iOS read all eight v1 contrast cards (ΔL 0.60–0.66 on L 0.85 and 0.95), as the Pixel did. That is the iOS result the ROADMAP's "extraction contrast back to 0.60" was waiting for, with the caveat that the camera is an iPad's.
+- Not changed: `EXTRACT_CONTRAST` and art mode's defaults; both are ROADMAP decisions now backed by device data.
+- S47–S69 (logo sizes, frames, logo motion, dark palettes, inverted v1 at ΔL 0.70 on L 0.04 and 0.16), scanned from a sheet regenerated at `main`: all read fast on both devices, including the v14 Spin logo intro (S66), which has no picture.
+- Still to record: WeChat and a ZXing app for all cards.
+
 ## 20261026163931 · M5 · Dots at half the bytes
 
 - Landed: `Path::circle` draws a circle as one arc from its leftmost point nearly all the way round, closed across a chord a thousandth of a module long along the tangent, instead of two half-circle arcs (circles under a tenth of a module across keep the two). Every circle uses it: dots, filler, beads, the orbit's moon, round eyes, dotted timing.
