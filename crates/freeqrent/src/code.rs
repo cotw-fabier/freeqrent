@@ -152,25 +152,25 @@ impl QrBuilder {
         text: &str,
         halftone: &Halftone,
     ) -> Result<QrMatrix, EncodeError> {
-        self.steered(text, halftone, &Style::new())
+        let plans = self.plans(text);
+        self.steered(|v| &plans[v.count_band()], halftone, &Style::new())
     }
 
     /// Steers for `halftone` as drawn by `style`: the picture over its
     /// background, and the modules it clears wanted light first.
     #[cfg(feature = "halftone")]
-    fn steered(
+    fn steered<'s>(
         &self,
-        text: &str,
+        segments_for: impl Fn(Version) -> &'s [Segment],
         halftone: &Halftone,
         style: &Style,
     ) -> Result<QrMatrix, EncodeError> {
-        let plans = self.plans(text);
         let plain = QrBuilder {
             boost_ecc: false,
             ..*self
         };
         if !halftone.steer {
-            return plain.encode_with(|v| &plans[v.count_band()], None);
+            return plain.encode_with(segments_for, None);
         }
         let backdrop = style.palette.background();
         let inverted = style.inverted_ink();
@@ -186,7 +186,7 @@ impl QrBuilder {
             }
             wants
         };
-        plain.encode_with(|v| &plans[v.count_band()], Some(&wants))
+        plain.encode_with(segments_for, Some(&wants))
     }
 
     /// Encodes text for `style`: the smallest code whose error-correction
@@ -197,6 +197,33 @@ impl QrBuilder {
     /// fits, returns the code [`encode_text`](Self::encode_text) would, and
     /// rendering it reports why.
     pub fn encode_text_for(&self, text: &str, style: &Style) -> Result<QrMatrix, EncodeError> {
+        let plans = self.plans(text);
+        self.fit(|v| &plans[v.count_band()], style)
+    }
+
+    /// [`encode_bytes`](Self::encode_bytes) fitted to `style`, as
+    /// [`encode_text_for`](Self::encode_text_for) fits text.
+    pub fn encode_bytes_for(&self, bytes: &[u8], style: &Style) -> Result<QrMatrix, EncodeError> {
+        self.encode_segments_for(&[Segment::bytes(bytes)], style)
+    }
+
+    /// [`encode_segments`](Self::encode_segments) fitted to `style`, as
+    /// [`encode_text_for`](Self::encode_text_for) fits text.
+    pub fn encode_segments_for(
+        &self,
+        segments: &[Segment],
+        style: &Style,
+    ) -> Result<QrMatrix, EncodeError> {
+        self.fit(|_| segments, style)
+    }
+
+    /// "Boost ECC, then bump the version" for a segment plan (SPEC §7.3).
+    /// A picture's code is steered at each version instead of boosted.
+    fn fit<'s>(
+        &self,
+        segments_for: impl Fn(Version) -> &'s [Segment] + Copy,
+        style: &Style,
+    ) -> Result<QrMatrix, EncodeError> {
         let affordable = |qr: &QrMatrix| {
             !style.check(qr).errors.iter().any(|e| {
                 matches!(
@@ -210,9 +237,9 @@ impl QrBuilder {
         let encode = |b: &QrBuilder| {
             #[cfg(feature = "halftone")]
             if let Some(h) = &style.halftone {
-                return b.steered(text, h, style);
+                return b.steered(segments_for, h, style);
             }
-            b.encode_text(text)
+            b.encode_with(segments_for, None)
         };
         let first = encode(self)?;
         if affordable(&first) {
@@ -477,5 +504,43 @@ mod tests {
         let a = QrCode::encode("determinism", Ecc::Q).unwrap();
         let b = QrCode::encode("determinism", Ecc::Q).unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn bytes_and_segments_are_fitted_like_text() {
+        // ASCII text is planned as one byte segment without ECI, so all
+        // three fit the same code, and the logo grows it.
+        let style = Style::new().logo(crate::Logo::svg(r#"<svg viewBox="0 0 1 1"/>"#).unwrap());
+        let b = QrCode::builder();
+        let text = b.encode_text_for("https://example.com", &style).unwrap();
+        let bytes = b.encode_bytes_for(b"https://example.com", &style).unwrap();
+        let segments = b
+            .encode_segments_for(&[Segment::bytes(b"https://example.com")], &style)
+            .unwrap();
+        assert_eq!(bytes, text);
+        assert_eq!(segments, text);
+        assert!(text.version() > b.encode_bytes(b"https://example.com").unwrap().version());
+        assert!(style.check(&text).ok());
+
+        let digits = [Segment::numeric("0123456789").unwrap()];
+        let fitted = b.encode_segments_for(&digits, &style).unwrap();
+        assert!(style.check(&fitted).ok());
+        assert!(fitted.version() > b.encode_segments(&digits).unwrap().version());
+    }
+
+    #[cfg(feature = "halftone")]
+    #[test]
+    fn bytes_are_steered_for_pictures() {
+        use crate::{Halftone, Rgba8Image};
+        let picture = Rgba8Image::filled(8, 8, [30, 30, 30, 255]).unwrap();
+        let style = Style::new().halftone(Halftone::new(picture));
+        let b = QrCode::builder().min_version(Version::new(5).unwrap());
+        let bytes = b.encode_bytes_for(b"HELLO WORLD", &style).unwrap();
+        let steering = style.check(&bytes).steering.unwrap();
+        assert!(steering.steerable_modules > 0);
+        // A dark picture: steered modules lean dark.
+        let plain = b.boost_ecc(false).encode_bytes(b"HELLO WORLD").unwrap();
+        let dark = |qr: &QrMatrix| qr.modules().filter(|m| m.2).count();
+        assert!(dark(&bytes) > dark(&plain));
     }
 }

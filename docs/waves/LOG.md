@@ -2,6 +2,11 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026160240 · M5 · Fitting for bytes and segments
+
+- Landed: `QrBuilder::encode_bytes_for` and `encode_segments_for`, fitted to a style like `encode_text_for` ("boost ECC, then bump the version", steered for a picture). All three now share one fitting loop over a segment plan.
+- Checks: unit tests (ASCII text, bytes and one byte segment fit the same code; a numeric segment grows for a logo; bytes are steered toward a picture), and a verify round trip for numeric segments and bytes with the worst-case logo at L/M/Q/H. No output changes: the snapshots and golden fingerprints are unchanged.
+
 ## 20261026151955 · M5 · Halftone logos keep off the alignment patterns
 
 - Landed: on a picture, a logo plate may cover an alignment pattern only when the patterns are outlined and the timing dotted, as art mode draws them; otherwise `RenderError::LogoOverAlignment`, and `encode_text_for` steps past such versions. `freeqrent_verify::verify_at` checks one render against a bar (rqrr, read inverted). The gallery's two halftone logo cards and scan sheet card S37 ("halftone with a logo") move to the standard grid, and "Halftone, logo spin" goes back to ECC M.

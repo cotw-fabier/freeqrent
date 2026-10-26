@@ -132,3 +132,21 @@ fn logos_combine_with_shapes_and_frames() {
         assert_scans_at(&style.logo(logo), &label, &common::PAYLOADS[1..], Ecc::Q);
     }
 }
+
+#[test]
+fn bytes_and_segments_fitted_for_a_logo_scan() {
+    // `encode_bytes_for` and `encode_segments_for` grow the code for the
+    // logo like `encode_text_for`; a numeric and an alphanumeric payload,
+    // at every ECC level, with the worst-case logo.
+    let style = Style::new().logo(Logo::svg(DARK).unwrap().scale(0.2));
+    for ecc in [Ecc::L, Ecc::M, Ecc::Q, Ecc::H] {
+        let b = QrCode::builder().ecc(ecc);
+        let digits = "31415926535897932384626433832795";
+        let numeric = [freeqrent::Segment::numeric(digits).unwrap()];
+        let qr = b.encode_segments_for(&numeric, &style).unwrap();
+        verify_style(&style, &qr, digits).unwrap_or_else(|e| panic!("numeric {ecc:?}: {e}"));
+        let text = "HTTPS://EXAMPLE.COM/A1";
+        let qr = b.encode_bytes_for(text.as_bytes(), &style).unwrap();
+        verify_style(&style, &qr, text).unwrap_or_else(|e| panic!("bytes {ecc:?}: {e}"));
+    }
+}
