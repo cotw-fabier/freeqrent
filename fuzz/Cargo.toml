@@ -44,3 +44,10 @@ path = "fuzz_targets/logo_svg.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "palette_parse"
+path = "fuzz_targets/palette_parse.rs"
+test = false
+doc = false
+bench = false

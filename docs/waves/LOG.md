@@ -2,6 +2,14 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026074436 · M4 · Site palettes from CSS and HTML
+
+- Landed: `Palette::from_css` and `Palette::from_html` (theme-color, `<style>`, `style` attributes), a tolerant scanner with selector and property weights, role hints from properties and custom-property names, `var()` resolution (including `hsl(var(--x))`), dark-scheme rules skipped. The role assigner is now shared: role hints win where present, the pixel rules apply otherwise. `palette_parse` fuzz target with seeds, in CI.
+- Decision: the accent may sit ΔE 0.06 from `fg` (was 0.10). Brand blues and teals darkened to pass landed at 0.093 and were dropped.
+- Decision: no `--palette-from-url`. The CLI won't fetch (an HTTP client would pull TLS into the CLI's tree); it reads a file or stdin instead. See ROADMAP.
+- Fuzzing found two bugs, both fixed and kept as regression tests: an out-of-bounds slice on a stray `=` before a multibyte character, and out-of-memory from `var()` chains that fan out (now capped at 256 visits per declaration). Then 3M runs were clean.
+- Checks: five hand-written site styles (classic, design tokens with a dark scheme, dark-first, brand HTML page, colorless) check clean and scan with Rounded modules on v1–v10.
+
 ## 20261026073538 · M4 · Image palettes
 
 - Landed: `palette-extract` feature (default, no deps) with `Palette::from_image(&Rgba8Image, PaletteOpts)`: alpha-weighted box downsample to ≤ 64×64, seeded weighted k-means++ in OKLab, role assignment for `bg`/`fg`/`finder.eye` with darkening at constant hue, and a `PaletteReport` (swatches, choices, origins). `Rgba8Image` in the core, always available.

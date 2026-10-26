@@ -37,7 +37,9 @@ const CHROMATIC: f32 = 0.04;
 /// Chroma an accent needs.
 const ACCENT_CHROMA: f32 = 0.06;
 /// How far (OKLab ΔE) an accent must be from `fg` to be worth a token.
-const ACCENT_DISTANCE: f32 = 0.10;
+/// A brand blue or teal darkened to pass lands about 0.09 from a
+/// near-black ink and still reads as its hue.
+const ACCENT_DISTANCE: f32 = 0.06;
 
 /// Options for [`Palette::from_image`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -182,7 +184,8 @@ impl Palette {
         if swatches.is_empty() {
             return Err(ExtractError::NoColors);
         }
-        Ok(assign(swatches, opts.min_contrast))
+        let roles = alloc::vec![Roles::default(); swatches.len()];
+        Ok(assign(swatches, &roles, opts.min_contrast))
     }
 }
 
@@ -389,23 +392,55 @@ fn darken(bg: Color, color: Color, min: f32) -> Color {
     out
 }
 
-/// Assigns swatches to tokens (SPEC §6.4).
-fn assign(swatches: Vec<Swatch>, min: f32) -> (Palette, PaletteReport) {
-    let lightness = |s: &Swatch| s.color.to_oklab()[0];
-    let dominant_hue = swatches
-        .iter()
-        .position(|s| chroma(s.color) >= CHROMATIC && s.share >= INK_SHARE);
+/// How strongly a source marks a swatch for each role: CSS says which
+/// colors are backgrounds, text and links; pixels don't.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Roles {
+    pub(crate) bg: f32,
+    pub(crate) text: f32,
+    pub(crate) accent: f32,
+}
 
-    // bg: the lightest common swatch, or a near-white tinted by the
-    // dominant hue.
-    let bg_index = swatches
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| {
-            s.share >= BG_SHARE && lightness(s) >= BG_LIGHTNESS && chroma(s.color) <= BG_CHROMA
-        })
-        .max_by(|a, b| lightness(a.1).total_cmp(&lightness(b.1)))
-        .map(|(i, _)| i);
+/// The index with the largest `key` among `items`, first on ties.
+fn best<K: Fn(usize) -> f32>(items: impl Iterator<Item = usize>, key: K) -> Option<usize> {
+    let mut out: Option<(usize, f32)> = None;
+    for i in items {
+        let k = key(i);
+        if out.is_none_or(|(_, best)| k > best) {
+            out = Some((i, k));
+        }
+    }
+    out.map(|(i, _)| i)
+}
+
+/// Assigns swatches to tokens (SPEC §6.4). Where `roles` marks swatches
+/// for a role, the most strongly marked eligible one wins; otherwise the
+/// pixel rules apply.
+pub(crate) fn assign(swatches: Vec<Swatch>, roles: &[Roles], min: f32) -> (Palette, PaletteReport) {
+    let n = swatches.len();
+    let lightness = |i: usize| swatches[i].color.to_oklab()[0];
+    let hue = |i: usize| chroma(swatches[i].color);
+    let common = |i: usize| swatches[i].share >= INK_SHARE;
+    let accent_hint = || {
+        best(
+            (0..n).filter(|&i| roles[i].accent > 0.0 && hue(i) >= CHROMATIC),
+            |i| roles[i].accent,
+        )
+    };
+    let dominant_hue = accent_hint().or_else(|| (0..n).find(|&i| hue(i) >= CHROMATIC && common(i)));
+
+    // bg: the background the source names, else the lightest common
+    // swatch, else a near-white tinted by the dominant hue.
+    let light = |i: usize| lightness(i) >= BG_LIGHTNESS && hue(i) <= BG_CHROMA;
+    let bg_index = best((0..n).filter(|&i| light(i) && roles[i].bg > 0.0), |i| {
+        roles[i].bg
+    })
+    .or_else(|| {
+        best(
+            (0..n).filter(|&i| light(i) && swatches[i].share >= BG_SHARE),
+            lightness,
+        )
+    });
     let (bg, bg_origin) = match bg_index {
         Some(i) => (swatches[i].color, Origin::Swatch(i)),
         None => {
@@ -422,9 +457,11 @@ fn assign(swatches: Vec<Swatch>, min: f32) -> (Palette, PaletteReport) {
         }
     };
 
-    let ink: Vec<usize> = (0..swatches.len())
-        .filter(|&i| Some(i) != bg_index && swatches[i].share >= INK_SHARE)
+    let marked = |i: usize| roles[i] != Roles::default();
+    let ink: Vec<usize> = (0..n)
+        .filter(|&i| Some(i) != bg_index && (common(i) || marked(i)))
         .collect();
+    let passes = |i: usize| contrast(bg, swatches[i].color) >= min;
     let settle = |i: usize| {
         let color = swatches[i].color;
         let delta_l = contrast(bg, color);
@@ -438,17 +475,18 @@ fn assign(swatches: Vec<Swatch>, min: f32) -> (Palette, PaletteReport) {
         }
     };
 
-    // fg: the darkest swatch; if even that is too light, the dominant hue
-    // darkened until it passes.
-    let darkest = ink
-        .iter()
-        .copied()
-        .min_by(|&a, &b| lightness(&swatches[a]).total_cmp(&lightness(&swatches[b])));
-    let fg_index = match darkest {
-        Some(i) if contrast(bg, swatches[i].color) >= min => Some(i),
-        Some(i) => dominant_hue.filter(|&d| Some(d) != bg_index).or(Some(i)),
-        None => None,
-    };
+    // fg: the text color the source names, else the darkest swatch; if
+    // neither passes, the named text color or the dominant hue darkened.
+    let text = |i: usize| roles[i].text;
+    let darkest = best(ink.iter().copied(), |i| -lightness(i));
+    let fg_index = best(
+        ink.iter().copied().filter(|&i| text(i) > 0.0 && passes(i)),
+        text,
+    )
+    .or(darkest.filter(|&i| passes(i)))
+    .or_else(|| best(ink.iter().copied().filter(|&i| text(i) > 0.0), text))
+    .or(dominant_hue.filter(|&d| Some(d) != bg_index))
+    .or(darkest);
     let (fg, fg_origin) = match fg_index {
         Some(i) => settle(i),
         // Nothing but the background: the default ink, darkened to pass.
@@ -461,17 +499,19 @@ fn assign(swatches: Vec<Swatch>, min: f32) -> (Palette, PaletteReport) {
         }
     };
 
-    // finder.eye: the most prominent hue that isn't fg.
-    let accent = ink
-        .iter()
-        .copied()
-        .filter(|&i| Some(i) != fg_index && chroma(swatches[i].color) >= ACCENT_CHROMA)
-        .max_by(|&a, &b| {
-            let score = |i: usize| swatches[i].share * chroma(swatches[i].color);
-            score(a).total_cmp(&score(b))
-        })
-        .map(settle)
-        .filter(|&(c, _)| distance(c, fg) >= ACCENT_DISTANCE);
+    // finder.eye: the accent the source names, else the most prominent
+    // hue that isn't fg.
+    let candidates = || {
+        ink.iter()
+            .copied()
+            .filter(|&i| Some(i) != fg_index && hue(i) >= ACCENT_CHROMA)
+    };
+    let accent = best(candidates().filter(|&i| roles[i].accent > 0.0), |i| {
+        roles[i].accent
+    })
+    .or_else(|| best(candidates(), |i| swatches[i].share * hue(i)))
+    .map(settle)
+    .filter(|&(c, _)| distance(c, fg) >= ACCENT_DISTANCE);
 
     let mut palette = Palette::new();
     let mut choices = Vec::new();

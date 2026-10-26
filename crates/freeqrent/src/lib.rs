@@ -49,6 +49,8 @@ mod sanitize;
 mod scanbox;
 mod scene;
 mod segment;
+#[cfg(feature = "palette-extract")]
+mod site;
 mod style;
 mod svg;
 mod tables;

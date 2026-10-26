@@ -55,3 +55,5 @@ jobs:
           cargo fuzz run color_parse -- -max_total_time=60 -max_len=200
           mkdir -p corpus/logo_svg
           cargo fuzz run logo_svg corpus/logo_svg seeds/logo_svg -- -max_total_time=60 -max_len=2000
+          mkdir -p corpus/palette_parse
+          cargo fuzz run palette_parse corpus/palette_parse seeds/palette_parse -- -max_total_time=60 -max_len=2000

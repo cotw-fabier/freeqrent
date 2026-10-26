@@ -165,3 +165,101 @@ fn extraction_is_deterministic() {
         assert_eq!(svg(&a.0), svg(&b.0), "{name}");
     }
 }
+
+/// Hand-written site styles in the shapes real sites use.
+fn sites() -> Vec<(&'static str, bool, &'static str)> {
+    vec![
+        (
+            "classic sheet",
+            false,
+            "body { background: #fdfcf9; color: #2b2b2b; font: 16px/1.5 serif }
+             a { color: #b5442c } a:hover { color: #8e3320 }
+             header { background: #fdfcf9; border-bottom: 1px solid #e6e1d8 }
+             .button { background: #b5442c; color: #fff }",
+        ),
+        (
+            "design tokens",
+            false,
+            ":root { --color-bg: oklch(98% .01 95); --color-text: oklch(28% .02 260);
+                     --color-primary: oklch(62% .19 255); --radius: 8px;
+                     --color-gray-100: #f4f4f5; --color-gray-900: #18181b }
+             body { background: var(--color-bg); color: var(--color-text) }
+             .btn-primary { background: var(--color-primary); color: white }
+             @media (prefers-color-scheme: dark) {
+               :root { --color-bg: #0b0b0f; --color-text: #e4e4e7 } }",
+        ),
+        (
+            "dark first",
+            false,
+            "html { background: #0e1116; color: #e6edf3 } a { color: #4493f8 }
+             .card { background: #161b22; border: 1px solid #30363d }",
+        ),
+        (
+            "brand page",
+            true,
+            r##"<!doctype html><html><head><meta name="theme-color" content="#0f7b6c">
+             <style>:root{--brand:#0f7b6c;--paper:#fbfbf8;--ink:#1f2328}
+             body{background:var(--paper);color:var(--ink)} .cta{background:var(--brand)}</style>
+             </head><body><h1 style="color:var(--ink)">Hello</h1>
+             <a class="cta" style="background-color:#0f7b6c">Order</a></body></html>"##,
+        ),
+        (
+            "colorless",
+            true,
+            "<html><body><p>No styles at all, but a red <span style=\"color:red\">word</span>.</p></body></html>",
+        ),
+    ]
+}
+
+#[test]
+fn site_palettes_pass_and_scan() {
+    let qr = QrCode::encode("https://example.com/menu", Ecc::M).unwrap();
+    for (name, html, text) in sites() {
+        let (palette, report) = if html {
+            Palette::from_html(text)
+        } else {
+            Palette::from_css(text)
+        }
+        .unwrap();
+        println!("{name}: {:?}", report.choices);
+        let check = Style::new().palette(palette.clone()).check(&qr);
+        assert!(check.ok() && check.warnings.is_empty(), "{name}: {check:?}");
+        let style = Style::new()
+            .modules(ModuleShape::Rounded { radius: 0.4 })
+            .palette(palette);
+        assert_scans_at(&style, name, &PAYLOADS[..3], Ecc::M);
+    }
+}
+
+#[test]
+fn site_roles_follow_the_markup() {
+    let (_, report) = Palette::from_css(sites()[0].2).unwrap();
+    let color = |t: Token| {
+        report
+            .choices
+            .iter()
+            .find(|c| c.token == t)
+            .map(|c| c.color.to_string())
+    };
+    assert_eq!(color(Token::Bg).as_deref(), Some("#fdfcf9"));
+    assert_eq!(color(Token::Fg).as_deref(), Some("#2b2b2b"));
+    // The link red keeps its hue as the eye.
+    assert!(color(Token::FinderEye).is_some());
+    // Named accents survive darkening.
+    for (name, html, text) in [&sites()[1], &sites()[3]] {
+        let (_, report) = if *html {
+            Palette::from_html(text)
+        } else {
+            Palette::from_css(text)
+        }
+        .unwrap();
+        assert!(
+            report.choices.iter().any(|c| c.token == Token::FinderEye),
+            "{name}: {report:?}"
+        );
+    }
+    // A dark-first site still gets a light background: its light text
+    // color, the only light swatch.
+    let (palette, _) = Palette::from_css(sites()[2].2).unwrap();
+    assert!(palette.background().to_oklab()[0] > 0.85);
+}
