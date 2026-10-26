@@ -35,11 +35,7 @@ impl Mode {
 
     /// Width of the character count field.
     pub(crate) const fn char_count_bits(self, version: Version) -> u8 {
-        let band = match version.number() {
-            1..=9 => 0,
-            10..=26 => 1,
-            _ => 2,
-        };
+        let band = version.count_band();
         let widths: [u8; 3] = match self {
             Mode::Numeric => [10, 12, 14],
             Mode::Alphanumeric => [9, 11, 13],
@@ -61,6 +57,17 @@ pub enum EciPolicy {
     Never,
     /// Always write ECI 26, even for ASCII.
     Always,
+}
+
+impl EciPolicy {
+    /// Whether `text` gets an ECI 26 header under this policy.
+    pub fn applies_to(self, text: &str) -> bool {
+        match self {
+            EciPolicy::Auto => !text.is_ascii(),
+            EciPolicy::Never => false,
+            EciPolicy::Always => true,
+        }
+    }
 }
 
 /// One run of data in a single mode.
@@ -152,31 +159,6 @@ impl Segment {
         })
     }
 
-    /// Segments for `text` in a single mode: numeric if every character is a
-    /// digit, alphanumeric if every character fits that set, bytes otherwise.
-    pub fn from_text(text: &str, eci: EciPolicy) -> Vec<Segment> {
-        let mut segments = Vec::with_capacity(2);
-        let needs_eci = match eci {
-            EciPolicy::Auto => !text.is_ascii(),
-            EciPolicy::Never => false,
-            EciPolicy::Always => true,
-        };
-        if needs_eci {
-            segments.push(Segment::eci(ECI_UTF8).expect("26 is a valid designator"));
-        }
-        if text.is_empty() {
-            // An empty byte segment still decodes as "".
-            segments.push(Segment::bytes(&[]));
-        } else if let Ok(segment) = Segment::numeric(text) {
-            segments.push(segment);
-        } else if let Ok(segment) = Segment::alphanumeric(text) {
-            segments.push(segment);
-        } else {
-            segments.push(Segment::bytes(text.as_bytes()));
-        }
-        segments
-    }
-
     /// The segment's mode.
     pub fn mode(&self) -> Mode {
         self.mode
@@ -212,6 +194,10 @@ pub(crate) fn total_bits(segments: &[Segment], version: Version) -> Option<usize
     segments
         .iter()
         .try_fold(0usize, |acc, s| Some(acc + s.encoded_bits(version)?))
+}
+
+pub(crate) fn is_alphanumeric(b: u8) -> bool {
+    alphanumeric_code(b).is_some()
 }
 
 fn alphanumeric_code(b: u8) -> Option<u8> {
@@ -275,19 +261,11 @@ mod tests {
     }
 
     #[test]
-    fn from_text_picks_the_narrowest_single_mode() {
-        let mode = |t: &str| {
-            Segment::from_text(t, EciPolicy::Auto)
-                .last()
-                .unwrap()
-                .mode()
-        };
-        assert_eq!(mode("0123"), Mode::Numeric);
-        assert_eq!(mode("HTTPS://EXAMPLE.COM"), Mode::Alphanumeric);
-        assert_eq!(mode("https://example.com"), Mode::Byte);
-        let utf8 = Segment::from_text("café", EciPolicy::Auto);
-        assert_eq!(utf8[0].mode(), Mode::Eci);
-        assert_eq!(Segment::from_text("café", EciPolicy::Never).len(), 1);
+    fn eci_policy() {
+        assert!(!EciPolicy::Auto.applies_to("plain"));
+        assert!(EciPolicy::Auto.applies_to("café"));
+        assert!(!EciPolicy::Never.applies_to("café"));
+        assert!(EciPolicy::Always.applies_to("plain"));
     }
 
     #[test]

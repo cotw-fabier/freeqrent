@@ -217,3 +217,40 @@ fn roles_account_for_every_codeword_bit() {
         }
     }
 }
+
+#[test]
+fn mixed_mode_text_decodes_and_is_smaller() {
+    let texts = [
+        "https://example.com/order/12345678901234567890",
+        "Invoice INV-2026-000123 total 4999.00 EUR",
+        "tel:+15555550123",
+        "Ünïcode 12345678 ABCDEFGHIJ xyz 99",
+        "0123456789012345678901234567890123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabc",
+    ];
+    for text in texts {
+        let qr = QrCode::builder()
+            .boost_ecc(false)
+            .encode_text(text)
+            .unwrap();
+        assert_eq!(decode_grid(&qr).1, text.as_bytes(), "{text:?}");
+        let bytes_only = QrCode::builder()
+            .boost_ecc(false)
+            .encode_bytes(text.as_bytes())
+            .unwrap();
+        assert!(
+            qr.capacity_report().data_bits_used <= bytes_only.capacity_report().data_bits_used + 12,
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn segmentation_follows_the_version_band() {
+    // Long enough to need version 10+, where count fields are wider.
+    let text: String = (0..60)
+        .map(|i| if i % 2 == 0 { "123456" } else { "abc" })
+        .collect();
+    let qr = QrCode::builder().ecc(Ecc::H).encode_text(&text).unwrap();
+    assert!(qr.version().number() >= 10);
+    assert_eq!(decode_grid(&qr).1, text.as_bytes());
+}

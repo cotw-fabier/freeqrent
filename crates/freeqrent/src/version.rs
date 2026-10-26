@@ -29,6 +29,19 @@ impl Version {
         self.0 as u16 * 4 + 17
     }
 
+    /// Which character-count width band the version is in: 0 for 1–9,
+    /// 1 for 10–26, 2 for 27–40.
+    pub(crate) const fn count_band(self) -> usize {
+        match self.0 {
+            1..=9 => 0,
+            10..=26 => 1,
+            _ => 2,
+        }
+    }
+
+    /// The first version of each count band.
+    pub(crate) const BAND_STARTS: [Version; 3] = [Version(1), Version(10), Version(27)];
+
     /// Every version from 1 to 40.
     pub fn all() -> impl DoubleEndedIterator<Item = Version> + Clone {
         (1..=40).map(Version)

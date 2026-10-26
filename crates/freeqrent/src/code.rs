@@ -4,7 +4,7 @@ use crate::bits::BitBuffer;
 use crate::error::EncodeError;
 use crate::gf;
 use crate::matrix::{Mask, QrMatrix};
-use crate::segment::{self, EciPolicy, Segment};
+use crate::segment::{self, ECI_UTF8, EciPolicy, Segment};
 use crate::version::{BlockLayout, Ecc, Version};
 
 /// Entry point for encoding.
@@ -97,9 +97,27 @@ impl QrBuilder {
         self
     }
 
-    /// Encodes UTF-8 text.
+    /// Encodes UTF-8 text, split into the shortest mix of modes
+    /// ([`Segment::optimal`]), with an ECI header if the policy calls for one.
     pub fn encode_text(&self, text: &str) -> Result<QrMatrix, EncodeError> {
-        self.encode_segments(&Segment::from_text(text, self.eci))
+        let eci = self.eci.applies_to(text);
+        // Count-field widths change at versions 10 and 27, and the best split
+        // can change with them, so plan once per band in range.
+        let plans: [Vec<Segment>; 3] = core::array::from_fn(|band| {
+            let first = Version::BAND_STARTS[band];
+            let in_range = Version::all()
+                .filter(|v| v.count_band() == band)
+                .any(|v| v >= self.min_version && v <= self.max_version);
+            let mut segments = Vec::new();
+            if in_range {
+                if eci {
+                    segments.push(Segment::eci(ECI_UTF8).expect("26 is a valid designator"));
+                }
+                segments.extend(Segment::optimal(text, first));
+            }
+            segments
+        });
+        self.encode_with(|v| &plans[v.count_band()])
     }
 
     /// Encodes raw bytes in byte mode, without an ECI header.
@@ -109,6 +127,14 @@ impl QrBuilder {
 
     /// Encodes explicit segments, in order.
     pub fn encode_segments(&self, segments: &[Segment]) -> Result<QrMatrix, EncodeError> {
+        self.encode_with(|_| segments)
+    }
+
+    /// Picks the smallest version whose segment plan fits, then encodes it.
+    fn encode_with<'s>(
+        &self,
+        segments_for: impl Fn(Version) -> &'s [Segment],
+    ) -> Result<QrMatrix, EncodeError> {
         if self.min_version > self.max_version {
             return Err(EncodeError::InvalidVersionRange {
                 min: self.min_version,
@@ -118,7 +144,7 @@ impl QrBuilder {
 
         let capacity = |v: Version, ecc: Ecc| BlockLayout::new(v, ecc).data_codewords() * 8;
         let fits = |v: Version, ecc: Ecc| {
-            segment::total_bits(segments, v).is_some_and(|bits| bits <= capacity(v, ecc))
+            segment::total_bits(segments_for(v), v).is_some_and(|bits| bits <= capacity(v, ecc))
         };
 
         let Some(version) = Version::all()
@@ -127,7 +153,7 @@ impl QrBuilder {
         else {
             let v = self.max_version;
             return Err(EncodeError::DataTooLong {
-                bits_needed: segment::total_bits(segments, v).unwrap_or(usize::MAX),
+                bits_needed: segment::total_bits(segments_for(v), v).unwrap_or(usize::MAX),
                 bits_available: capacity(v, self.ecc),
                 max_version: v,
                 ecc: self.ecc,
@@ -143,7 +169,7 @@ impl QrBuilder {
 
         let layout = BlockLayout::new(version, ecc);
         let mut bits = BitBuffer::new();
-        for s in segments {
+        for s in segments_for(version) {
             s.write(&mut bits, version);
         }
         let payload_bits = bits.len();

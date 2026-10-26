@@ -24,6 +24,7 @@ mod code;
 mod error;
 mod gf;
 mod matrix;
+mod optimize;
 mod segment;
 mod tables;
 mod version;

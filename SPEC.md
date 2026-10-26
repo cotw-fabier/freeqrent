@@ -68,7 +68,7 @@ The encoder is written in-house rather than taken from the `qrcode` crate. That 
 
 - **Versions** 1–40, **ECC** L / M / Q / H.
 - **Modes:** Numeric, Alphanumeric, Byte, Kanji (feature), **ECI**. Text is always encoded as UTF-8 bytes. `EciPolicy::Auto` (default) writes ECI 26 (UTF-8) only when the text isn't pure ASCII; `Never` and `Always` override it. *(rev. W20261025204222)*
-- **Automatic segmentation:** minimal-length mixed-mode encoding (dynamic programming over segment boundaries).
+- **Automatic segmentation:** minimal-length mixed-mode encoding (`Segment::optimal(text, version)`). It is a shortest-path DP over characters whose state is the mode plus the position inside its packing group (3 digits, 2 alphanumerics), so every cost is an exact bit count and the result is the true minimum. `encode_text` plans once per count-width band (v1–9, 10–26, 27–40). *(rev. W20261025205148)*
 - **Mask selection:** standard 4-rule penalty evaluation, with an option to force a mask.
 - **Free-bit solver (QArt technique):** after the payload and terminator, the remaining data bits in a symbol are ignored by decoders. Reed–Solomon is linear over GF(2), so every module in the data/ECC region is an XOR of data bits. The encoder exposes this linear map and solves it (Gaussian elimination), choosing free bits so that a prioritized set of target modules takes desired values. This is the engine behind §7.7 and §7.8.
 - **Version pinning:** choose a version explicitly (or by "alignment grid size", §7.8) even when the payload would fit in a smaller one.
