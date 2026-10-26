@@ -306,6 +306,36 @@ impl Style {
         self
     }
 
+    /// Art mode (SPEC §7.8): `halftone`'s picture, with the alignment
+    /// boxes outlined on clean plates (steering keeps their rings light)
+    /// and dotted timing. Encode with
+    /// [`QrBuilder::tracking_grid`](crate::QrBuilder::tracking_grid) and
+    /// [`encode_text_for`](crate::QrBuilder::encode_text_for); accent the
+    /// finders through the palette (`finder.outer`, `finder.eye`).
+    ///
+    /// ```
+    /// use freeqrent::{Halftone, QrCode, Rgba8Image, Style, TrackingGrid};
+    ///
+    /// let picture = Rgba8Image::filled(64, 64, [40, 60, 120, 255]).unwrap();
+    /// let style = Style::art(Halftone::new(picture));
+    /// let qr = QrCode::builder()
+    ///     .tracking_grid(TrackingGrid::Standard)
+    ///     .encode_text_for("https://example.com", &style)
+    ///     .unwrap();
+    /// assert_eq!(qr.version().number(), 14);
+    /// assert!(style.check(&qr).ok());
+    /// ```
+    #[cfg(feature = "halftone")]
+    pub fn art(halftone: Halftone) -> Style {
+        Style::new()
+            .halftone(halftone)
+            .alignment(AlignmentStyle {
+                shape: crate::scanbox::AlignmentShape::Match,
+                emphasis: crate::scanbox::Emphasis::Outline,
+            })
+            .timing(TimingStyle::Dotted)
+    }
+
     /// The picture, if any.
     #[cfg(feature = "halftone")]
     pub fn halftone_options(&self) -> Option<&Halftone> {

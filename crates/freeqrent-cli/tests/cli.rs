@@ -78,9 +78,9 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 25);
+    assert_eq!(html.matches("<figure>").count(), 27);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 25);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 27);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -199,4 +199,46 @@ fn palettes_come_from_images_and_pages() {
     assert_eq!(empty.status.code(), Some(2), "{}", stderr(&empty));
     assert!(stderr(&empty).contains("no colors"), "{}", stderr(&empty));
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn pictures_build_the_code() {
+    let out = freeqrent(&["https://example.com", "--art", "sample", "--check"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let report = stdout(&out);
+    assert!(report.contains("steering: "), "{report}");
+    assert!(report.contains("follow the picture"), "{report}");
+
+    // Art mode uses the standard grid; the flag picks another.
+    let svg = |args: &[&str]| {
+        let out = freeqrent(args);
+        assert!(out.status.success(), "{args:?}: {}", stderr(&out));
+        stdout(&out)
+    };
+    assert!(svg(&["HELLO", "--art", "sample"]).contains("viewBox=\"0 0 81 81\""));
+    let dense = svg(&["HELLO", "--art", "sample", "--tracking-grid", "dense"]);
+    assert!(dense.contains("viewBox=\"0 0 109 109\""));
+    assert!(svg(&["HELLO", "--art", "sample", "--version", "8"]).contains("viewBox=\"0 0 57 57\""));
+    let color = svg(&[
+        "HELLO",
+        "--halftone",
+        "sample",
+        "--ink",
+        "color:3",
+        "--tracking-grid",
+        "sparse",
+        "--verify",
+    ]);
+    assert!(color.contains("stroke-width=\"3\""));
+
+    for bad in [
+        &["HELLO", "--ink", "mono"][..],
+        &["HELLO", "--halftone", "/nonexistent.png"],
+        &["HELLO", "--halftone", "sample", "--ink", "color:40"],
+        &["HELLO", "--halftone", "sample", "--focal", "0.5"],
+        &["HELLO", "--tracking-grid", "huge"],
+    ] {
+        let out = freeqrent(bad);
+        assert_eq!(out.status.code(), Some(2), "{bad:?}: {}", stderr(&out));
+    }
 }

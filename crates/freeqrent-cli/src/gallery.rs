@@ -169,6 +169,18 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "Halftone",
+        &[("halftone", "sample"), ("tracking-grid", "sparse")],
+    ),
+    (
+        "Art mode",
+        &[
+            ("art", "sample"),
+            ("ink", "color:6"),
+            ("token", "finder.eye=#c2410c"),
+        ],
+    ),
+    (
         "Mixed corners",
         &[
             ("corner", "top-right=leaf/circle"),
@@ -196,7 +208,7 @@ fn shell_quote(value: &str) -> String {
     }
 }
 
-pub fn page(text: &str, builder: &QrBuilder, base: &StyleArgs) -> String {
+pub fn page(text: &str, builder: &QrBuilder, pinned: bool, base: &StyleArgs) -> String {
     let mut cards = String::new();
     for (name, flags) in FAMILIES {
         let mut args = base.clone();
@@ -212,7 +224,8 @@ pub fn page(text: &str, builder: &QrBuilder, base: &StyleArgs) -> String {
             || {
                 let style = args.build(text)?;
                 // Each family gets the smallest code its style can afford.
-                let qr = builder
+                let qr = args
+                    .encoder(*builder, pinned)
                     .encode_text_for(text, &style)
                     .map_err(|e| e.to_string())?;
                 let qr = &qr;

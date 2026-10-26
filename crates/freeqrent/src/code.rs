@@ -15,7 +15,7 @@ use crate::steer::Want;
 type Want = core::convert::Infallible;
 use crate::segment::{self, ECI_UTF8, EciPolicy, Segment};
 use crate::style::Style;
-use crate::version::{BlockLayout, Ecc, Version};
+use crate::version::{BlockLayout, Ecc, TrackingGrid, Version};
 
 /// Entry point for encoding.
 ///
@@ -86,6 +86,13 @@ impl QrBuilder {
     /// Use exactly this version.
     pub fn version(self, version: Version) -> QrBuilder {
         self.min_version(version).max_version(version)
+    }
+
+    /// Use one of the versions of an art-mode tracking grid (SPEC §7.8);
+    /// the smallest that fits is picked.
+    pub fn tracking_grid(self, grid: TrackingGrid) -> QrBuilder {
+        let (min, max) = grid.versions();
+        self.min_version(min).max_version(max)
     }
 
     /// Raise the ECC level as far as it goes without growing the version

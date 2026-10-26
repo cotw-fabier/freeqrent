@@ -131,6 +131,30 @@ impl Ecc {
     }
 }
 
+/// How dense a grid of alignment boxes an art-mode code carries (SPEC
+/// §7.8): a version range, picked instead of a version.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TrackingGrid {
+    /// A 3 × 3 grid: 6 alignment boxes, versions 7–13 (45–69 modules).
+    Sparse,
+    /// A 4 × 4 grid: 13 boxes, versions 14–20 (73–97 modules). The default.
+    #[default]
+    Standard,
+    /// A 5 × 5 grid: 22 boxes, versions 21–27 (101–125 modules).
+    Dense,
+}
+
+impl TrackingGrid {
+    /// The smallest and largest version with this grid.
+    pub const fn versions(self) -> (Version, Version) {
+        match self {
+            TrackingGrid::Sparse => (Version(7), Version(13)),
+            TrackingGrid::Standard => (Version(14), Version(20)),
+            TrackingGrid::Dense => (Version(21), Version(27)),
+        }
+    }
+}
+
 /// Block structure of one version at one ECC level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct BlockLayout {

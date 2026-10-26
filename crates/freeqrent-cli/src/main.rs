@@ -3,6 +3,7 @@
 
 mod gallery;
 mod options;
+mod sample;
 
 use std::fs;
 use std::io::{self, Write};
@@ -10,10 +11,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Corner, Ease, Ecc, Emphasis, EyeShape, FinderStyle, FrameRing,
-    Idle, Intro, Logo, LogoShape, ModuleShape, Origin, Paint, Palette, PaletteError, PaletteOpts,
-    PaletteReport, Preset, QrBuilder, QrCode, QrMatrix, RasterFormat, Rgba8Image, RingShape,
-    ScanReport, StaggerOrder, Style, TargetSize, TimingStyle, Token, Trigger, Version,
+    AlignmentShape, AlignmentStyle, Clarity, Corner, Ease, Ecc, Emphasis, EyeShape, FinderStyle,
+    Fit, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoShape, ModuleShape, Origin, Paint,
+    Palette, PaletteError, PaletteOpts, PaletteReport, Preset, QrBuilder, QrCode, QrMatrix,
+    RasterFormat, Rgba8Image, RingShape, ScanReport, StaggerOrder, Style, TargetSize, TimingStyle,
+    Token, TrackingGrid, Trigger, Version,
 };
 
 const HELP: &str = "\
@@ -22,8 +24,10 @@ freeqrent: styled SVG QR codes
 Usage: freeqrent [options] <TEXT>
 
 Encoding:
-  --ecc L|M|Q|H            minimum error correction (default M; raised while it fits)
+  --ecc L|M|Q|H            minimum error correction (default M; raised while it fits,
+                           except for pictures, which keep it)
   --version N              pin the symbol version (1-40)
+  --tracking-grid GRID     sparse (v7-13), standard (v14-20), dense (v21-27)
 
 Style:
   --shape SHAPE            square[:gap] rounded[:r] dots[:size] liquid[:smoothness]
@@ -67,6 +71,18 @@ Style:
   --from-fg C, --from-bg C shortcuts for --from-token fg=C, bg=C
   --idle LOOP              finder-pulse, shimmer, breathe (repeatable)
   --theme-transition MS    ease re-themes through the --qr-* properties
+  --halftone FILE          build the code from a PNG or JPEG picture (`sample` for a
+                           built-in one): modules steered to match, 3x3 sub-cells
+  --art FILE               art mode: --halftone plus outlined alignment boxes,
+                           dotted timing and the standard tracking grid
+  --ink mono|color[:N]     sub-cells in fg, or the picture's colors, N per band (6)
+  --bands D,L              darkest light and lightest dark sub-cell (0.28,0.94)
+  --clarity C              pull sub-cells toward their module, 0-1 (default 0)
+  --clarity-map FILE       ... per area: light parts clear, dark ones pictorial
+  --fit cover|contain      how the picture fills the code (default cover)
+  --focal X,Y              the point to keep in view, 0-1 each (default 0.5,0.5)
+  --priority FILE          where steering matters most: light first, black never
+  --no-steer               keep standard padding (no module steering)
   --allow-inverted         permit light modules on a dark background
   --target-px N            displayed size in device pixels (warns when too small)
   --target-mm N            printed size in millimeters (warns when too small)
@@ -137,6 +153,25 @@ pub struct StyleArgs {
     palette_source: Option<PaletteSource>,
     palette_clusters: Option<u8>,
     palette_contrast: Option<f32>,
+    picture: Option<Rgba8Image>,
+    art: bool,
+    ink: Option<Ink>,
+    bands: Option<(f32, f32)>,
+    clarity: Option<Clarity>,
+    fit: Option<Fit>,
+    focal: Option<(f32, f32)>,
+    priority: Option<Rgba8Image>,
+    no_steer: bool,
+    tracking_grid: Option<TrackingGrid>,
+}
+
+/// Reads a PNG or JPEG for a picture flag; `sample` is the built-in one.
+fn load_picture(flag: &str, source: &str) -> Result<Rgba8Image, String> {
+    if source == "sample" {
+        return Ok(sample::picture());
+    }
+    let bytes = fs::read(source).map_err(|e| format!("{source}: {e}"))?;
+    freeqrent_image::decode(&bytes).map_err(|e| format!("--{flag} {source}: {e}"))
 }
 
 /// Where `--palette-from-*` takes colors from, read once.
@@ -288,6 +323,18 @@ impl StyleArgs {
                 )
             }
             "palette-contrast" => self.palette_contrast = Some(options::number(flag, value)?),
+            "halftone" | "art" => {
+                self.picture = Some(load_picture(flag, value)?);
+                self.art = flag == "art";
+            }
+            "ink" => self.ink = Some(options::ink(value)?),
+            "bands" => self.bands = Some(options::pair(flag, value)?),
+            "clarity" => self.clarity = Some(Clarity::Uniform(options::number(flag, value)?)),
+            "clarity-map" => self.clarity = Some(Clarity::Map(load_picture(flag, value)?)),
+            "fit" => self.fit = Some(options::fit(value)?),
+            "focal" => self.focal = Some(options::pair(flag, value)?),
+            "priority" => self.priority = Some(load_picture(flag, value)?),
+            "tracking-grid" => self.tracking_grid = Some(options::tracking_grid(value)?),
             "title" => self.title = Some(value.to_string()),
             "label" => self.label = Some(value.to_string()),
             _ => return Ok(false),
@@ -317,6 +364,40 @@ impl StyleArgs {
             .map_err(|e| format!("--palette-from-*: {e}"))
     }
 
+    /// `builder` with the flags' tracking grid: the one given, or the
+    /// standard grid for art mode unless the version is `pinned`.
+    pub fn encoder(&self, builder: QrBuilder, pinned: bool) -> QrBuilder {
+        match self.tracking_grid {
+            Some(grid) => builder.tracking_grid(grid),
+            None if self.art && !pinned => builder.tracking_grid(TrackingGrid::Standard),
+            None => builder,
+        }
+    }
+
+    /// The picture flags as a `Halftone`, if a picture was given.
+    fn halftone(&self) -> Option<Halftone> {
+        let mut h = Halftone::new(self.picture.clone()?).steer(!self.no_steer);
+        if let Some(ink) = self.ink {
+            h = h.ink(ink);
+        }
+        if let Some((dark, light)) = self.bands {
+            h = h.bands(dark, light);
+        }
+        if let Some(clarity) = &self.clarity {
+            h = h.clarity(clarity.clone());
+        }
+        if let Some(fit) = self.fit {
+            h = h.fit(fit);
+        }
+        if let Some((x, y)) = self.focal {
+            h = h.focal(x, y);
+        }
+        if let Some(map) = &self.priority {
+            h = h.priority(map.clone());
+        }
+        Some(h)
+    }
+
     /// The style these flags describe, labeled for `text`.
     pub fn build(&self, text: &str) -> Result<Style, String> {
         let mut palette = match self.extract()? {
@@ -341,15 +422,32 @@ impl StyleArgs {
         for &(corner, ring, eye) in &self.corners {
             finders = finders.corner(corner, ring, eye);
         }
-        let default = AlignmentStyle::default();
-        let mut style = Style::new()
+        let halftone = self.halftone();
+        if halftone.is_none()
+            && (self.ink.is_some()
+                || self.bands.is_some()
+                || self.clarity.is_some()
+                || self.fit.is_some()
+                || self.focal.is_some()
+                || self.priority.is_some()
+                || self.no_steer)
+        {
+            return Err("picture options need --halftone or --art".to_string());
+        }
+        // Art mode's own defaults, under whatever was given.
+        let base = match &halftone {
+            Some(h) if self.art => Style::art(h.clone()),
+            _ => Style::new(),
+        };
+        let (default, timing) = (base.alignment_style(), base.timing_style());
+        let mut style = base
             .modules(self.shape.unwrap_or_default())
             .finders(finders)
             .alignment(AlignmentStyle {
                 shape: self.alignment.unwrap_or(default.shape),
                 emphasis: self.emphasis.unwrap_or(default.emphasis),
             })
-            .timing(self.timing.unwrap_or_default())
+            .timing(self.timing.unwrap_or(timing))
             .palette(palette)
             .quiet_zone(self.quiet_zone.unwrap_or(4))
             .allow_inverted(self.allow_inverted)
@@ -360,6 +458,9 @@ impl StyleArgs {
         }
         if let Some(seed) = self.seed {
             style = style.seed(seed);
+        }
+        if let Some(h) = halftone {
+            style = style.halftone(h);
         }
         if let Some(source) = &self.logo {
             let mut logo = load_logo(source)?
@@ -446,6 +547,7 @@ impl StyleArgs {
 struct Args {
     text: String,
     builder: QrBuilder,
+    pinned: bool,
     style: StyleArgs,
     output: Option<PathBuf>,
     gallery: Option<PathBuf>,
@@ -488,6 +590,7 @@ fn parse_args() -> Result<Option<Args>, Failure> {
             Long("allow-inverted") => style.allow_inverted = true,
             Long("no-logo-backdrop") => style.no_logo_backdrop = true,
             Long("keep-modules") => style.keep_modules = true,
+            Long("no-steer") => style.no_steer = true,
             Long("ecc") => {
                 ecc = options::ecc(&parser.value()?.string()?).map_err(Failure::Usage)?
             }
@@ -522,6 +625,7 @@ fn parse_args() -> Result<Option<Args>, Failure> {
     Ok(Some(Args {
         text,
         builder,
+        pinned: version.is_some(),
         style,
         output,
         gallery,
@@ -590,6 +694,17 @@ fn print_report(out: &mut dyn Write, report: &ScanReport) -> io::Result<()> {
             report.ecc_budget_used * 100.0
         )?;
     }
+    if let Some(s) = report.steering {
+        let share = |n: usize| n as f64 * 100.0 / s.code_modules as f64;
+        writeln!(
+            out,
+            "steering: {} of {} modules steerable ({:.0}%); {:.0}% follow the picture",
+            s.steerable_modules,
+            s.code_modules,
+            share(s.steerable_modules),
+            share(s.matched_modules)
+        )?;
+    }
     Ok(())
 }
 
@@ -623,7 +738,7 @@ fn run() -> Result<(), Failure> {
         return Ok(());
     };
     if let Some(path) = &args.gallery {
-        let page = gallery::page(&args.text, &args.builder, &args.style);
+        let page = gallery::page(&args.text, &args.builder, args.pinned, &args.style);
         return fs::write(path, page)
             .map_err(|e| Failure::Failed(format!("{}: {e}", path.display())));
     }
@@ -637,7 +752,8 @@ fn run() -> Result<(), Failure> {
     }
     let style = args.style.build(&args.text).map_err(Failure::Usage)?;
     let qr = args
-        .builder
+        .style
+        .encoder(args.builder, args.pinned)
         .encode_text_for(&args.text, &style)
         .map_err(|e| Failure::Failed(e.to_string()))?;
     let report = style.check(&qr);

@@ -2,8 +2,9 @@
 //! text after the flag, e.g. `dots:0.8` for `--shape`.
 
 use freeqrent::{
-    AlignmentShape, Axis, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape, Frame, FrameRing,
-    Idle, LogoShape, ModuleShape, Preset, RingShape, StaggerOrder, TimingStyle, Trigger,
+    AlignmentShape, Axis, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape, Fit, Frame,
+    FrameRing, Idle, Ink, LogoShape, ModuleShape, Preset, RingShape, StaggerOrder, TimingStyle,
+    TrackingGrid, Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -332,6 +333,50 @@ pub fn token(value: &str) -> Result<(String, String), String> {
         .split_once('=')
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .ok_or_else(|| format!("expected NAME=VALUE, got {value:?}"))
+}
+
+pub fn ink(value: &str) -> Result<Ink, String> {
+    let (name, param) = named(value)?;
+    match name {
+        "mono" => no_param(name, param).map(|_| Ink::Mono),
+        "color" => {
+            let colors = param.unwrap_or(6.0);
+            if !(2.0..=16.0).contains(&colors) || colors.fract() != 0.0 {
+                return Err(format!("color:{colors}: 2-16 colors per band"));
+            }
+            Ok(Ink::Color {
+                colors: colors as u8,
+            })
+        }
+        _ => Err(format!("unknown ink {value:?}: try mono or color[:N]")),
+    }
+}
+
+pub fn fit(value: &str) -> Result<Fit, String> {
+    match value {
+        "cover" => Ok(Fit::Cover),
+        "contain" => Ok(Fit::Contain),
+        _ => Err(format!("unknown fit {value:?}: try cover or contain")),
+    }
+}
+
+pub fn tracking_grid(value: &str) -> Result<TrackingGrid, String> {
+    match value {
+        "sparse" => Ok(TrackingGrid::Sparse),
+        "standard" => Ok(TrackingGrid::Standard),
+        "dense" => Ok(TrackingGrid::Dense),
+        _ => Err(format!(
+            "unknown tracking grid {value:?}: try sparse, standard or dense"
+        )),
+    }
+}
+
+/// Two numbers, `A,B`.
+pub fn pair(flag: &str, value: &str) -> Result<(f32, f32), String> {
+    let (a, b) = value
+        .split_once(',')
+        .ok_or_else(|| format!("--{flag}: {value:?} isn't two numbers like 0.3,0.9"))?;
+    Ok((number(flag, a.trim())?, number(flag, b.trim())?))
 }
 
 #[cfg(test)]

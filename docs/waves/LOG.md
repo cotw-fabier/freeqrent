@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026093447 · M5 · Art mode, tracking grids, CLI
+
+- Landed: `TrackingGrid::{Sparse, Standard, Dense}` and `QrBuilder::tracking_grid` (a version range; `encode_text_for` picks the smallest that affords the style); `Style::art(halftone)` (picture, Outline, dotted timing). CLI: `--halftone`, `--art`, `--ink`, `--bands`, `--clarity`, `--clarity-map`, `--fit`, `--focal`, `--priority`, `--no-steer`, `--tracking-grid`; `--check` prints steering; a procedural `sample` picture; Halftone and Art mode gallery cards (27 families, all decode).
+- Measured: art mode passes the full bar on every grid × L/M/Q × mono/color × two pictures × short and long URLs; 31–79% of modules steerable, 64–87% follow the picture, Outline ≤ 40% of the budget. A long URL on `Standard` at M lands on v17, not v14.
+- Decision: `--art` implies the standard grid unless `--version` pins one; picture options without a picture are a usage error.
+- Checks: 2 verify tests (72 art codes; smallest-version picking), a CLI test for the picture flags; the gallery test counts 27.
+
 ## 20261026092854 · M5 · Halftone sub-cells
 
 - Landed: `Style::halftone` now draws the picture: 3 × 3 sub-cells per data, ECC and remainder module, the center carrying the module, the rest Floyd–Steinberg-dithered from the picture (area-weighted, centers included). `Ink::Mono` (`fg` over `bg`) and `Ink::Color { colors }` (the picture's colors clamped into dark and light bands, k-means per band); `Halftone::bands`; `Clarity::Uniform | Map`; `HALFTONE_DAMAGE_BUDGET` (0.40) for logos and Outline on picture codes. Output is stroked rows in fifths of a module inside a nested viewBox; plans carry `color`, `cells` and `stroke`; group intros move the picture as one piece.
