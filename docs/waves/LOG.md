@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026181929 · M6 · Release prep: 1.0.0, ready to publish
+
+- Landed: the workspace is at 1.0.0, and path dependencies ask for 1.0.0. Every crate has a description, keywords, categories, a readme and a homepage; the core's README is a symlink to the root one, so the packaged crate carries it and its README doctests still find it. Short READMEs for `freeqrent-image`, `freeqrent-verify` and `freeqrent-cli`. `CHANGELOG.md`. SPEC's status reads v1.0 (release candidate until published).
+- Checks: `cargo publish --dry-run --workspace` packages and verifies all four in dependency order (core 234 KiB compressed); all other checks clean.
+- Not done, by design: publishing, tagging and pushing wait for the owner's go. M6 item 5 (the release candidate's scan sheet on iOS Camera and Google Lens, including changed cards S14, S47–S66 and new S70–S77) is still open, so M6 isn't closed.
+
 ## 20261026180849 · M6 · Render times and the WASM budget, measured
 
 - Landed: `examples/bench.rs`, release medians with no new dependency: v10 styled 0.26 ms (target < 1), Liquid + Ripple 0.45 ms (< 5), presets 0.08–0.38 ms; v40 2.2 and 4.2 ms. `scripts/wasm-size.sh` and a CI job: a cdylib reaching every default feature, built for wasm32 at `opt-level = "s"` with LTO, checked gzipped. One stable merge sort over indices (`sort.rs`) replaces the ten `slice::sort*` call sites, each of which had compiled its own copy of a sort: 186 → 165 KB gzipped. Output is byte-identical, since every call site was stable or sorted by a total key; snapshots are unchanged, and a unit test matches std's stable sort.

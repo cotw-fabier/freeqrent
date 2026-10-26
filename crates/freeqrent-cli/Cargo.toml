@@ -1,11 +1,15 @@
 [package]
 name = "freeqrent-cli"
 description = "Command-line front end and preview tool for freeQRent"
+keywords = ["qr", "qrcode", "svg", "cli"]
+categories = ["command-line-utilities", "multimedia::images"]
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 
 [[bin]]
@@ -18,9 +22,9 @@ default = ["verify"]
 verify = ["dep:freeqrent-verify"]
 
 [dependencies]
-freeqrent = { path = "../freeqrent", version = "0.1.0" }
-freeqrent-image = { path = "../freeqrent-image", version = "0.1.0" }
-freeqrent-verify = { path = "../freeqrent-verify", version = "0.1.0", optional = true }
+freeqrent = { path = "../freeqrent", version = "1.0.0" }
+freeqrent-image = { path = "../freeqrent-image", version = "1.0.0" }
+freeqrent-verify = { path = "../freeqrent-verify", version = "1.0.0", optional = true }
 lexopt = "0.3.2"
 
 [lints]

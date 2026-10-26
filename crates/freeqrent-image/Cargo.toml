@@ -2,11 +2,14 @@
 name = "freeqrent-image"
 description = "Decodes PNG and JPEG into freeQRent's Rgba8Image, for palette extraction"
 keywords = ["qr", "png", "jpeg", "palette"]
+categories = ["multimedia::images"]
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 
 [features]
@@ -15,7 +18,7 @@ png = ["dep:zune-png"]
 jpeg = ["dep:zune-jpeg"]
 
 [dependencies]
-freeqrent = { path = "../freeqrent", version = "0.1.0", default-features = false }
+freeqrent = { path = "../freeqrent", version = "1.0.0", default-features = false }
 zune-core = { version = "0.5.3", features = ["std"] }
 zune-png = { version = "0.5.2", optional = true }
 zune-jpeg = { version = "0.5.15", optional = true }

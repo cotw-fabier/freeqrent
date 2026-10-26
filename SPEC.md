@@ -1,6 +1,6 @@
 # freeQRent: Styled & Animated SVG QR Codes (Rust)
 
-> Status: **Draft v0.3** · 2026-10-25
+> Status: **v1.0** (Phase 1 core; release candidate until published) · 2026-10-26
 > Name: **freeQRent** (package id `freeqrent`; free on crates.io, npm, PyPI, pub.dev, and as a GitHub org as of 2026-10-25)
 > License: **MIT**
 > Targets: **Rust, Dart/Flutter, TypeScript/JavaScript (Node + browser), Python, Go**

@@ -1,15 +1,19 @@
 [package]
 name = "freeqrent-verify"
 description = "Rasterizes freeQRent SVGs and decodes them to prove they scan"
+keywords = ["qr", "qrcode", "svg", "testing"]
+categories = ["development-tools::testing", "multimedia::images"]
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 
 [dependencies]
-freeqrent = { path = "../freeqrent", version = "0.1.0" }
+freeqrent = { path = "../freeqrent", version = "1.0.0" }
 resvg = { version = "0.49.0", default-features = false, features = ["raster-images"] }
 rqrr = "0.11.0"
 rxing = { version = "0.9.3", default-features = false, features = ["qrcode", "decoders", "encoding_rs"] }

@@ -238,5 +238,5 @@ pub use version::{Ecc, TrackingGrid, Version};
     feature = "animate",
     feature = "palette-extract"
 ))]
-#[doc = include_str!("../../../README.md")]
+#[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
