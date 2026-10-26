@@ -46,6 +46,7 @@ mod matrix;
 mod num;
 mod optimize;
 mod palette;
+mod preset;
 mod rng;
 mod sanitize;
 mod scanbox;

@@ -78,15 +78,19 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 70);
+    assert_eq!(html.matches("<figure>").count(), 78);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 140);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 156);
     // Without pictures the picture cards use the sample.
     assert!(html.contains("--art sample --clarity 0.5"));
-    // Every card has a dark twin, and the twins and the two dark cards
-    // are read inverted.
-    assert_eq!(html.matches("<div class=\"variant dark\">").count(), 70);
-    assert_eq!(html.matches(", read inverted").count(), 72);
+    // The presets lead.
+    assert!(html.contains(
+        "<h2>Ink preset</h2><code>freeqrent https://example.com/menu --preset ink</code>"
+    ));
+    // Every card has a dark twin, and the twins, the two dark cards and
+    // the terminal preset are read inverted.
+    assert_eq!(html.matches("<div class=\"variant dark\">").count(), 78);
+    assert_eq!(html.matches(", read inverted").count(), 81);
     assert!(html.contains("freeqrent https://example.com/menu --dark</code>"));
 
     // With one, it stands in for both.
@@ -101,10 +105,27 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 140);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 156);
     assert!(!html.contains("--art sample --clarity 0.5"));
     assert!(html.contains("brand.png --clarity 0.5"));
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn presets_take_flags_on_top() {
+    let ink = stdout(&freeqrent(&["HELLO", "--preset", "ink"]));
+    assert!(ink.contains("#f7f3ec"), "{ink}");
+    // A flag replaces that part only: the palette stays.
+    let bars = stdout(&freeqrent(&[
+        "HELLO", "--preset", "ink", "--shape", "bars-h",
+    ]));
+    assert!(bars.contains("#f7f3ec") && bars != ink);
+    // The terminal preset brings its own permission for inverted colors.
+    let out = freeqrent(&["HELLO", "--preset", "terminal", "--check"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let out = freeqrent(&["HELLO", "--preset", "nope"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("classic, ink, candy"));
 }
 
 #[test]
@@ -494,13 +515,14 @@ fn the_scan_sheet_names_every_card() {
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
     let cards = html.matches("<figure data-id=").count();
-    assert_eq!(cards, 69);
+    assert_eq!(cards, 77);
     // Every code renders, and each payload names its card.
     assert!(!html.contains("Refused"));
     assert!(html.contains("https://example.com/scan/S01"));
     assert!(html.contains("FQ-S46"));
     // The logo cards come last, so the earlier ids keep their cards.
     assert!(html.contains("https://example.com/scan/S66"));
+    assert!(html.contains("https://example.com/scan/S77"));
     assert_eq!(html.matches("<select data-device=").count(), cards * 4);
     std::fs::remove_dir_all(&dir).unwrap();
 }

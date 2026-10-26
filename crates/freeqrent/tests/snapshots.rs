@@ -178,3 +178,11 @@ fn halftone_in_mono_and_color() {
         insta::assert_snapshot!(style.minify(false).render(&qr).unwrap());
     }
 }
+
+#[test]
+fn presets() {
+    for name in Style::presets() {
+        let style = Style::preset(name).unwrap();
+        insta::assert_snapshot!(format!("preset_{name}"), render(style, 1));
+    }
+}

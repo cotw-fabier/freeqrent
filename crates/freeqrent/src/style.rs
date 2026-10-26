@@ -347,10 +347,10 @@ impl Style {
     pub fn art(halftone: Halftone) -> Style {
         Style::new()
             .halftone(halftone)
-            .alignment(AlignmentStyle {
-                shape: crate::scanbox::AlignmentShape::Match,
-                emphasis: crate::scanbox::Emphasis::Outline,
-            })
+            .alignment(AlignmentStyle::new(
+                crate::scanbox::AlignmentShape::Match,
+                crate::scanbox::Emphasis::Outline,
+            ))
             .timing(TimingStyle::Dotted)
     }
 
@@ -439,6 +439,11 @@ impl Style {
     /// The quiet zone width in modules.
     pub fn quiet_zone_modules(&self) -> u8 {
         self.quiet_zone
+    }
+
+    /// Whether light-on-dark colors are allowed ([`Style::allow_inverted`]).
+    pub fn inverted_allowed(&self) -> bool {
+        self.allow_inverted
     }
 
     /// Checks the style against `qr` without rendering (SPEC §9).

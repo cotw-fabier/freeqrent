@@ -38,8 +38,8 @@ impl Entry {
 /// each ECC level; pictures with a logo and without steering; and v1 codes
 /// near the contrast warning on off-white backgrounds (ROADMAP,
 /// "lightness-aware contrast warning"); then the logo sizes, frames and
-/// logo motion, and dark palettes, last so the earlier cards keep their
-/// ids.
+/// logo motion, dark palettes and the presets, last so the earlier cards
+/// keep their ids.
 fn entries() -> Vec<Entry> {
     let mut out: Vec<Entry> = FAMILIES
         .iter()
@@ -120,6 +120,12 @@ fn entries() -> Vec<Entry> {
         e.version = Some(1);
         out.push(e);
     }
+    // The presets as they ship (W20261026174357).
+    out.extend(
+        freeqrent::Style::presets()
+            .iter()
+            .map(|&name| Entry::new("Presets", name, &[("preset", name)])),
+    );
     out
 }
 

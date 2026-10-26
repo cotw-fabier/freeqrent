@@ -31,6 +31,8 @@ Encoding:
   --tracking-grid GRID     sparse (v7-13), standard (v14-20), dense (v21-27)
 
 Style:
+  --preset NAME            start from a preset: classic ink candy terminal sunset
+                           bubble ribbon leaf (the flags below change any part)
   --shape SHAPE            square[:gap] rounded[:r] dots[:size] liquid[:smoothness]
                            bars-v[:r] bars-h[:r]
   --finder RING[/EYE]      rings: square rounded[:r] squircle leaf
@@ -150,6 +152,7 @@ impl From<lexopt::Error> for Failure {
 /// Style flags, kept as given so the gallery can layer its own on top.
 #[derive(Clone, Default)]
 pub struct StyleArgs {
+    preset: Option<Style>,
     shape: Option<ModuleShape>,
     finder: Option<(RingShape, EyeShape)>,
     corners: Vec<(Corner, RingShape, EyeShape)>,
@@ -305,6 +308,7 @@ impl StyleArgs {
     /// style flag.
     pub fn set(&mut self, flag: &str, value: &str) -> Result<bool, String> {
         match flag {
+            "preset" => self.preset = Some(options::preset_style(value)?),
             "shape" => self.shape = Some(options::shape(value)?),
             "finder" => self.finder = Some(options::finder(value)?),
             "corner" => self.corners.push(options::corner(value)?),
@@ -495,9 +499,13 @@ impl StyleArgs {
 
     /// The style these flags describe, labeled for `text`.
     pub fn build(&self, text: &str) -> Result<Style, String> {
+        // A preset's own parts, under whatever was given.
+        let preset = self.preset.clone();
         let mut palette = match self.extract()? {
             Some((palette, _)) => palette,
-            None => Palette::new(),
+            None => preset
+                .as_ref()
+                .map_or_else(Palette::new, |p| p.colors().clone()),
         };
         for (name, value) in &self.tokens {
             let wrap = |error| format!("token {name:?}: {error}");
@@ -506,8 +514,11 @@ impl StyleArgs {
             let paint = Paint::parse(value).map_err(wrap)?;
             palette.set(token, paint).map_err(wrap)?;
         }
-        let (ring, eye) = self.finder.unwrap_or((RingShape::Square, EyeShape::Square));
-        let mut finders = FinderStyle::new(ring, eye);
+        let mut finders = match (self.finder, &preset) {
+            (Some((ring, eye)), _) => FinderStyle::new(ring, eye),
+            (None, Some(p)) => p.finder_style(),
+            (None, None) => FinderStyle::SQUARE,
+        };
         for &(corner, ring, eye) in &self.corners {
             finders = finders.corner(corner, ring, eye);
         }
@@ -539,13 +550,19 @@ impl StyleArgs {
             return Err("logo options need --logo".to_string());
         }
         // Art mode's own defaults, under whatever was given.
-        let base = match &halftone {
-            Some(h) if self.art => Style::art(h.clone()),
+        let base = match (&halftone, preset) {
+            (Some(_), Some(_)) if self.art => {
+                return Err("--art sets the whole style; use --halftone with --preset".to_string());
+            }
+            (Some(h), None) if self.art => Style::art(h.clone()),
+            (_, Some(p)) => p,
             _ => Style::new(),
         };
         let (default, timing) = (base.alignment_style(), base.timing_style());
+        let (shape, quiet_zone) = (base.module_shape(), base.quiet_zone_modules());
+        let inverted = base.inverted_allowed();
         let mut style = base
-            .modules(self.shape.unwrap_or_default())
+            .modules(self.shape.unwrap_or(shape))
             .finders(finders)
             .alignment(AlignmentStyle::new(
                 self.alignment.unwrap_or(default.shape),
@@ -553,8 +570,8 @@ impl StyleArgs {
             ))
             .timing(self.timing.unwrap_or(timing))
             .palette(palette)
-            .quiet_zone(self.quiet_zone.unwrap_or(4))
-            .allow_inverted(self.allow_inverted || self.dark)
+            .quiet_zone(self.quiet_zone.unwrap_or(quiet_zone))
+            .allow_inverted(self.allow_inverted || self.dark || inverted)
             .minify(!self.pretty);
         if let Some(frame) = &self.frame {
             let ring = self.frame_ring.unwrap_or_default();

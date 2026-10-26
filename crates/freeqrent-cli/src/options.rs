@@ -4,7 +4,7 @@
 use freeqrent::{
     AlignmentShape, Axis, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape, Fit, Frame,
     FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape,
-    Preset, RingShape, StaggerOrder, TimingStyle, TrackingGrid, Trigger,
+    Preset, RingShape, StaggerOrder, Style, TimingStyle, TrackingGrid, Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -227,6 +227,16 @@ pub fn logo_shape(value: &str) -> Result<LogoShape, String> {
             "unknown logo shape {name:?}: try square, rounded or circle"
         )),
     }
+}
+
+/// A style preset name.
+pub fn preset_style(value: &str) -> Result<Style, String> {
+    Style::preset(value).ok_or_else(|| {
+        format!(
+            "unknown preset {value:?} (expected one of: {})",
+            Style::presets().join(", ")
+        )
+    })
 }
 
 /// An intro preset name.

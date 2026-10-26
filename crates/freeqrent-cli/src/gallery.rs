@@ -850,11 +850,23 @@ pub fn page(
     pictures: &[String],
 ) -> String {
     let mut cards = String::new();
-    let families = FAMILIES
+    // The presets lead, each as it ships.
+    let presets: Vec<(String, [(&str, &str); 1])> = freeqrent::Style::presets()
         .iter()
-        .chain(LOGO_FAMILIES)
-        .chain(DARK_FAMILIES)
-        .chain(PICTURE_FAMILIES);
+        .map(|&name| {
+            let mut title = name.to_string();
+            title[..1].make_ascii_uppercase();
+            (format!("{title} preset"), [("preset", name)])
+        })
+        .collect();
+    let presets = presets
+        .iter()
+        .map(|(name, flags)| (name.as_str(), flags.as_slice()));
+    let families = presets
+        .chain(FAMILIES.iter().copied())
+        .chain(LOGO_FAMILIES.iter().copied())
+        .chain(DARK_FAMILIES.iter().copied())
+        .chain(PICTURE_FAMILIES.iter().copied());
     for (name, flags) in families {
         // Every card also has its dark twin (`--dark`).
         cards.push_str("<figure><div class=\"variant light\">");

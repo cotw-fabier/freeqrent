@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026174357 · M6 · Style presets
+
+- Landed: `Style::preset(name)` and `Style::presets()`: eight static styles (classic, ink, candy, terminal, sunset, bubble, ribbon, leaf) that builder methods change and logos, pictures and intros go on top of. `Style::inverted_allowed()`. The CLI takes `--preset NAME` (every other flag changes its part; `--art` refuses it); the gallery opens with the presets (78 cards, 156 codes, all decode); the scan sheet adds them as S70–S77.
+- Measured: the preset × shape × frame matrix (`tests/presets.rs`): every preset at L/M/Q/H on v1/5/10/25, and with five module shapes × four frames in its place, against its own bar. `terminal`'s first green, #3cff7a (ΔL 0.72), lost v1 codes on the degraded render: Rec. 601 luma, what scanners see, puts it nearer the background than OKLab L does. #7dffa8 (ΔL 0.70) passes (ROADMAP: contrast in luma). An inverted preset skips `Frame::None`, since the bench rasterizes over white (ROADMAP).
+- Decisions: presets carry no motion; names are lowercase and exact. Warnings are part of a preset's contract, pinned by a unit test: `terminal` is inverted, and candy, bubble and leaf have rounded finders.
+- Checks: all clean; 8 new snapshots (`preset_*`, one per preset at v1). The sheet's S70–S77 are new cards and need device scans.
+
 ## 20261026173421 · M6 · API review: additive growth, one way to steer
 
 - Landed: `#[non_exhaustive]` on the public enums that may grow (module shapes, finder ring and eye, alignment shape, emphasis, timing, frames and rings, `TargetSize`, logo shapes, raster formats, `Fit`, `Ink`, `Clarity`, `TrackingGrid`, `Ease`, `StaggerOrder`, `Trigger`, `Token`, `Paint`, `GradientKind`, `Mode`, the plan's enums) and on report and plan structs (`ScanReport`, `CapacityReport`, `Steering`, `PaletteReport`, `Choice`, `Swatch`, `Contrast`, `PaletteError`, `GradientStop`, `PlanLayer`, `PlanOutline`, `Track`, `Keyframe`, `Reveal`); `AlignmentStyle::new` replaces the struct literal. The plan's parts move to `freeqrent::plan`, so the root keeps no generic names like `Value` or `Target`. `encode_text_steered` is gone: the `encode_*_for` family steers when the style draws a picture.
