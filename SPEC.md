@@ -697,6 +697,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 
 ## 13. Testing & Quality
 
+- **Docs** *(W20261026175640)*: `missing_docs` is denied in the core; the crate docs tour each feature with doctests, and the README's examples run as doctests too. `RUSTDOCFLAGS="-D warnings" cargo doc` is clean with all features and with none: links to feature-gated items are allowed to dangle when those features are off, and docs.rs builds with all of them.
 - Unit tests per stage. **Snapshot tests** (`insta`, dev-dep; `crates/freeqrent/tests/snapshots.rs`) on whole pretty-printed documents; determinism makes these reliable. Review changes with `cargo insta review`. The CLI has end-to-end tests that run the binary. *(rev. W20261025215711)*
 - Round-trip scan tests (§9) in CI.
 - `cargo fuzz` targets: encoder (`encode_text`, `encode_segments`), CSS color/gradient parser (`color_parse`: no panics, canonical output re-parses to the same value), logo SVG sanitizer (`logo_svg`: no panics, the clean document sanitizes to itself, rendered codes carry no dropped markup; seeds in `fuzz/seeds/logo_svg`), CSS/HTML palette parser (`palette_parse`: no panics, returned palettes keep the extraction contrast; seeds in `fuzz/seeds/palette_parse`). *(rev. W20261026074436)*

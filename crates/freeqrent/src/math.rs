@@ -197,7 +197,7 @@ pub(crate) fn radians(degrees: f64) -> f64 {
     degrees * (PI / 180.0)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 
@@ -205,7 +205,6 @@ mod tests {
         (a - b).abs() <= 1e-13 * b.abs().max(1.0)
     }
 
-    #[cfg(feature = "std")]
     #[test]
     fn matches_std() {
         for i in 1..2000 {

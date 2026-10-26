@@ -29,6 +29,9 @@ kanji = []
 [lints]
 workspace = true
 
+[package.metadata.docs.rs]
+all-features = true
+
 [dev-dependencies]
 qrcodegen = "1.8"
 rqrr = "0.11.0"

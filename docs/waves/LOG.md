@@ -2,6 +2,14 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026175640 · M6 · Docs: a crate tour, a 1.0 README
+
+- Landed: the crate docs tour encoding, presets, scannability, colors, logos, pictures and animation, with doctests, plus the feature table and MSRV. `#![deny(missing_docs)]` in the core. The README is rewritten for 1.0 (what it does, quick start, presets, logos, palettes, pictures and motion, checking, CLI, crates, features), and its examples run as doctests, so they can't drift from the API. `docs.rs` builds with all features.
+- Decision: with a feature off, the docs' links to its items can't resolve, so `rustdoc::broken_intra_doc_links` is allowed unless all three link-bearing features are on. `cargo doc -D warnings` is clean with all features, none, and each alone.
+- Also: `math`'s tests are gated on `std` as a module (its helper was unused without it).
+- Checks: all clean; 15 doctests (5 from the README).
+- Follow-up: the core's integration tests don't build with `--no-default-features` (they use `Intro`); not one of the checks.
+
 ## 20261026174357 · M6 · Style presets
 
 - Landed: `Style::preset(name)` and `Style::presets()`: eight static styles (classic, ink, candy, terminal, sunset, bubble, ribbon, leaf) that builder methods change and logos, pictures and intros go on top of. `Style::inverted_allowed()`. The CLI takes `--preset NAME` (every other flag changes its part; `--art` refuses it); the gallery opens with the presets (78 cards, 156 codes, all decode); the scan sheet adds them as S70–S77.
