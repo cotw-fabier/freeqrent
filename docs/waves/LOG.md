@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261025234738 · M3 · The core intro presets
+
+- Landed: `Ripple` (center outward, from 80% about the code's center), `LockOn` (rings close in from 135%, eyes pop at 150 ms, then the rest settles), `Assemble` (seeded 1.5–3 module offsets), and the mask reveals `Sweep` (soft diagonal), `Raster` (crisp top-down, left-right for vertical bars) and `Iris` (soft circle). Plan gains `Target::{Layer, Reveal}`, `Reveal { shape, feather, layers }` and `Property::Reveal`. Each preset has its own default ease and stagger. CLI `--intro` takes every preset. Gallery: 19 families, all decode.
+- Decisions: the stylesheet applies the reveal mask (an attribute mask shifted resvg pixels by up to 2 levels even fully open), so the static state stays exact. LockOn scales its rings instead of the spec's dashoffset draw-on, which can't keep every ring shape exact (§8.3 revised). `Develop` waits for halftone (M4).
+- Checks: 3 new unit tests (reveals masked only through CSS, LockOn timeline, Assemble offsets); `tests/intros.rs`: 7 presets × 3 shapes × 2 frames × 2 versions plus logos, pixel-identical to the plain style and to the last frame; 7 presets × 5 shapes scan; time to scannable at 1200 ms, v1–v25: Settle 600–800, Ripple 600–900, LockOn 700–850, Sweep 300, Raster 450–700, Iris 200–350, Assemble 650–750 ms. New snapshot `sweep_reveal_with_logo`. Settle's snapshot changed in its prefix only (the intro's hash input gained the optional ease).
+
 ## 20261025233019 · M3 · AnimationPlan, grouping, Settle
 
 - Landed: `animate` feature (default on): `Intro` (preset, whole-intro `duration_ms`, `delay_ms`, `Ease` Quart/Quint/Expo/Custom, `StaggerOrder` Radial/Linear/Diagonal/Random/Polar, 2–16 `groups`, `Trigger` Load/Hover/Class, `logo_reveal`), preset `Settle`, `Style::plan` → `AnimationPlan` with a hand-written deterministic `to_json()`, and `Style::render_frame(&qr, t)`, which evaluates the plan to a still. The writer now goes through one element list, so static output is byte-identical (all snapshots unchanged). `freeqrent_verify::scannable_after`. CLI: `--intro`, `--intro-ms`, `--stagger`, `--ease`, `--groups`, `--trigger`, `--frame-at`, `--plan`. `--verify` reports when an intro becomes scannable. Gallery family "Settle intro" (16, all decode), with click-to-replay.

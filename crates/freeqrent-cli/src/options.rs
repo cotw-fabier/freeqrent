@@ -229,10 +229,13 @@ pub fn logo_shape(value: &str) -> Result<LogoShape, String> {
 
 /// An intro preset name.
 pub fn preset(value: &str) -> Result<Preset, String> {
-    match value {
-        "settle" => Ok(Preset::Settle),
-        _ => Err(format!("unknown intro {value:?}: try settle")),
-    }
+    Preset::ALL
+        .into_iter()
+        .find(|p| p.name() == value)
+        .ok_or_else(|| {
+            let names: Vec<&str> = Preset::ALL.iter().map(|p| p.name()).collect();
+            format!("unknown intro {value:?}: try {}", names.join(", "))
+        })
 }
 
 /// `radial`, `linear`, `diagonal`, `random[:seed]`, `polar`.
@@ -396,6 +399,8 @@ mod tests {
         assert!(frame_ring("dotted").is_err());
         assert_eq!(logo_shape("rounded:2").unwrap(), LogoShape::Rounded(2.0));
         assert!(logo_shape("circle:1").is_err());
+        assert_eq!(preset("lock-on").unwrap(), Preset::LockOn);
+        assert!(preset("bloom").is_err());
         assert_eq!(stagger("random:7").unwrap(), StaggerOrder::Random(7));
         assert!(stagger("radial:1").is_err());
         assert_eq!(

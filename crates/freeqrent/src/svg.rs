@@ -279,8 +279,7 @@ fn layout(
 ) -> (Vec<Element>, Option<Motion>) {
     #[cfg(feature = "animate")]
     if let Some((elements, motion)) = crate::animate::build(style, qr, canvas, at) {
-        // A frame is a still: poses, no CSS.
-        return (elements, at.is_none().then_some(motion));
+        return (elements, Some(motion));
     }
     let _ = at;
     (static_elements(style, qr, canvas), None)
@@ -329,7 +328,8 @@ pub(crate) fn write<W: Write + ?Sized>(
     out.w
         .write_str("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ")?;
     write!(out.w, "{n} {n}\" class=\"qr")?;
-    if motion.is_some() {
+    #[cfg(feature = "animate")]
+    if motion.as_ref().is_some_and(|m| m.live()) {
         write!(out.w, " {prefix}")?;
     }
     out.w.write_str("\" role=\"img\" aria-label=\"")?;
@@ -372,8 +372,25 @@ pub(crate) fn write<W: Write + ?Sized>(
         out.w.write_str("</defs>")?;
     }
 
-    for e in &elements {
+    #[cfg(feature = "animate")]
+    let masked = motion.as_ref().and_then(|m| m.reveal_layers());
+    for (i, e) in elements.iter().enumerate() {
         out.line()?;
+        #[cfg(feature = "animate")]
+        if let (Some((first, _)), Some(m)) = (masked, &motion)
+            && first == i
+        {
+            m.write_mask(out.w, &prefix, n)?;
+            // Live, the stylesheet applies the mask, so renderers that skip
+            // it draw the code unmasked; a frame needs the attribute.
+            if m.live() {
+                write!(out.w, "<g class=\"{prefix}-m\">")?;
+            } else {
+                write!(out.w, "<g mask=\"url(#{prefix}-reveal)\">")?;
+            }
+            out.line()?;
+        }
+        let _ = i;
         match e.role {
             LayerRole::Background => {
                 match (&canvas.round, style.frame) {
@@ -407,6 +424,11 @@ pub(crate) fn write<W: Write + ?Sized>(
                 write_pose(out.w, e)?;
                 write!(out.w, " d=\"{}\"/>", e.path.data())?;
             }
+        }
+        #[cfg(feature = "animate")]
+        if masked.is_some_and(|(_, last)| last == i) {
+            out.line()?;
+            out.w.write_str("</g>")?;
         }
     }
     if out.pretty {

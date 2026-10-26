@@ -54,7 +54,7 @@ mod version;
 #[cfg(feature = "animate")]
 pub use animate::{
     AnimationPlan, CubicBezier, Ease, Fallback, Intro, Keyframe, PlanLayer, Preset, Property,
-    StaggerOrder, Track, Trigger, Value,
+    Reveal, RevealShape, StaggerOrder, Target, Track, Trigger, Value,
 };
 pub use check::{
     ANIMATED_ELEMENTS, CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, LONG_INTRO_MS, RenderError,

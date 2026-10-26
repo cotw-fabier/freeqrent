@@ -405,19 +405,21 @@ The **un-animated document state is the finished, scannable code.** Keyframes an
 
 ### 8.3 Preset intros (brainstorm)
 
-**Core set (v1):**
+**Core set (v1):** *(rev. W20261025234738)*
 
-| Preset | Motion | Best with |
-|---|---|---|
-| `Settle` | Groups fade in from `opacity 0, scale .92` toward their own centers; uniform gentle stagger | Everything (default) |
-| `Ripple` | Radial stagger from center outward; modules scale up from 0 | Dots, Liquid, Round |
-| `LockOn` | The three finders draw on first (`stroke-dashoffset` around the outer ring, then the eye pops in at 150 ms), then data fills via `Settle` | Branded/"scan me" moments |
-| `Sweep` | Diagonal mask wipe from top-left to bottom-right, with a soft feathered edge | Square, Bars |
-| `Raster` | Row-by-row (or column-by-column for vertical Bars) reveal, like a printer head | Bars, Square |
-| `Iris` | Circular `clip-path` opens from the center | Round frame |
-| `Assemble` | Groups start offset (seeded scatter, ≤ 3 modules) and converge with ease-out-expo | Dots, Square |
-| `Develop` | For halftone: the image fades in at low contrast, then contrast resolves to full QR bands, like a photo developing | Halftone only |
-| `LogoReveal` | Composable suffix: the logo scales 0.94 → 1 with fade after data settles | Any with logo |
+| Preset | Motion | Default ease / stagger | Best with |
+|---|---|---|---|
+| `Settle` | Groups fade in from `opacity 0, scale .92` toward their own centers | quart / random | Everything (default) |
+| `Ripple` | Groups fade in from `scale .8` about the code's center, center outward, so the code spreads like a ripple | quint / radial | Dots, Liquid, Round |
+| `LockOn` | The finder rings close in from `scale 1.35` (corners 60 ms apart), the eyes pop in from 0 at 150 ms, then the rest settles from 60% of the finders' time | expo / random | Branded/"scan me" moments |
+| `Sweep` | A soft-edged mask wipe (feather ¼ of the side) from top-left to bottom-right | quart | Square, Bars |
+| `Raster` | A crisp mask wipe (half-module edge) from top to bottom, or left to right for vertical Bars, like a printer head | quart | Bars, Square |
+| `Iris` | A soft-edged circular mask opens from the center | expo | Round frame |
+| `Assemble` | Groups converge from a seeded offset of 1.5–3 modules | expo / random | Dots, Square |
+| `Develop` | For halftone: the image fades in at low contrast, then contrast resolves to full QR bands, like a photo developing | | Halftone only (lands with halftone in M4) |
+| `LogoReveal` | `Intro::logo_reveal` (default on): the logo scales 0.94 → 1 with a fade in the last 400 ms, while the modules finish | | Any with logo |
+
+`LockOn` scales the rings instead of drawing them on with `stroke-dashoffset`. Our rings are filled shapes, and a stroke or mask that draws them on would have to cover every ring shape exactly to keep the static state intact. A closing reticle reads as "locking on" using `transform` alone. The reveal presets mask everything but the background, and the logo too unless it has its own reveal. The stylesheet applies the mask (`mask:url(#…)` in the `@supports` block), so renderers that skip the block draw the code unmasked, and the mask's own natural state covers the canvas anyway. Measured time to scannable (ZXing, 6 px/module, v1–v25, 1200 ms): Settle 600–800 ms, Ripple 600–900, LockOn 700–850, Sweep 300, Raster 450–700, Iris 200–350, Assemble 650–750.
 
 **Extended (v1.x):**
 
@@ -460,6 +462,7 @@ pub struct AnimationPlan {
     pub palette: Palette,            // what the layers' tokens resolve through
     pub layers: Vec<PlanLayer>,      // paint order: background, split layers, logo
     pub tracks: Vec<Track>,
+    pub reveal: Option<Reveal>,
     pub total_ms: u32,               // end of the last finite track
     pub trigger: Trigger,
     pub reduced_motion: Fallback,    // always FinalState
@@ -475,8 +478,16 @@ pub struct PlanLayer {
     pub origin: (f32, f32),          // scale origin
 }
 
+pub enum Target { Layer(usize), Reveal }
+
+pub struct Reveal {                  // Sweep, Raster, Iris
+    pub shape: RevealShape,          // Wipe { from, to } or Iris { center, radius }, in viewBox units
+    pub feather: f32,
+    pub layers: (usize, usize),      // first and last layer masked
+}
+
 pub struct Track {
-    pub layer: usize,
+    pub target: Target,
     pub delay_ms: u32,
     pub duration_ms: u32,
     pub ease: CubicBezier,           // applied between neighboring keyframes, as in CSS
@@ -484,7 +495,7 @@ pub struct Track {
     pub keys: Vec<Keyframe>,         // offset 0..1, property, value; offsets 0 and 1 left out take the natural value
 }
 
-pub enum Property { Opacity, Scale, TranslateX, TranslateY, Fill }
+pub enum Property { Opacity, Scale, TranslateX, TranslateY, Fill, Reveal }   // Reveal: mask progress 0–1
 ```
 
 `style.plan(&qr) -> Result<AnimationPlan, RenderError>` is public in Phase 1. A style without an intro gives its static layers and no tracks. `plan.to_json()` serializes it deterministically: hand-written, with no serde, so the core stays dependency-free *(rev. W20261025233019, by decision of 2026-10-25)*. It is the contract the Flutter widget (and any future native player, such as Lottie export) is built on. Only properties every player can reproduce are allowed in a plan.

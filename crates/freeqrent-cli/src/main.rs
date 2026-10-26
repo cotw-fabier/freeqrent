@@ -49,7 +49,7 @@ Style:
   --logo-padding N         modules between logo and code (default 0.5)
   --no-logo-backdrop       no plate behind the logo
   --keep-modules           draw the modules under the logo
-  --intro PRESET           settle
+  --intro PRESET           settle, ripple, lock-on, sweep, raster, iris, assemble
   --intro-ms N             whole intro length (default 1200)
   --stagger ORDER          radial, linear, diagonal, random[:seed], polar
   --ease EASE              quart, quint, expo, or x1,y1,x2,y2

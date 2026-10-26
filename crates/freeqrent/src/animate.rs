@@ -146,6 +146,53 @@ pub enum Preset {
     /// Groups fade in from 92% scale toward their own centers, in a
     /// shuffled stagger. The default.
     Settle,
+    /// Groups fade in from the center outward, each growing from 80%
+    /// about the center, so the code spreads like a ripple.
+    Ripple,
+    /// The finder rings close in from 135% and their eyes pop in 150 ms
+    /// later, then the rest settles.
+    LockOn,
+    /// A soft-edged wipe from the top-left corner to the bottom-right.
+    Sweep,
+    /// A crisp wipe from top to bottom, like a printer head (left to
+    /// right for vertical bars).
+    Raster,
+    /// A soft-edged circle opening from the center.
+    Iris,
+    /// Groups converge from seeded offsets of up to 3 modules.
+    Assemble,
+}
+
+impl Preset {
+    /// Every preset, in documentation order.
+    pub const ALL: [Preset; 7] = [
+        Preset::Settle,
+        Preset::Ripple,
+        Preset::LockOn,
+        Preset::Sweep,
+        Preset::Raster,
+        Preset::Iris,
+        Preset::Assemble,
+    ];
+
+    /// Whether the preset reveals the code through a moving mask instead
+    /// of animating groups.
+    pub fn is_reveal(self) -> bool {
+        matches!(self, Preset::Sweep | Preset::Raster | Preset::Iris)
+    }
+
+    /// The preset's lowercase name, as the CLI spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Preset::Settle => "settle",
+            Preset::Ripple => "ripple",
+            Preset::LockOn => "lock-on",
+            Preset::Sweep => "sweep",
+            Preset::Raster => "raster",
+            Preset::Iris => "iris",
+            Preset::Assemble => "assemble",
+        }
+    }
 }
 
 /// A code's entrance: a preset and its timing. Build one with
@@ -155,7 +202,7 @@ pub struct Intro {
     pub(crate) preset: Preset,
     pub(crate) duration_ms: u32,
     pub(crate) delay_ms: u32,
-    pub(crate) ease: Ease,
+    pub(crate) ease: Option<Ease>,
     pub(crate) stagger: Option<StaggerOrder>,
     pub(crate) groups: u8,
     pub(crate) trigger: Trigger,
@@ -169,14 +216,15 @@ impl From<Preset> for Intro {
 }
 
 impl Intro {
-    /// The preset with its defaults: 1200 ms in all, 12 groups, ease-out
-    /// quart, on load, with the logo revealed last.
+    /// The preset with its defaults: 1200 ms in all, 12 groups, the
+    /// preset's own curve and stagger, on load, with the logo revealed
+    /// last.
     pub fn new(preset: Preset) -> Intro {
         Intro {
             preset,
             duration_ms: 1200,
             delay_ms: 0,
-            ease: Ease::Quart,
+            ease: None,
             stagger: None,
             groups: 12,
             trigger: Trigger::Load,
@@ -198,9 +246,9 @@ impl Intro {
         self
     }
 
-    /// The timing curve.
+    /// The timing curve, instead of the preset's own.
     pub fn ease(mut self, ease: Ease) -> Intro {
-        self.ease = ease;
+        self.ease = Some(ease);
         self
     }
 
@@ -244,9 +292,23 @@ impl Intro {
         self.groups
     }
 
+    /// The timing curve: the chosen one, or the preset's.
+    pub fn curve(&self) -> CubicBezier {
+        self.ease
+            .unwrap_or(match self.preset {
+                Preset::Settle | Preset::Sweep | Preset::Raster => Ease::Quart,
+                Preset::Ripple => Ease::Quint,
+                Preset::LockOn | Preset::Iris | Preset::Assemble => Ease::Expo,
+            })
+            .curve()
+    }
+
     fn order(&self) -> StaggerOrder {
         self.stagger.unwrap_or(match self.preset {
-            Preset::Settle => StaggerOrder::Random(0),
+            Preset::Ripple | Preset::Iris => StaggerOrder::Radial,
+            Preset::Sweep => StaggerOrder::Diagonal,
+            Preset::Raster => StaggerOrder::Linear,
+            Preset::Settle | Preset::LockOn | Preset::Assemble => StaggerOrder::Random(0),
         })
     }
 }
@@ -265,6 +327,8 @@ pub enum Property {
     TranslateY,
     /// The fill color.
     Fill,
+    /// How far the reveal mask has opened, 0–1 (1 shows everything).
+    Reveal,
 }
 
 impl Property {
@@ -282,6 +346,7 @@ impl Property {
             Property::TranslateX => "translateX",
             Property::TranslateY => "translateY",
             Property::Fill => "fill",
+            Property::Reveal => "reveal",
         }
     }
 }
@@ -307,11 +372,67 @@ pub struct Keyframe {
     pub value: Value,
 }
 
+/// What a track moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Target {
+    /// A layer, by index into [`AnimationPlan::layers`].
+    Layer(usize),
+    /// The plan's [`Reveal`] mask.
+    Reveal,
+}
+
+/// The shape of a reveal mask.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RevealShape {
+    /// A straight edge moving from `from` to `to`: at progress 0 the
+    /// feather lies wholly before `from`, at 1 wholly past `to`.
+    Wipe {
+        /// Where the edge starts, in viewBox units.
+        from: (f32, f32),
+        /// Where it ends.
+        to: (f32, f32),
+    },
+    /// A circle about `center` growing from nothing to `radius` plus the
+    /// feather.
+    Iris {
+        /// The center, in viewBox units.
+        center: (f32, f32),
+        /// The radius at which everything is shown.
+        radius: f32,
+    },
+}
+
+/// A mask over a run of layers, opened by a [`Property::Reveal`] track
+/// (presets Sweep, Raster and Iris).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Reveal {
+    /// Its shape.
+    pub shape: RevealShape,
+    /// Width of the soft edge, in modules.
+    pub feather: f32,
+    /// The first and last layer it covers (inclusive).
+    pub layers: (usize, usize),
+}
+
+impl Reveal {
+    /// How far the mask's content moves between closed and open: the
+    /// wipe's travel along its direction, or the iris's full radius.
+    fn travel(&self) -> f64 {
+        match self.shape {
+            RevealShape::Wipe { from, to } => {
+                let (dx, dy) = ((to.0 - from.0) as f64, (to.1 - from.1) as f64);
+                math::sqrt(dx * dx + dy * dy) + self.feather as f64
+            }
+            RevealShape::Iris { radius, .. } => radius as f64 + self.feather as f64,
+        }
+    }
+}
+
 /// One animation of one layer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Track {
-    /// The layer it moves, an index into [`AnimationPlan::layers`].
-    pub layer: usize,
+    /// What it moves.
+    pub target: Target,
     /// Start, from the trigger.
     pub delay_ms: u32,
     /// Length of one iteration.
@@ -368,6 +489,8 @@ pub struct AnimationPlan {
     pub layers: Vec<PlanLayer>,
     /// The tracks.
     pub tracks: Vec<Track>,
+    /// The reveal mask, for presets that wipe the code in.
+    pub reveal: Option<Reveal>,
     /// When the last finite track ends, from the trigger.
     pub total_ms: u32,
     /// What starts the tracks.
@@ -381,8 +504,11 @@ pub struct AnimationPlan {
 pub(crate) struct Motion {
     pub(crate) tracks: Vec<Track>,
     pub(crate) origins: Vec<(f64, f64)>,
+    pub(crate) reveal: Option<Reveal>,
     pub(crate) total_ms: u32,
     pub(crate) trigger: Trigger,
+    /// For a frame: the time it shows. Frames get poses, not CSS.
+    pub(crate) at: Option<u32>,
 }
 
 // ------------------------------------------------------------- grouping
@@ -568,6 +694,9 @@ pub(crate) fn element_count(style: &Style, qr: &QrMatrix) -> usize {
     let Some(intro) = &style.intro else {
         return 0;
     };
+    if intro.preset.is_reveal() {
+        return 1 + style.logo.is_some() as usize;
+    }
     let canvas = scene::canvas(style, qr);
     let layers = scene::layers(style, qr);
     let mut seen: Vec<(usize, u8, Option<Corner>)> = pieces(style, qr, &canvas, intro, &layers)
@@ -696,11 +825,34 @@ fn number(property: Property, offset: f32, value: f32) -> Keyframe {
     }
 }
 
+/// When group `g` of `k` starts and how long it runs, staggered across
+/// `span` ms from `start`.
+fn stagger(start: f64, span: f64, k: f64, g: f64) -> (f64, f64) {
+    let each = (span / 2.0).min(MAX_ELEMENT_MS);
+    let step = if k > 1.0 {
+        (span - each) / (k - 1.0)
+    } else {
+        0.0
+    };
+    (start + g * step, each)
+}
+
+/// How far each group of Assemble starts from home: a seeded direction,
+/// 1.5–3 modules away.
+fn scatter(seed: u64, group: u8) -> (f32, f32) {
+    let mut rng = SplitMix64::new(seed ^ (group as u64 + 1).wrapping_mul(0xd1b5_4a32_d192_ed03));
+    let angle = rng.next_f64() * 2.0 * core::f64::consts::PI;
+    let reach = 1.5 + 1.5 * rng.next_f64();
+    let (sin, cos) = math::sin_cos(angle);
+    let k = |v: f64| (math::round(v * reach * 1000.0) / 1000.0) as f32;
+    (k(cos), k(sin))
+}
+
 /// The tracks of `intro` for `elements`.
-fn tracks(style: &Style, intro: &Intro, elements: &[Element]) -> Vec<Track> {
+fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<Track> {
     let total = intro.duration_ms as f64;
-    let reveal = intro.logo_reveal && style.logo.is_some();
-    let logo_ms = if reveal {
+    let reveal_logo = intro.logo_reveal && style.logo.is_some();
+    let logo_ms = if reveal_logo {
         LOGO_MS.min(total * 0.4)
     } else {
         0.0
@@ -708,52 +860,138 @@ fn tracks(style: &Style, intro: &Intro, elements: &[Element]) -> Vec<Track> {
     // The modules finish halfway through the logo's reveal.
     let window = total - logo_ms / 2.0;
     let k = intro.groups.clamp(1, 16) as f64;
-    let each = (window / 2.0).min(MAX_ELEMENT_MS);
-    let step = if k > 1.0 {
-        (window - each) / (k - 1.0)
-    } else {
-        0.0
-    };
-    let ease = intro.ease.curve();
+    let ease = intro.curve();
     let delay = intro.delay_ms as f64;
     let ms = |v: f64| math::round(v) as u32;
+    let track = |target, at: f64, length: f64, keys| Track {
+        target,
+        delay_ms: ms(delay + at),
+        duration_ms: ms(length),
+        ease,
+        iterations: Some(1),
+        keys,
+    };
+    let fade_scale = |scale| {
+        alloc::vec![
+            number(Property::Opacity, 0.0, 0.0),
+            number(Property::Scale, 0.0, scale),
+        ]
+    };
 
     let mut tracks = Vec::new();
+    if intro.preset.is_reveal() {
+        tracks.push(track(
+            Target::Reveal,
+            0.0,
+            window,
+            alloc::vec![number(Property::Reveal, 0.0, 0.0)],
+        ));
+    }
+    // LockOn's finders take the first stretch; the rest settles after.
+    let finder_ms = (total * 0.4).min(500.0);
+    let (start, span) = match intro.preset {
+        Preset::LockOn => (finder_ms * 0.6, window - finder_ms * 0.6),
+        _ => (0.0, window),
+    };
     for (i, e) in elements.iter().enumerate() {
+        let target = Target::Layer(i);
         match e.role {
             LayerRole::Background => {}
-            LayerRole::Logo if reveal => tracks.push(Track {
-                layer: i,
-                delay_ms: ms(delay + total - logo_ms),
-                duration_ms: ms(logo_ms),
-                ease,
-                iterations: Some(1),
-                keys: alloc::vec![
-                    number(Property::Opacity, 0.0, 0.0),
-                    number(Property::Scale, 0.0, 0.94),
-                ],
-            }),
+            LayerRole::Logo if reveal_logo => {
+                tracks.push(track(target, total - logo_ms, logo_ms, fade_scale(0.94)))
+            }
             LayerRole::Logo => {}
-            _ => {
-                let g = e.group.unwrap_or(0) as f64;
-                let keys = match intro.preset {
-                    Preset::Settle => alloc::vec![
-                        number(Property::Opacity, 0.0, 0.0),
-                        number(Property::Scale, 0.0, 0.92),
-                    ],
-                };
-                tracks.push(Track {
-                    layer: i,
-                    delay_ms: ms(delay + g * step),
-                    duration_ms: ms(each),
-                    ease,
-                    iterations: Some(1),
-                    keys,
+            _ if intro.preset.is_reveal() => {}
+            LayerRole::FinderOuter | LayerRole::FinderEye if intro.preset == Preset::LockOn => {
+                let corner = scene::CORNERS
+                    .iter()
+                    .position(|&c| Some(c) == e.corner)
+                    .unwrap_or(0) as f64;
+                tracks.push(if e.role == LayerRole::FinderOuter {
+                    track(target, corner * 60.0, finder_ms, fade_scale(1.35))
+                } else {
+                    track(
+                        target,
+                        150.0 + corner * 60.0,
+                        finder_ms * 0.8,
+                        fade_scale(0.0),
+                    )
                 });
+            }
+            _ => {
+                let g = e.group.unwrap_or(0);
+                let (at, length) = stagger(start, span, k, g as f64);
+                let keys = match intro.preset {
+                    Preset::Ripple => fade_scale(0.8),
+                    Preset::Assemble => {
+                        let (dx, dy) = scatter(seed, g);
+                        alloc::vec![
+                            number(Property::Opacity, 0.0, 0.0),
+                            number(Property::TranslateX, 0.0, dx),
+                            number(Property::TranslateY, 0.0, dy),
+                        ]
+                    }
+                    _ => fade_scale(0.92),
+                };
+                tracks.push(track(target, at, length, keys));
             }
         }
     }
     tracks
+}
+
+/// The reveal mask of a wiping preset over `elements`: everything but the
+/// background, and the logo when it has its own reveal.
+fn reveal(style: &Style, intro: &Intro, canvas: &Canvas, elements: &[Element]) -> Option<Reveal> {
+    if !intro.preset.is_reveal() {
+        return None;
+    }
+    let s = canvas.side as f32;
+    let first = elements
+        .iter()
+        .position(|e| e.role != LayerRole::Background)?;
+    let logo_apart = intro.logo_reveal && style.logo.is_some();
+    let last = elements
+        .iter()
+        .rposition(|e| !(e.role == LayerRole::Logo && logo_apart))?;
+    if last < first {
+        return None;
+    }
+    let vertical_bars = matches!(
+        style.modules,
+        ModuleShape::Bars {
+            axis: crate::style::Axis::Vertical,
+            ..
+        }
+    );
+    let (shape, feather) = match intro.preset {
+        Preset::Sweep => (
+            RevealShape::Wipe {
+                from: (0.0, 0.0),
+                to: (s, s),
+            },
+            s * 0.25,
+        ),
+        Preset::Raster => (
+            RevealShape::Wipe {
+                from: (0.0, 0.0),
+                to: if vertical_bars { (s, 0.0) } else { (0.0, s) },
+            },
+            0.5,
+        ),
+        _ => (
+            RevealShape::Iris {
+                center: (s / 2.0, s / 2.0),
+                radius: s * core::f32::consts::FRAC_1_SQRT_2,
+            },
+            s * 0.15,
+        ),
+    };
+    Some(Reveal {
+        shape,
+        feather,
+        layers: (first, last),
+    })
 }
 
 /// The animated layout of `style`, or `None` when it doesn't animate. With
@@ -765,8 +1003,19 @@ pub(crate) fn build(
     at: Option<u32>,
 ) -> Option<(Vec<Element>, Motion)> {
     let intro = style.intro.as_ref()?;
-    let mut elements = split(style, qr, canvas, intro);
-    let tracks = tracks(style, intro, &elements);
+    // A reveal moves one mask, so the layers stay whole.
+    let mut elements = if intro.preset.is_reveal() {
+        svg::static_elements(style, qr, canvas)
+    } else {
+        split(style, qr, canvas, intro)
+    };
+    if intro.preset == Preset::Ripple {
+        let mid = canvas.side as f64 / 2.0;
+        for e in elements.iter_mut().filter(|e| e.role != LayerRole::Logo) {
+            e.origin = (mid, mid);
+        }
+    }
+    let tracks = tracks(style, intro, scene::seed(style, qr), &elements);
     let total_ms = tracks
         .iter()
         .filter_map(|t| Some(t.delay_ms + t.duration_ms * t.iterations?))
@@ -774,12 +1023,17 @@ pub(crate) fn build(
         .unwrap_or(0);
     let motion = Motion {
         origins: elements.iter().map(|e| e.origin).collect(),
+        reveal: reveal(style, intro, canvas, &elements),
         tracks,
         total_ms,
         trigger: intro.trigger.clone(),
+        at,
     };
     for (i, e) in elements.iter_mut().enumerate() {
-        let mine = motion.tracks.iter().filter(|t| t.layer == i);
+        let mine = motion
+            .tracks
+            .iter()
+            .filter(|t| t.target == Target::Layer(i));
         match at {
             Some(t) => {
                 let pose = pose(mine, t);
@@ -976,39 +1230,96 @@ fn write_keyframes<W: Write + ?Sized>(w: &mut W, keys: &[Keyframe]) -> fmt::Resu
 /// duration, curve (as bits) and iterations.
 type Signature = (usize, u32, [u32; 4], Option<u32>);
 
+/// A track's keyframes as CSS animates them: a reveal's progress becomes
+/// the mask content's transform.
+fn css_keys(track: &Track, reveal: Option<&Reveal>) -> Vec<Keyframe> {
+    let (Target::Reveal, Some(r)) = (track.target, reveal) else {
+        return track.keys.clone();
+    };
+    let travel = r.travel();
+    track
+        .keys
+        .iter()
+        .flat_map(|k| {
+            let Value::Number(p) = k.value else {
+                return alloc::vec![];
+            };
+            let p = p as f64;
+            match r.shape {
+                RevealShape::Wipe { .. } => alloc::vec![number(
+                    Property::TranslateX,
+                    k.offset,
+                    (-(1.0 - p) * travel) as f32
+                )],
+                RevealShape::Iris { .. } => {
+                    alloc::vec![number(Property::Scale, k.offset, p as f32)]
+                }
+            }
+        })
+        .collect()
+}
+
 impl Motion {
-    /// The keyframes, one rule per animated element (`{prefix}-e{n}`), the
-    /// trigger, and the reduced-motion override (SPEC §8.1).
+    /// The selector suffix of a track's element: `e{n}` or `r`.
+    fn class(target: Target) -> (char, usize) {
+        match target {
+            Target::Layer(i) => ('e', i),
+            Target::Reveal => ('r', 0),
+        }
+    }
+
+    fn origin(&self, target: Target) -> (f64, f64) {
+        match (target, &self.reveal) {
+            (Target::Layer(i), _) => self.origins[i],
+            (
+                Target::Reveal,
+                Some(Reveal {
+                    shape: RevealShape::Iris { center, .. },
+                    ..
+                }),
+            ) => (center.0 as f64, center.1 as f64),
+            (Target::Reveal, _) => (0.0, 0.0),
+        }
+    }
+
+    /// The keyframes, one rule per animated element (`{prefix}-e{n}`, and
+    /// `{prefix}-r` for the reveal mask), the trigger, and the
+    /// reduced-motion override (SPEC §8.1). Nothing for a frame.
     pub(crate) fn write_css<W: Write + ?Sized>(&self, w: &mut W, prefix: &str) -> fmt::Result {
+        if self.at.is_some() {
+            return Ok(());
+        }
         // Identical keyframe lists are written once.
-        let mut lists: Vec<&[Keyframe]> = Vec::new();
-        let name_of: Vec<usize> = self
+        let keys: Vec<Vec<Keyframe>> = self
             .tracks
             .iter()
-            .map(
-                |t| match lists.iter().position(|l| *l == t.keys.as_slice()) {
-                    Some(i) => i,
-                    None => {
-                        lists.push(&t.keys);
-                        lists.len() - 1
-                    }
-                },
-            )
+            .map(|t| css_keys(t, self.reveal.as_ref()))
+            .collect();
+        let mut lists: Vec<&[Keyframe]> = Vec::new();
+        let name_of: Vec<usize> = keys
+            .iter()
+            .map(|k| match lists.iter().position(|l| *l == k.as_slice()) {
+                Some(i) => i,
+                None => {
+                    lists.push(k);
+                    lists.len() - 1
+                }
+            })
             .collect();
         for (i, keys) in lists.iter().enumerate() {
             write!(w, "@keyframes {prefix}-k{i}{{")?;
             write_keyframes(w, keys)?;
             w.write_char('}')?;
         }
-        let mut layers: Vec<usize> = self.tracks.iter().map(|t| t.layer).collect();
-        layers.dedup();
+        let mut targets: Vec<Target> = self.tracks.iter().map(|t| t.target).collect();
+        targets.dedup();
         // Elements whose tracks differ only in delay share one rule; each
         // element then sets its delays and origin.
-        let signature = |layer: usize| -> Vec<Signature> {
+        let signature = |target: Target| -> Vec<Signature> {
             self.tracks
                 .iter()
                 .zip(&name_of)
-                .filter(|(t, _)| t.layer == layer)
+                .filter(|(t, _)| t.target == target)
                 .map(|(t, &name)| {
                     let e = t.ease;
                     (
@@ -1020,23 +1331,27 @@ impl Motion {
                 })
                 .collect()
         };
-        let mut shared: Vec<(Vec<Signature>, Vec<usize>)> = Vec::new();
-        for &layer in &layers {
-            let sig = signature(layer);
+        let mut shared: Vec<(Vec<Signature>, Vec<Target>)> = Vec::new();
+        for &target in &targets {
+            let sig = signature(target);
             match shared.iter_mut().find(|(s, _)| *s == sig) {
-                Some((_, members)) => members.push(layer),
-                None => shared.push((sig, alloc::vec![layer])),
+                Some((_, members)) => members.push(target),
+                None => shared.push((sig, alloc::vec![target])),
             }
         }
         for (sig, members) in &shared {
-            for (i, &layer) in members.iter().enumerate() {
+            for (i, &target) in members.iter().enumerate() {
                 if i > 0 {
                     w.write_char(',')?;
                 }
                 if let Trigger::Hover = self.trigger {
                     write!(w, ".{prefix}:hover ")?;
                 }
-                write!(w, ".{prefix}-e{layer}")?;
+                let (c, n) = Motion::class(target);
+                write!(w, ".{prefix}-{c}")?;
+                if c == 'e' {
+                    write!(w, "{n}")?;
+                }
             }
             w.write_str("{animation:")?;
             for (j, &(name, duration, ease, iterations)) in sig.iter().enumerate() {
@@ -1057,27 +1372,39 @@ impl Motion {
             }
             w.write_str(";transform-box:view-box}")?;
         }
-        for &layer in &layers {
-            write!(w, ".{prefix}-e{layer}{{animation-delay:")?;
-            let mine = self.tracks.iter().filter(|t| t.layer == layer);
+        for &target in &targets {
+            let (c, n) = Motion::class(target);
+            write!(w, ".{prefix}-{c}")?;
+            if c == 'e' {
+                write!(w, "{n}")?;
+            }
+            w.write_str("{animation-delay:")?;
+            let mine = self.tracks.iter().filter(|t| t.target == target);
             for (j, t) in mine.enumerate() {
                 if j > 0 {
                     w.write_char(',')?;
                 }
                 write!(w, "{}ms", t.delay_ms)?;
             }
-            let (ox, oy) = self.origins[layer];
+            let (ox, oy) = self.origin(target);
             w.write_str(";transform-origin:")?;
             write_number(w, ox)?;
             w.write_str("px ")?;
             write_number(w, oy)?;
             w.write_str("px}")?;
         }
+        if self.reveal.is_some() {
+            write!(w, ".{prefix}-m{{mask:url(#{prefix}-reveal)}}")?;
+        }
         if let Trigger::Class(class) = &self.trigger {
-            for (i, &layer) in layers.iter().enumerate() {
+            for (i, &target) in targets.iter().enumerate() {
                 w.write_str(if i == 0 { "." } else { ",." })?;
                 write_ident(w, class)?;
-                write!(w, " .{prefix}-e{layer}")?;
+                let (c, n) = Motion::class(target);
+                write!(w, " .{prefix}-{c}")?;
+                if c == 'e' {
+                    write!(w, "{n}")?;
+                }
             }
             w.write_str("{animation-play-state:running}")?;
         }
@@ -1085,6 +1412,133 @@ impl Motion {
             w,
             "@media (prefers-reduced-motion:reduce){{.{prefix} *{{animation:none!important;transition:none!important}}}}"
         )
+    }
+
+    /// Whether the root gets the prefix class (live animation only).
+    pub(crate) fn live(&self) -> bool {
+        self.at.is_none()
+    }
+
+    /// The reveal's progress in a frame, or `None` live.
+    fn reveal_progress(&self) -> Option<f64> {
+        let t = self.at?;
+        Some(
+            self.tracks
+                .iter()
+                .filter(|tr| tr.target == Target::Reveal)
+                .rev()
+                .find_map(|tr| sample(tr, Property::Reveal, 1.0, t))
+                .unwrap_or(1.0),
+        )
+    }
+
+    /// The layers the reveal mask covers, when it is drawn: always live
+    /// (the stylesheet applies it), and in frames until it is fully open.
+    pub(crate) fn reveal_layers(&self) -> Option<(usize, usize)> {
+        let open = self.reveal_progress().is_some_and(|p| p >= 1.0);
+        self.reveal.filter(|_| !open).map(|r| r.layers)
+    }
+
+    /// The reveal's `<mask>`: white wherever the code shows. Its natural
+    /// state covers the whole canvas, so without CSS nothing is hidden.
+    pub(crate) fn write_mask<W: Write + ?Sized>(
+        &self,
+        w: &mut W,
+        prefix: &str,
+        side: i64,
+    ) -> fmt::Result {
+        let Some(r) = &self.reveal else {
+            return Ok(());
+        };
+        let progress = self.reveal_progress();
+        let n = |w: &mut W, v: f64| write_number(w, v);
+        write!(
+            w,
+            "<mask id=\"{prefix}-reveal\" maskUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"{side}\" height=\"{side}\">"
+        )?;
+        // The element that moves: a class live, a fixed transform in a frame.
+        let moving = |w: &mut W, transform: &dyn Fn(&mut W, f64) -> fmt::Result| -> fmt::Result {
+            match progress {
+                None => write!(w, " class=\"{prefix}-r\""),
+                Some(p) if p >= 1.0 => Ok(()),
+                Some(p) => {
+                    w.write_str(" transform=\"")?;
+                    transform(w, p)?;
+                    w.write_char('"')
+                }
+            }
+        };
+        let f = r.feather as f64;
+        match r.shape {
+            RevealShape::Wipe { from, to } => {
+                let (dx, dy) = ((to.0 - from.0) as f64, (to.1 - from.1) as f64);
+                let length = math::sqrt(dx * dx + dy * dy);
+                let angle = math::atan2(dy, dx) * 180.0 / core::f64::consts::PI;
+                let (reach, back) = (2.0 * side as f64, length + 2.0 * f + side as f64);
+                w.write_str("<linearGradient id=\"")?;
+                write!(
+                    w,
+                    "{prefix}-feather\"><stop offset=\"0\" stop-color=\"#fff\"/><stop offset=\"1\" stop-color=\"#fff\" stop-opacity=\"0\"/></linearGradient><g transform=\"translate("
+                )?;
+                n(w, from.0 as f64)?;
+                w.write_char(' ')?;
+                n(w, from.1 as f64)?;
+                w.write_str(") rotate(")?;
+                n(w, angle)?;
+                w.write_str(")\"><g")?;
+                let travel = r.travel();
+                moving(w, &|w, p| {
+                    w.write_str("translate(")?;
+                    write_number(w, -(1.0 - p) * travel)?;
+                    w.write_str(" 0)")
+                })?;
+                w.write_str("><rect x=\"")?;
+                n(w, -back)?;
+                w.write_str("\" y=\"")?;
+                n(w, -reach)?;
+                w.write_str("\" width=\"")?;
+                n(w, back + length)?;
+                w.write_str("\" height=\"")?;
+                n(w, 2.0 * reach)?;
+                w.write_str("\" fill=\"#fff\"/><rect x=\"")?;
+                n(w, length)?;
+                w.write_str("\" y=\"")?;
+                n(w, -reach)?;
+                w.write_str("\" width=\"")?;
+                n(w, f)?;
+                w.write_str("\" height=\"")?;
+                n(w, 2.0 * reach)?;
+                write!(w, "\" fill=\"url(#{prefix}-feather)\"/></g></g>")?;
+            }
+            RevealShape::Iris { center, radius } => {
+                let outer = radius as f64 + f;
+                write!(w, "<radialGradient id=\"{prefix}-iris\"><stop offset=\"")?;
+                n(w, radius as f64 / outer)?;
+                w.write_str("\" stop-color=\"#fff\"/><stop offset=\"1\" stop-color=\"#fff\" stop-opacity=\"0\"/></radialGradient><circle")?;
+                let (cx, cy) = (center.0 as f64, center.1 as f64);
+                moving(w, &|w, p| {
+                    w.write_str("matrix(")?;
+                    for (i, v) in [p, 0.0, 0.0, p, cx * (1.0 - p), cy * (1.0 - p)]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        if i > 0 {
+                            w.write_char(' ')?;
+                        }
+                        write_number(w, v)?;
+                    }
+                    w.write_char(')')
+                })?;
+                w.write_str(" cx=\"")?;
+                n(w, cx)?;
+                w.write_str("\" cy=\"")?;
+                n(w, cy)?;
+                w.write_str("\" r=\"")?;
+                n(w, outer)?;
+                write!(w, "\" fill=\"url(#{prefix}-iris)\"/>")?;
+            }
+        }
+        w.write_str("</mask>")
     }
 }
 
@@ -1111,15 +1565,16 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
             origin: (e.origin.0 as f32, e.origin.1 as f32),
         })
         .collect();
-    let (tracks, total_ms, trigger) = match motion {
-        Some(m) => (m.tracks, m.total_ms, m.trigger),
-        None => (Vec::new(), 0, Trigger::Load),
+    let (tracks, reveal, total_ms, trigger) = match motion {
+        Some(m) => (m.tracks, m.reveal, m.total_ms, m.trigger),
+        None => (Vec::new(), None, 0, Trigger::Load),
     };
     AnimationPlan {
         view_box: (side, side),
         palette: style.palette.clone(),
         layers,
         tracks,
+        reveal,
         total_ms,
         trigger,
         reduced_motion: Fallback::FinalState,
@@ -1230,10 +1685,14 @@ impl AnimationPlan {
             if i > 0 {
                 w.write_char(',')?;
             }
+            match t.target {
+                Target::Layer(i) => write!(w, "{{\"target\":{{\"layer\":{i}}}")?,
+                Target::Reveal => w.write_str("{\"target\":\"reveal\"")?,
+            }
             write!(
                 w,
-                "{{\"layer\":{},\"delayMs\":{},\"durationMs\":{},\"ease\":[",
-                t.layer, t.delay_ms, t.duration_ms
+                ",\"delayMs\":{},\"durationMs\":{},\"ease\":[",
+                t.delay_ms, t.duration_ms
             )?;
             for (j, v) in [t.ease.x1, t.ease.y1, t.ease.x2, t.ease.y2]
                 .into_iter()
@@ -1271,7 +1730,35 @@ impl AnimationPlan {
             }
             w.write_str("]}")?;
         }
-        write!(w, "],\"totalMs\":{},\"trigger\":", self.total_ms)?;
+        w.write_char(']')?;
+        if let Some(r) = &self.reveal {
+            w.write_str(",\"reveal\":{\"shape\":")?;
+            let pair = |w: &mut W, (x, y): (f32, f32)| -> fmt::Result {
+                w.write_char('[')?;
+                json_num(w, x)?;
+                w.write_char(',')?;
+                json_num(w, y)?;
+                w.write_char(']')
+            };
+            match r.shape {
+                RevealShape::Wipe { from, to } => {
+                    w.write_str("\"wipe\",\"from\":")?;
+                    pair(w, from)?;
+                    w.write_str(",\"to\":")?;
+                    pair(w, to)?;
+                }
+                RevealShape::Iris { center, radius } => {
+                    w.write_str("\"iris\",\"center\":")?;
+                    pair(w, center)?;
+                    w.write_str(",\"radius\":")?;
+                    json_num(w, radius)?;
+                }
+            }
+            w.write_str(",\"feather\":")?;
+            json_num(w, r.feather)?;
+            write!(w, ",\"layers\":[{},{}]}}", r.layers.0, r.layers.1)?;
+        }
+        write!(w, ",\"totalMs\":{},\"trigger\":", self.total_ms)?;
         match &self.trigger {
             Trigger::Load => w.write_str("\"load\"")?,
             Trigger::Hover => w.write_str("\"hover\"")?,
@@ -1402,6 +1889,59 @@ mod tests {
         assert!(!svg.contains("1</style>"));
         assert!(svg.contains(".\\31 \\3c \\2f style\\3e  ."));
         assert!(svg.contains("animation-play-state:paused"));
+    }
+
+    #[test]
+    fn reveals_mask_through_the_stylesheet() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
+        for preset in [Preset::Sweep, Preset::Raster, Preset::Iris] {
+            let style = Style::new().intro(preset);
+            let svg = style.render(&qr).unwrap();
+            // Only CSS applies the mask; the document alone is unmasked.
+            assert!(!svg.contains(" mask=\""), "{preset:?}");
+            assert!(svg.contains("-m{mask:url(#"), "{preset:?}");
+            assert_eq!(svg.matches("<mask ").count(), 1);
+            let plan = style.plan(&qr).unwrap();
+            assert_eq!(plan.tracks[0].target, Target::Reveal);
+            assert_eq!(plan.reveal.unwrap().layers.0, 1, "background stays out");
+            // Frames carry the mask until it's fully open.
+            assert!(style.render_frame(&qr, 100).unwrap().contains(" mask=\""));
+            assert!(
+                !style
+                    .render_frame(&qr, plan.total_ms)
+                    .unwrap()
+                    .contains("<mask")
+            );
+        }
+    }
+
+    #[test]
+    fn lock_on_starts_with_the_finders() {
+        let qr = QrCode::encode("https://example.com/menu", Ecc::M).unwrap();
+        let plan = Style::new().intro(Preset::LockOn).plan(&qr).unwrap();
+        let start = |role| {
+            plan.tracks
+                .iter()
+                .filter(|t| matches!(t.target, Target::Layer(i) if plan.layers[i].role == role))
+                .map(|t| t.delay_ms)
+                .min()
+                .unwrap()
+        };
+        assert_eq!(start(LayerRole::FinderOuter), 0);
+        assert_eq!(start(LayerRole::FinderEye), 150);
+        // The rest waits for 60% of the finders' 480 ms.
+        assert_eq!(start(LayerRole::Data), 288);
+    }
+
+    #[test]
+    fn assemble_offsets_are_seeded_and_bounded() {
+        for g in 0..16 {
+            let (dx, dy) = scatter(7, g);
+            let r = math::sqrt((dx * dx + dy * dy) as f64);
+            assert!((1.49..=3.01).contains(&r), "{r}");
+            assert_eq!(scatter(7, g), (dx, dy));
+        }
+        assert_ne!(scatter(7, 0), scatter(8, 0));
     }
 
     #[test]

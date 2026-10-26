@@ -91,6 +91,28 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "Ripple intro",
+        &[
+            ("intro", "ripple"),
+            ("shape", "liquid:0.8"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
+        "Lock-on intro",
+        &[("intro", "lock-on"), ("shape", "rounded:0.4")],
+    ),
+    (
+        "Iris intro",
+        &[
+            ("intro", "iris"),
+            ("shape", "dots:0.85"),
+            ("frame", "circle:0.5"),
+            ("frame-ring", "solid"),
+            ("quiet-zone", "2"),
+        ],
+    ),
+    (
         "Mixed corners",
         &[
             ("corner", "top-right=leaf/circle"),

@@ -138,3 +138,18 @@ fn settle_intro_on_dots() {
         .intro(Intro::new(Preset::Settle).groups(4));
     insta::assert_snapshot!(render(style, 1));
 }
+
+#[test]
+fn sweep_reveal_with_logo() {
+    let logo =
+        Logo::svg(r##"<svg viewBox="0 0 4 4"><circle cx="2" cy="2" r="2" fill="#c33"/></svg>"##)
+            .unwrap()
+            .scale(0.2);
+    let style = Style::new().logo(logo).intro(Preset::Sweep);
+    let qr = QrCode::builder()
+        .ecc(Ecc::H)
+        .version(Version::new(5).unwrap())
+        .encode_text("HELLO")
+        .unwrap();
+    insta::assert_snapshot!(style.minify(false).render(&qr).unwrap());
+}

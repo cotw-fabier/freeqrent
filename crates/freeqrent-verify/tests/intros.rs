@@ -96,26 +96,69 @@ fn static_state_is_the_plain_code() {
         .encode_text("https://example.com/logo")
         .unwrap();
     let plain = Style::new().logo(logo);
-    assert_same_picture(&plain, &plain.clone().intro(Preset::Settle), &qr, "logo");
-}
-
-#[test]
-fn animated_codes_scan() {
-    for shape in shapes() {
-        let style = Style::new().modules(shape).intro(Preset::Settle);
-        assert_scans(&style, &format!("settle {shape:?}"));
+    for preset in Preset::ALL {
+        let animated = plain.clone().intro(preset);
+        assert_same_picture(&plain, &animated, &qr, &format!("logo {preset:?}"));
     }
 }
 
 #[test]
-fn settle_scans_before_it_ends() {
+fn every_preset_keeps_the_static_state() {
+    // The reveal presets add a mask whose natural state covers the canvas;
+    // the group presets split layers. Either way nothing may change.
+    for preset in Preset::ALL {
+        for shape in [
+            ModuleShape::SQUARE,
+            ModuleShape::Liquid { smoothness: 1.0 },
+            ModuleShape::Bars {
+                axis: freeqrent::Axis::Vertical,
+                radius: 0.5,
+            },
+        ] {
+            for frame in [
+                Frame::Square,
+                Frame::Circle {
+                    filler_density: 0.5,
+                    ring: FrameRing::Solid,
+                },
+            ] {
+                let plain = Style::new().modules(shape).frame(frame);
+                let animated = plain.clone().intro(preset);
+                for &(text, version) in &PAYLOADS[1..3] {
+                    let qr = code(text, version);
+                    assert_same_picture(
+                        &plain,
+                        &animated,
+                        &qr,
+                        &format!("{preset:?} {shape:?} {frame:?} v{version}"),
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn animated_codes_scan() {
+    for preset in Preset::ALL {
+        for shape in shapes() {
+            let style = Style::new().modules(shape).intro(preset);
+            assert_scans(&style, &format!("{preset:?} {shape:?}"));
+        }
+    }
+}
+
+#[test]
+fn intros_scan_before_they_end() {
     // Measured, printed for the log: when the code is readable for good.
-    for &(text, version) in &PAYLOADS {
-        let qr = code(text, version);
-        let style = Style::new().intro(Preset::Settle);
-        let total = style.plan(&qr).unwrap().total_ms;
-        let at = scannable_after(&style, &qr, text, 50).unwrap();
-        println!("settle v{version}: scannable from {at} ms of {total}");
-        assert!(at <= total, "v{version}: {at} > {total}");
+    for preset in Preset::ALL {
+        for &(text, version) in &PAYLOADS {
+            let qr = code(text, version);
+            let style = Style::new().intro(preset);
+            let total = style.plan(&qr).unwrap().total_ms;
+            let at = scannable_after(&style, &qr, text, 50).unwrap();
+            println!("{preset:?} v{version}: scannable from {at} ms of {total}");
+            assert!(at <= total, "{preset:?} v{version}: {at} > {total}");
+        }
     }
 }

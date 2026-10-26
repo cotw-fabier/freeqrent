@@ -393,7 +393,7 @@ fn check_intro(
         10_000.0,
     );
     in_range(errors, "Intro.groups", intro.groups as f32, 2.0, 16.0);
-    if let crate::Ease::Custom(c) = intro.ease {
+    if let Some(crate::Ease::Custom(c)) = intro.ease {
         in_range(errors, "CubicBezier.x1", c.x1, 0.0, 1.0);
         in_range(errors, "CubicBezier.x2", c.x2, 0.0, 1.0);
         in_range(errors, "CubicBezier.y1", c.y1, -10.0, 10.0);
