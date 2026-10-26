@@ -131,7 +131,10 @@ pub(crate) fn sin_cos(x: f64) -> (f64, f64) {
 }
 
 /// Square root of `x ≥ 0`.
-#[cfg_attr(not(feature = "animate"), allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "animate", feature = "palette-extract")),
+    allow(dead_code)
+)]
 pub(crate) fn sqrt(x: f64) -> f64 {
     if x <= 0.0 {
         return 0.0;
@@ -142,7 +145,10 @@ pub(crate) fn sqrt(x: f64) -> f64 {
 }
 
 /// `atan(y / x)` in the right quadrant, in `(−π, π]`.
-#[cfg_attr(not(feature = "animate"), allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "animate", feature = "palette-extract")),
+    allow(dead_code)
+)]
 pub(crate) fn atan2(y: f64, x: f64) -> f64 {
     if x == 0.0 && y == 0.0 {
         return 0.0;
@@ -163,7 +169,10 @@ pub(crate) fn atan2(y: f64, x: f64) -> f64 {
 
 /// `atan t` for `0 ≤ t ≤ 1`: shifted by π/6 below tan(π/12), then a
 /// short series.
-#[cfg_attr(not(feature = "animate"), allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "animate", feature = "palette-extract")),
+    allow(dead_code)
+)]
 fn atan_unit(t: f64) -> f64 {
     const TAN_PI_12: f64 = 0.267_949_192_431_122_7;
     const SQRT_3: f64 = 1.732_050_807_568_877_2;

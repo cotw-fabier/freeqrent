@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026073538 · M4 · Image palettes
+
+- Landed: `palette-extract` feature (default, no deps) with `Palette::from_image(&Rgba8Image, PaletteOpts)`: alpha-weighted box downsample to ≤ 64×64, seeded weighted k-means++ in OKLab, role assignment for `bg`/`fg`/`finder.eye` with darkening at constant hue, and a `PaletteReport` (swatches, choices, origins). `Rgba8Image` in the core, always available.
+- Decision: extraction's minimum contrast is 0.66, not 0.60. Measured: v1 codes on backgrounds from L 0.80 to 0.95 failed ZXing on the blurred, noisy render up to ΔL 0.64 (every v1 payload tried, none from v2 up); near-white backgrounds pass at 0.60. Vivid colors (chroma > 0.12) never become `bg`; a saturated green background picked from a hue wheel was what exposed this.
+- Finding: `Style::check`'s 0.60 warning line has the same v1 gap for hand-set palettes on darker backgrounds. Not changed here; see ROADMAP.
+- Checks: eight synthetic sources × three option sets check clean and scan (Square, Dots; v1–v10); extraction and render are deterministic.
+
 ## M3 complete · 2026-10-26
 
 Animation done: intros as data (`AnimationPlan`, `to_json`, `render_frame`), CSS keyframes in the `@supports` block that end on the finished code, a grouping engine of whole pieces that keeps the static state pixel-identical, seven presets plus the logo reveal, triggers, reduced motion, palette shifts and theme transitions, and three idle loops. `Develop` moves to M5 with halftone. Waves 20261025233019, 20261025234738, 20261025235601.

@@ -221,13 +221,15 @@ Paint is written at two levels, because renderers disagree about CSS:
 
 ### 6.4 Auto tokens (feature 6) — `palette-extract`
 
-**From an image:** `Palette::from_image(&Rgba8Image, PaletteOpts)`
-- The core takes a raw RGBA buffer. Decoding PNG/JPEG lives in `freeqrent-image`, so the core stays dependency-free.
-- Algorithm: downsample to ≤ 64×64, cluster in **OKLab** (k-means++, k = 6, seeded), weight clusters by population × chroma, then assign roles:
-  - `bg` = the lightest high-population cluster (or a tinted near-white derived from the dominant hue)
-  - `fg` = the darkest cluster that meets the contrast floor against `bg`. If none qualifies, the dominant hue is darkened in OKLCH until it passes.
-  - `finder.eye` = the most chromatic cluster that passes contrast (the "accent")
-- Returns a `Palette` along with a `PaletteReport` that shows which colors were adjusted and why.
+**From an image:** `Palette::from_image(&Rgba8Image, PaletteOpts) -> Result<(Palette, PaletteReport), ExtractError>` *(rev. W20261026073538)*
+- The core takes a raw RGBA buffer (`Rgba8Image`: owned, sRGB, not premultiplied; always available, since halftone reads it too). Decoding PNG/JPEG lives in `freeqrent-image`, so the core stays dependency-free.
+- Algorithm: box-average down to ≤ 64×64 in linear light, weighted by alpha (cells under 5% coverage are dropped, so a logo's transparent surroundings don't become a color), then cluster in **OKLab** with weighted k-means++ (k = 6 by default, 2–12; seeded, default 0; at most 24 Lloyd rounds). Every step is f64 in a fixed order, so the result is deterministic. Then assign roles:
+  - `bg` = the lightest cluster with ≥ 10% share, L ≥ 0.85 and chroma ≤ 0.12 (pastels yes, vivid colors no). Otherwise a tinted near-white, `oklch(97% c h)`, with the dominant hue at a fifth of its chroma (at most 0.015), or neutral.
+  - `fg` = the darkest cluster with ≥ 2% share. If it doesn't reach the minimum contrast, the dominant hue (the most common cluster with chroma ≥ 0.04) is darkened in OKLCH at constant chroma and hue until it does.
+  - `finder.eye` = the cluster with chroma ≥ 0.06 and the highest share × chroma, other than `fg`'s, darkened if needed. It's left unset (following `fg`) when there is none or when it lands within ΔE 0.1 of `fg`.
+  - The minimum contrast is `PaletteOpts::min_contrast`, default **0.66** (`EXTRACT_CONTRAST`), range 0.60–0.90. Measured: v1 codes on backgrounds between L 0.80 and 0.95 fail ZXing on the blurred, noisy render up to ΔL 0.64 and pass from 0.66, while near-white backgrounds pass at 0.60. So extracted palettes check clean and pass the full verify bar.
+  - Colors come out as `oklch()`.
+- The `PaletteReport` lists the clusters as `Swatch { color, share }`, most common first, and one `Choice { token, color, origin }` per token set, where `origin` is `Swatch(i)`, `Tinted(Option<i>)` or `Darkened { swatch, delta_l }` (the contrast before darkening). `ExtractError::NoColors` when every pixel is transparent.
 
 **From a site:** `Palette::from_css(&str)` / `Palette::from_html(&str)`
 - Parses `<meta name="theme-color">`, `:root` custom properties, and color literals in inline `<style>`, and ranks them by frequency and selector importance (`:root`, `body`, `a`, `button`).

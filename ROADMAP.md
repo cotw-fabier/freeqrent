@@ -38,6 +38,10 @@ Each item says where it came from, so we remember why it's here.
 - **Shimmer clipped to the frame:** the band crosses the whole square canvas, including the corners outside a round frame (W20261025235601).
 - **Animated gradient tokens:** palette shifts swap gradients at once; re-themable stops (above) would let them fade (W20261025235601).
 
+## Scannability
+
+- **Lightness-aware contrast warning:** `check` warns below ΔL 0.60, but v1 codes on backgrounds between L 0.80 and 0.95 fail the blurred, noisy ZXing render up to ΔL 0.64 (W20261026073538). Only v1 failed, so the rule should be measured across versions before `check` changes; the synthetic noise clips at white, which favors near-white backgrounds, so a real-camera check (M5's device matrix) should set it.
+
 ## Bindings
 
 - **Native Node build via `napi-rs`**, if WASM performance isn't enough (SPEC §10.2).

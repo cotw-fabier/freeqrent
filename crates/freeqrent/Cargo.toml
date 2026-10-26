@@ -12,9 +12,11 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-default = ["std", "animate"]
+default = ["std", "animate", "palette-extract"]
 # Intro animations as CSS keyframes, `AnimationPlan` and frame renders.
 animate = []
+# Palettes derived from pixels (`Palette::from_image`) and CSS/HTML text.
+palette-extract = []
 # `std::error::Error` impls (and later the `std::io::Write` sink).
 std = []
 # Kanji mode for JIS X 0208 text (adds a ~27 KB table).

@@ -31,8 +31,11 @@ mod check;
 mod code;
 mod color;
 mod error;
+#[cfg(feature = "palette-extract")]
+mod extract;
 mod geometry;
 mod gf;
+mod image;
 #[cfg(feature = "kanji")]
 mod kanji_table;
 mod logo;
@@ -63,6 +66,11 @@ pub use check::{
 pub use code::{QrBuilder, QrCode};
 pub use color::{Color, ColorError};
 pub use error::EncodeError;
+#[cfg(feature = "palette-extract")]
+pub use extract::{
+    Choice, EXTRACT_CONTRAST, ExtractError, Origin, PaletteOpts, PaletteReport, Swatch,
+};
+pub use image::{ImageError, Rgba8Image};
 pub use logo::{Logo, LogoError, LogoShape, RasterFormat};
 pub use matrix::{CapacityReport, Corner, FinderRing, Mask, ModuleRole, QrMatrix};
 pub use palette::{
