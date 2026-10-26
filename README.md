@@ -12,7 +12,12 @@ Styled and animated SVG QR codes from a zero-dependency Rust core. MIT licensed.
   <img src="docs/showcase/achievement.svg" width="250" alt="A red-to-violet QR code made of vertical bars">
   <img src="docs/showcase/hug.svg" width="250" alt="A round, blue dotted QR code with violet eyes">
 </p>
-<p align="center"><em>Every one of these scans, and every one of them has something to say. Point a phone at them.</em></p>
+<p align="center">
+  <img src="docs/showcase/art-penguin.svg" width="250" alt="Art mode: a top-hatted penguin in a tailcoat, drawn in color halftone">
+  <img src="docs/showcase/art-samurai.svg" width="250" alt="Art mode: a samurai in a crashing ink wave, in indigo-to-crimson ink">
+  <img src="docs/showcase/art-windmill.svg" width="250" alt="Art mode: two children walking toward a windmill under an aurora">
+</p>
+<p align="center"><em>Every one of these scans, and every one of them has something to say. Point a phone at them.<br>The intros replay every five seconds (<code>Trigger::Every</code>).</em></p>
 
 <details>
 <summary>Spoilers: what they say, and how they were made</summary>
@@ -25,8 +30,11 @@ Styled and animated SVG QR codes from a zero-dependency Rust core. MIT licensed.
 | Terminal | You found the secret level. There is no secret level. | inverted, raster intro, shimmer |
 | Bars | Achievement unlocked: pointed phone at square | vertical bars, polar iris intro, pulsing finders |
 | Bubble | This QR code is legally a hug | round frame, radial settle intro, breathing |
+| Penguin | Dress code: black tie. Species: penguin. | art mode in color ink, develop intro |
+| Samurai | Forged in Rust. Folded 1,000 times. | art mode in gradient ink, sweep intro |
+| Windmill | Not all who wander are lost. Some are just scanning. | art mode in color ink, ripple intro, shimmer |
 
-Each was rendered by the `freeqrent` CLI and decoded with ZXing before it was written. The exact flags are in [`scripts/showcase.sh`](scripts/showcase.sh).
+Each was rendered by the `freeqrent` CLI and decoded with ZXing (and rqrr, where it reads the style) before it was written. The exact flags are in [`scripts/showcase.sh`](scripts/showcase.sh); the art pieces start from the owner's own wallpapers, in [`docs/showcase/pictures`](docs/showcase/pictures).
 
 </details>
 
@@ -99,7 +107,7 @@ let style = Style::new().palette(palette); // report.choices says where each tok
 
 ## Pictures and motion
 
-`Halftone::new(image)` draws a picture into any code's modules, choosing the code's spare data bits so its modules follow the picture. `Style::art(halftone)` is the large-image setup, with crisp tracking boxes. `Intro::new(Preset::Settle)` and seven other presets play the code in. `Style::plan` exports the same motion as data, for players outside CSS.
+`Halftone::new(image)` draws a picture into any code's modules, choosing the code's spare data bits so its modules follow the picture. `Style::art(halftone)` is the large-image setup, with crisp tracking boxes. `Intro::new(Preset::Settle)` and seven other presets play the code in, once or, with `Trigger::Every(ms)`, again every few seconds. `Style::plan` exports the same motion as data, for players outside CSS.
 
 ```rust
 use freeqrent::{Ecc, Intro, Preset, QrCode, Style};

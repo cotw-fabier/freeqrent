@@ -88,7 +88,8 @@ Style:
   --stagger ORDER          radial, linear, diagonal, random[:seed], polar
   --ease EASE              quart, quint, expo, or x1,y1,x2,y2
   --groups N               stagger groups, 2-16 (default 12)
-  --trigger TRIGGER        load, hover, class:NAME
+  --trigger TRIGGER        load, hover, class:NAME, every:MS (replays the intro
+                           every MS, e.g. in a README; at least twice the intro)
   --from-token NAME=PAINT  cross-fade from these colors instead of an intro
   --from-fg C, --from-bg C shortcuts for --from-token fg=C, bg=C
   --idle LOOP              finder-pulse, shimmer, breathe, logo-glint,

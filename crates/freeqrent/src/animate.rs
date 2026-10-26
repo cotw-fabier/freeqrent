@@ -140,6 +140,16 @@ pub enum Trigger {
     /// added the code waits in its intro state, so a page that never adds
     /// it shows nothing; reduced motion still shows the code.
     Class(String),
+    /// The document loading, and again every this many milliseconds, so
+    /// the intro replays where nothing can start it (an `<img>`, a README).
+    /// Between runs the finished code holds; the intro must end by half
+    /// the period ([`RenderError::ReplayTooSoon`](crate::RenderError)),
+    /// 1000–60000. Idle loops run on through the replays, and a palette
+    /// shift plays once. Frames and plans describe one run: a player
+    /// restarts the finite tracks every period and composes the endless
+    /// ones with them (CSS writes their transforms as the individual
+    /// `translate`, `rotate` and `scale` properties).
+    Every(u32),
 }
 
 /// A preset intro (SPEC §8.3).
@@ -839,6 +849,8 @@ pub(crate) struct Motion {
     pub(crate) reveal: Option<Reveal>,
     pub(crate) total_ms: u32,
     pub(crate) trigger: Trigger,
+    /// Each element's opacity at rest, which a replay holds between runs.
+    pub(crate) rest_opacity: Vec<f64>,
     /// For a frame: the time it shows. Frames get poses, not CSS.
     pub(crate) at: Option<u32>,
 }
@@ -1970,6 +1982,7 @@ pub(crate) fn build(
         tracks,
         total_ms,
         trigger: intro.map_or(Trigger::Load, |i| i.trigger.clone()),
+        rest_opacity: elements.iter().map(|e| rest(e.role).opacity).collect(),
         at,
     };
     // A picture's strokes in one group move alike: live, they share one
@@ -2179,12 +2192,24 @@ fn write_curve<W: Write + ?Sized>(w: &mut W, c: CubicBezier) -> fmt::Result {
     w.write_char(')')
 }
 
-/// One keyframe list as CSS rules, grouped by offset.
-fn write_keyframes<W: Write + ?Sized>(w: &mut W, keys: &[Keyframe]) -> fmt::Result {
+/// One keyframe list as CSS rules, grouped by offset. `individual` writes
+/// transforms as the `translate`, `rotate` and `scale` properties, which
+/// compose with another animation's `transform` instead of replacing it.
+fn write_keyframes<W: Write + ?Sized>(
+    w: &mut W,
+    keys: &[Keyframe],
+    individual: bool,
+) -> fmt::Result {
     // A list that turns or flips writes those functions in every rule, so
     // neighboring transforms match and interpolate by angle, not matrix.
     let turns = keys.iter().any(|k| k.property == Property::Rotate);
     let flips = keys.iter().any(|k| k.property == Property::ScaleY);
+    let moves = keys
+        .iter()
+        .any(|k| matches!(k.property, Property::TranslateX | Property::TranslateY));
+    let scales = keys
+        .iter()
+        .any(|k| matches!(k.property, Property::Scale | Property::ScaleY));
     let mut offsets: Vec<f32> = keys.iter().map(|k| k.offset).collect();
     crate::sort::sort_by(&mut offsets, |a, b| a.total_cmp(b));
     offsets.dedup();
@@ -2230,7 +2255,33 @@ fn write_keyframes<W: Write + ?Sized>(w: &mut W, keys: &[Keyframe]) -> fmt::Resu
                 _ => {}
             }
         }
-        if at.iter().any(|k| k.property.is_transform()) {
+        if individual && at.iter().any(|k| k.property.is_transform()) {
+            // Each property the list moves, in every rule that moves any.
+            if moves {
+                sep(w)?;
+                w.write_str("translate:")?;
+                write_number(w, num(Property::TranslateX, 0.0))?;
+                w.write_str("px ")?;
+                write_number(w, num(Property::TranslateY, 0.0))?;
+                w.write_str("px")?;
+            }
+            if turns {
+                sep(w)?;
+                w.write_str("rotate:")?;
+                write_number(w, num(Property::Rotate, 0.0))?;
+                w.write_str("deg")?;
+            }
+            if scales {
+                sep(w)?;
+                w.write_str("scale:")?;
+                let s = num(Property::Scale, 1.0);
+                write_number(w, s)?;
+                if flips {
+                    w.write_char(' ')?;
+                    write_number(w, s * num(Property::ScaleY, 1.0))?;
+                }
+            }
+        } else if at.iter().any(|k| k.property.is_transform()) {
             sep(w)?;
             w.write_str("transform:")?;
             let (tx, ty, s) = (
@@ -2328,6 +2379,70 @@ fn css_keys(track: &Track, reveal: Option<&Reveal>, dashes: &[Option<f64>]) -> V
         .collect()
 }
 
+/// An intro track replayed every `every` ms ([`Trigger::Every`]): one
+/// endless iteration as long as the period, which waits in the track's
+/// first state until its delay, plays the track, then holds the layer's
+/// natural values (`opacity` for opacity) until the period ends.
+fn replay(track: &Track, every: u32, opacity: f64) -> Track {
+    // Intro tracks run once.
+    debug_assert_eq!(track.iterations, Some(1));
+    let period = every.max(1) as f64;
+    let start = (track.delay_ms as f64 / period) as f32;
+    let span = (track.duration_ms as f64 / period) as f32;
+    let end = start + span;
+    let natural = |p: Property| match p {
+        Property::Opacity => opacity as f32,
+        Property::Scale | Property::ScaleY | Property::Draw | Property::Reveal => 1.0,
+        _ => 0.0,
+    };
+    let mut keys: Vec<Keyframe> = Vec::new();
+    let mut push = |k: Keyframe| {
+        if !keys
+            .iter()
+            .any(|o| o.offset == k.offset && o.property == k.property)
+        {
+            keys.push(k);
+        }
+    };
+    for k in &track.keys {
+        push(Keyframe {
+            offset: start + k.offset * span,
+            ..*k
+        });
+    }
+    let mut properties: Vec<Property> = Vec::new();
+    for k in &track.keys {
+        if !properties.contains(&k.property) {
+            properties.push(k.property);
+        }
+    }
+    for p in properties {
+        let first = track
+            .keys
+            .iter()
+            .find(|k| k.property == p && k.offset == 0.0)
+            .map_or(Value::Number(natural(p)), |k| k.value);
+        for offset in [0.0, start] {
+            push(Keyframe {
+                offset,
+                property: p,
+                value: first,
+            });
+        }
+        if end < 1.0 {
+            push(number(p, end, natural(p)));
+        }
+    }
+    crate::sort::sort_by(&mut keys, |a, b| a.offset.total_cmp(&b.offset));
+    Track {
+        delay_ms: 0,
+        duration_ms: every,
+        iterations: None,
+        keys,
+        ..track.clone()
+    }
+}
+
 impl Motion {
     /// The selector suffix of a track's element: `e{n}` or `r`.
     fn class(target: Target) -> (char, usize) {
@@ -2358,21 +2473,52 @@ impl Motion {
         if self.at.is_some() {
             return Ok(());
         }
-        // Joined elements move with the one before them.
-        let tracks: Vec<&Track> = self
+        let every = match self.trigger {
+            Trigger::Every(ms) => Some(ms),
+            _ => None,
+        };
+        // Joined elements move with the one before them. Replayed, the
+        // intro's tracks become endless ones as long as the period; a
+        // palette shift's fades (the only fill tracks) play once.
+        let own: Vec<&Track> = self
             .tracks
             .iter()
             .filter(|t| !matches!(t.target, Target::Layer(i) if self.joined[i]))
             .collect();
-        // Identical keyframe lists are written once.
-        let keys: Vec<Vec<Keyframe>> = tracks
+        let replayed: Vec<Track> = own
             .iter()
-            .map(|t| css_keys(t, self.reveal.as_ref(), &self.dashes))
+            .map(|&t| match every {
+                Some(ms)
+                    if t.iterations.is_some()
+                        && !t.keys.iter().any(|k| k.property == Property::Fill) =>
+                {
+                    let opacity = match t.target {
+                        Target::Layer(i) => self.rest_opacity[i],
+                        Target::Reveal => 1.0,
+                    };
+                    replay(t, ms, opacity)
+                }
+                _ => t.clone(),
+            })
             .collect();
-        let mut lists: Vec<&[Keyframe]> = Vec::new();
+        let tracks: Vec<&Track> = replayed.iter().collect();
+        // Identical keyframe lists are written once. Replayed, the idle
+        // loops move through the individual transform properties, so they
+        // compose with the intro's `transform`.
+        let keys: Vec<(Vec<Keyframe>, bool)> = tracks
+            .iter()
+            .zip(&own)
+            .map(|(t, o)| {
+                (
+                    css_keys(t, self.reveal.as_ref(), &self.dashes),
+                    every.is_some() && o.iterations.is_none(),
+                )
+            })
+            .collect();
+        let mut lists: Vec<&(Vec<Keyframe>, bool)> = Vec::new();
         let name_of: Vec<usize> = keys
             .iter()
-            .map(|k| match lists.iter().position(|l| *l == k.as_slice()) {
+            .map(|k| match lists.iter().position(|l| *l == k) {
                 Some(i) => i,
                 None => {
                     lists.push(k);
@@ -2380,9 +2526,9 @@ impl Motion {
                 }
             })
             .collect();
-        for (i, keys) in lists.iter().enumerate() {
+        for (i, (keys, individual)) in lists.iter().enumerate() {
             write!(w, "@keyframes {prefix}-k{i}{{")?;
-            write_keyframes(w, keys)?;
+            write_keyframes(w, keys, *individual)?;
             w.write_char('}')?;
         }
         // Each target once, in order of its first track.
@@ -2901,6 +3047,7 @@ impl AnimationPlan {
                 json_str(w, c)?;
                 w.write_char('}')?;
             }
+            Trigger::Every(ms) => write!(w, "{{\"every\":{ms}}}")?,
         }
         w.write_str(",\"reducedMotion\":\"final-state\"}")
     }
@@ -3159,6 +3306,120 @@ mod tests {
         assert!(!svg.contains(" infinite backwards"));
         // The band rests left of the canvas.
         assert!(svg.contains("fill=\"url(#") && svg.contains("d=\"m-17.4 0h17.4v29h-17.4z\""));
+    }
+
+    #[test]
+    fn replays_play_the_run_again_and_hold_the_code_between() {
+        let plain = QrCode::encode("HELLO", Ecc::M).unwrap();
+        let mut styles: Vec<(Style, &str)> = Preset::ALL
+            .iter()
+            .map(|&p| (Style::new().intro(Intro::new(p).delay_ms(200)), "plain"))
+            .collect();
+        for logo in LogoIntro::ALL {
+            for frame in [crate::LogoFrame::Ring, crate::LogoFrame::Orbit] {
+                styles.push((
+                    framed(frame).intro(Intro::new(Preset::Sweep).logo(logo)),
+                    "logo",
+                ));
+            }
+        }
+        for (style, kind) in styles {
+            let qr = if kind == "logo" {
+                framed_code(&style)
+            } else {
+                plain.clone()
+            };
+            let intro = style.intro.as_ref().unwrap().clone();
+            let plan = style.plan(&qr).unwrap();
+            for (track, layer) in plan.tracks.iter().filter_map(|t| match t.target {
+                Target::Layer(i) => Some((t, &plan.layers[i])),
+                Target::Reveal => None,
+            }) {
+                let looped = replay(track, 5000, layer.opacity as f64);
+                assert_eq!((looped.iterations, looped.delay_ms), (None, 0));
+                assert!(looped.keys.iter().all(|k| k.offset < 1.0), "{intro:?}");
+                let natural = |p: Property| match p {
+                    Property::Opacity => layer.opacity as f64,
+                    Property::Scale | Property::ScaleY | Property::Draw => 1.0,
+                    _ => 0.0,
+                };
+                for p in [
+                    Property::Opacity,
+                    Property::Scale,
+                    Property::TranslateX,
+                    Property::TranslateY,
+                    Property::Rotate,
+                    Property::Draw,
+                ] {
+                    let once = |t| sample(track, p, natural(p), t).unwrap_or(natural(p));
+                    let again = |t| sample(&looped, p, natural(p), t).unwrap_or(natural(p));
+                    // The first run is the one-shot intro, the second the
+                    // same, and the code holds from the end to the period.
+                    for t in (0..5000).step_by(50) {
+                        let want = once(t);
+                        for got in [again(t), again(t + 5000)] {
+                            assert!(
+                                (got - want).abs() < 1e-3,
+                                "{intro:?} {p:?} at {t}: {got} != {want}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn replays_compose_idles_and_keep_palette_shifts_once() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
+        let style = Style::new()
+            .intro(Intro::new(Preset::Settle).trigger(Trigger::Every(5000)))
+            .idle(Idle::FinderPulse);
+        let svg = style.render(&qr).unwrap();
+        let css = &svg[..svg.find("</style>").unwrap()];
+        assert!(css.contains(" 5000ms ") && !css.contains("backwards"));
+        // The pulse scales through `scale`, so the eyes' intro still runs.
+        assert!(css.contains("{7.5%{scale:1.06}15%{scale:1}}"));
+        assert!(!css.contains("transform:scale(1.06)"));
+        assert!(!css.contains("100%"));
+        let plan = style.plan(&qr).unwrap();
+        assert!(plan.to_json().contains("\"trigger\":{\"every\":5000}"));
+        // One run in the plan, and in frames: the same as on load.
+        let load = Style::new()
+            .intro(Preset::Settle)
+            .idle(Idle::FinderPulse)
+            .plan(&qr)
+            .unwrap();
+        assert_eq!((plan.tracks, plan.total_ms), (load.tracks, load.total_ms));
+
+        let old = Palette::from_tokens([("fg", "#7a1f10")]).unwrap();
+        let shift = Style::new()
+            .intro(Intro::palette_from(&old).trigger(Trigger::Every(5000)))
+            .render(&qr)
+            .unwrap();
+        assert!(shift.contains(" backwards") && !shift.contains(" infinite"));
+    }
+
+    #[test]
+    fn replays_need_twice_the_intro() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
+        let every = |ms, intro: Intro| Style::new().intro(intro.trigger(Trigger::Every(ms)));
+        let intro = Intro::new(Preset::Ripple).duration_ms(1400).delay_ms(100);
+        assert!(every(3000, intro.clone()).check(&qr).ok());
+        assert_eq!(
+            every(2999, intro.clone()).check(&qr).errors,
+            [crate::RenderError::ReplayTooSoon {
+                every_ms: 2999,
+                intro_ms: 1500
+            }]
+        );
+        assert!(matches!(
+            every(70_000, intro).check(&qr).errors[..],
+            [crate::RenderError::OptionOutOfRange {
+                option: "Trigger::Every",
+                ..
+            }]
+        ));
     }
 
     fn framed(frame: crate::LogoFrame) -> Style {

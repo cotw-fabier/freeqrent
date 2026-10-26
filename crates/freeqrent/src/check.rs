@@ -153,6 +153,15 @@ pub enum RenderError {
     /// frame must be [`LogoFrame::Orbit`](crate::LogoFrame::Orbit) or sit
     /// on a [`LogoShape::Circle`] plate.
     TurnNeedsRoundFrame,
+    /// An intro replayed with [`Trigger::Every`](crate::Trigger::Every)
+    /// must end by half the period, so the finished code shows at least
+    /// half the time. Lengthen the period or shorten the intro.
+    ReplayTooSoon {
+        /// The period.
+        every_ms: u32,
+        /// When the intro ends: its delay and duration.
+        intro_ms: u32,
+    },
     /// The output sink returned an error.
     Write,
 }
@@ -194,6 +203,11 @@ impl fmt::Display for RenderError {
             RenderError::TurnNeedsRoundFrame => {
                 f.write_str("the logo-turn idle needs an orbit frame or a frame on a circle plate")
             }
+            RenderError::ReplayTooSoon { every_ms, intro_ms } => write!(
+                f,
+                "the intro ends at {intro_ms} ms; replaying it every {every_ms} ms needs a period of at least {} ms",
+                2 * intro_ms
+            ),
             RenderError::LogoTooLarge { max_scale } => write!(
                 f,
                 "the logo is too large for this code; at most scale {max_scale:.2} fits"
@@ -613,6 +627,13 @@ fn check_intro(
         in_range(errors, "CubicBezier.x2", c.x2, 0.0, 1.0);
         in_range(errors, "CubicBezier.y1", c.y1, -10.0, 10.0);
         in_range(errors, "CubicBezier.y2", c.y2, -10.0, 10.0);
+    }
+    if let crate::Trigger::Every(every_ms) = intro.trigger {
+        in_range(errors, "Trigger::Every", every_ms as f32, 1000.0, 60_000.0);
+        let intro_ms = intro.delay_ms.saturating_add(intro.duration_ms);
+        if intro.entrance().is_some() && every_ms < intro_ms.saturating_mul(2) {
+            errors.push(RenderError::ReplayTooSoon { every_ms, intro_ms });
+        }
     }
     if intro.duration_ms > LONG_INTRO_MS {
         warnings.push(Warning::LongIntro {

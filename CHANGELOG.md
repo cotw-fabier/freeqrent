@@ -16,7 +16,7 @@ The first release. Phase 1 of [`SPEC.md`](SPEC.md), milestones M0–M6:
 - **Logos:** sanitized SVG or raster logos on plates, with frames (ring, beads, stamp, brackets, orbit). Each logo is fitted to its error-correction budget: `encode_*_for` grows the code until the logo fits.
 - **Palettes:** from pixels, CSS and HTML (`palette-extract`), with `freeqrent-image` for PNG and JPEG.
 - **Pictures:** halftone sub-cells, module steering on the free data bits, clarity maps, and art mode with tracking grids (`halftone`).
-- **Animation:** eight intro presets, logo and frame intros, idle loops, palette transitions, reduced-motion fallbacks and the exportable `AnimationPlan` (`animate`). The static state is always the finished code.
+- **Animation:** eight intro presets, logo and frame intros, idle loops, palette transitions, reduced-motion fallbacks and the exportable `AnimationPlan` (`animate`). Intros play on load, on hover, when a class is added, or again every few seconds (`Trigger::Every`, CLI `--trigger every:MS`). The static state is always the finished code.
 - **Scannability:**
   - `Style::check` refuses what can't scan and warns on soft risks.
   - `freeqrent-verify` decodes every style option with ZXing and rqrr.

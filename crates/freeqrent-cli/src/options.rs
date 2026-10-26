@@ -351,14 +351,17 @@ pub fn ease(value: &str) -> Result<Ease, String> {
     }
 }
 
-/// `load`, `hover`, `class:NAME`.
+/// `load`, `hover`, `class:NAME`, `every:MS`.
 pub fn trigger(value: &str) -> Result<Trigger, String> {
     match value.split_once(':') {
         None if value == "load" => Ok(Trigger::Load),
         None if value == "hover" => Ok(Trigger::Hover),
         Some(("class", name)) if !name.is_empty() => Ok(Trigger::Class(name.to_string())),
+        Some(("every", ms)) => ms.parse().map(Trigger::Every).map_err(|_| {
+            format!("bad trigger {value:?}: every takes milliseconds, e.g. every:5000")
+        }),
         _ => Err(format!(
-            "unknown trigger {value:?}: try load, hover or class:NAME"
+            "unknown trigger {value:?}: try load, hover, class:NAME or every:MS"
         )),
     }
 }
@@ -529,6 +532,8 @@ mod tests {
             Ease::Custom(CubicBezier::new(0.2, 1.0, 0.4, 1.0))
         );
         assert_eq!(trigger("class:in").unwrap(), Trigger::Class("in".into()));
+        assert_eq!(trigger("every:5000").unwrap(), Trigger::Every(5000));
+        assert!(trigger("every:soon").is_err());
         assert!(trigger("class:").is_err());
         assert_eq!(
             token("fg=oklch(32% .08 265)").unwrap(),

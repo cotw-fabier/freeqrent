@@ -1,17 +1,19 @@
 #!/bin/sh
 # Renders the README's showcase codes into docs/showcase/ and verifies that
 # each one decodes before it's written. Rerun after any output change.
+# Every intro replays every 5 s, so readers who scroll down still see one.
 set -eu
 cargo build -q --release -p freeqrent-cli
 q="$(cargo metadata -q --format-version 1 --no-deps | sed 's/.*"target_directory":"\([^"]*\)".*/\1/')/release/freeqrent"
 out=docs/showcase
 logos=$out/logos
+pictures=$out/pictures
 
 run() {
     name=$1
     shift
     echo "== $name"
-    "$q" "$@" --verify -o "$out/$name.svg"
+    "$q" "$@" --trigger every:5000 --verify -o "$out/$name.svg"
 }
 
 run hi-mom "Hi Mom!" --shape liquid:0.85 --finder squircle/circle \
@@ -53,3 +55,21 @@ run hug "This QR code is legally a hug" \
     --token filler="oklch(34% .12 240 / .3)" --token finder.eye="oklch(36% .17 300)" \
     --intro settle --intro-ms 1500 --stagger radial --idle breathe \
     --label "This QR code is legally a hug"
+
+# Art mode: pictures built into the code, on the sparse grid so phones read
+# them quickly.
+run art-penguin "Dress code: black tie. Species: penguin." \
+    --art $pictures/penguin.jpg --ink color --tracking-grid sparse \
+    --intro develop --intro-ms 1800 \
+    --label "Dress code: black tie. Species: penguin."
+
+run art-samurai "Forged in Rust. Folded 1,000 times." \
+    --art $pictures/samurai.jpg --ink mono --tracking-grid sparse \
+    --fg "linear-gradient(160deg, oklch(28% .09 280), oklch(32% .14 20))" \
+    --intro sweep --intro-ms 1400 \
+    --label "Forged in Rust. Folded 1,000 times."
+
+run art-windmill "Not all who wander are lost. Some are just scanning." \
+    --art $pictures/windmill.jpg --ink color --tracking-grid sparse \
+    --intro ripple --intro-ms 1600 --idle shimmer \
+    --label "Not all who wander are lost. Some are just scanning."

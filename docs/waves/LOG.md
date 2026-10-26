@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026194504 · M6 · Replayed intros, and art in the showcase
+
+- Landed: `Trigger::Every(ms)` (CLI `--trigger every:MS`), which replays the intro every period in pure CSS, so it works in an `<img>`. Each intro track becomes one endless animation a period long that waits, plays, then holds the finished code. Idle loops run on through the replays as the individual `translate`/`rotate`/`scale` properties, so they compose with the intro. Palette shifts play once. New `RenderError::ReplayTooSoon` when the intro doesn't end by half the period. The plan's JSON trigger is `{"every":ms}`.
+- Showcase: all nine README codes replay every 5 s. Three art-mode codes come from the owner's wallpapers (square 512 px crops in `docs/showcase/pictures/`): a penguin in color ink (develop), a samurai in gradient ink (sweep) and a windmill in color ink (ripple, shimmer).
+- Checks: the replayed tracks match the one-shot ones at every 50 ms through two periods, for every preset and logo intro; a verify round trip for every preset × idle (static picture unchanged, and it scans); and Chrome, seeking each showcase code in its own document, replays at 5.3 s what it showed at 0.3 s. All nine showcase codes decode (the art ones with rqrr too).
+- Decision: frames and plans describe one run, the same as with `Load`, so the frame-based scan measurements (`scannable_after`) carry over unchanged; players restart the finite tracks every period.
+
 ## 20261026192529 · M6 · A README showcase
 
 - Landed: six animated codes at the top of the README (`docs/showcase/`), each with a gradient, an intro and an idle loop, and a joke for a payload behind a spoiler. Three carry small SVG logos (`docs/showcase/logos/`). `scripts/showcase.sh` renders them with the CLI's `--verify`, so a code that doesn't decode isn't written.

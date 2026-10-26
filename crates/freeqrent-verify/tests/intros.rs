@@ -8,7 +8,7 @@ mod common;
 use common::{PAYLOADS, assert_scans};
 use freeqrent::{
     Ecc, Frame, FrameRing, Idle, Intro, Logo, LogoFrame, ModuleShape, Palette, Preset, QrCode,
-    QrMatrix, StaggerOrder, Style, Token, Version, Warning,
+    QrMatrix, StaggerOrder, Style, Token, Trigger, Version, Warning,
 };
 use freeqrent_verify::{Gray, rasterize, scannable_after};
 
@@ -144,6 +144,29 @@ fn animated_codes_scan() {
         for shape in shapes() {
             let style = Style::new().modules(shape).intro(preset);
             assert_scans(&style, &format!("{preset:?} {shape:?}"));
+        }
+    }
+}
+
+#[test]
+fn replayed_intros_keep_the_static_state_and_scan() {
+    // A replay changes only the CSS: renderers without it, and frames,
+    // show the same code as an intro played once.
+    for preset in Preset::ALL {
+        for idle in Idle::ALL {
+            let plain = for_idle(Style::new(), idle);
+            let replayed = plain.clone().idle(idle).intro(
+                Intro::new(preset)
+                    .duration_ms(1400)
+                    .trigger(Trigger::Every(5000)),
+            );
+            let qr = QrCode::builder()
+                .encode_text_for(PAYLOADS[1].0, &replayed)
+                .unwrap();
+            let label = format!("{preset:?} {idle:?}");
+            assert_same_picture(&plain, &replayed, &qr, &label);
+            freeqrent_verify::verify_style(&replayed, &qr, PAYLOADS[1].0)
+                .unwrap_or_else(|e| panic!("{label}: {e}"));
         }
     }
 }

@@ -446,6 +446,7 @@ The **un-animated document state is the finished, scannable code.** Keyframes an
 
 - Renderers that ignore CSS animation (resvg, print, many email clients, thumbnailers) show the complete code.
 - No SMIL `<animate>` elements that set initial hidden states.
+- A replayed intro (`Trigger::Every`) leaves the finished code up between runs, at least half of every period. *(W20261026194504)*
 - Tests (`freeqrent-verify/tests/intros.rs`) assert that the animated document, as resvg draws it with no CSS animation, is pixel-identical to the same style without an intro and to the plan's last frame, and that it scans. *(rev. W20261025233019)*
 
 ### 8.3 Preset intros (brainstorm)
@@ -506,7 +507,7 @@ Measured: every 100 ms through 8 s of each loop after a Settle intro, three payl
 
 **Transitions:** `Intro::palette_from` (§6.5) and `Morph` (v2, cross-fade between two shape styles of the same code).
 
-All intros take `.duration_ms()` (the whole intro), `.delay_ms()`, `.ease(Ease::Quart|Quint|Expo|Custom(..))`, `.stagger(StaggerOrder::Radial|Linear|Diagonal|Random(seed)|Polar)`, `.groups(2..=16)`, `.logo(LogoIntro)` (or `.logo_reveal(bool)`), `.logo_timing(LogoTiming)`, `.frame(LogoIntro)` and `.frame_timing(LogoTiming)` for a cut-loose frame, and `.trigger(Trigger::Load|Hover|Class("is-visible"))`. Without `ease` or `stagger`, each preset uses its own. The `Class` trigger lets host pages start the intro on scroll-into-view without the SVG containing JS.
+All intros take `.duration_ms()` (the whole intro), `.delay_ms()`, `.ease(Ease::Quart|Quint|Expo|Custom(..))`, `.stagger(StaggerOrder::Radial|Linear|Diagonal|Random(seed)|Polar)`, `.groups(2..=16)`, `.logo(LogoIntro)` (or `.logo_reveal(bool)`), `.logo_timing(LogoTiming)`, `.frame(LogoIntro)` and `.frame_timing(LogoTiming)` for a cut-loose frame, and `.trigger(Trigger::Load|Hover|Class("is-visible")|Every(5000))`. Without `ease` or `stagger`, each preset uses its own. The `Class` trigger lets host pages start the intro on scroll-into-view without the SVG containing JS. `Every(ms)` replays the intro where nothing can start it, such as an `<img>` in a README, which plays its one intro at page load, usually before anyone scrolls to it. *(W20261026194504)*
 
 ### 8.4 Implementation strategy
 
@@ -516,7 +517,7 @@ All intros take `.duration_ms()` (the whole intro), `.delay_ms()`, `.ease(Ease::
 - Keyframe lists never contain their end (`100%`/`to`), so every animation ends on the element's own computed value, which keeps re-theming through custom properties working. Intro tracks use `animation-fill-mode: backwards`. Idle loops use none.
 - Transform origins are explicit points in viewBox units (`transform-box: view-box; transform-origin: Xpx Ypx`), so CSS and other players agree.
 - When a style animates, the root `<svg>` gets the id prefix as a second class. Reduced motion is scoped to it: `@media (prefers-reduced-motion:reduce){.{prefix} *{animation:none!important;transition:none!important}}`. The intro is part of the prefix hash, so two animations of one code can share a page.
-- **Triggers.** `Load` writes the animation rules directly. `Hover` scopes them under `.{prefix}:hover`. `Class(name)` starts them paused and runs them under `.{name} .{prefix}-eN`. The name is written as an escaped CSS identifier. A page that never adds the class leaves the code in its intro state; reduced motion still shows it.
+- **Triggers.** `Load` writes the animation rules directly. `Hover` scopes them under `.{prefix}:hover`. `Class(name)` starts them paused and runs them under `.{name} .{prefix}-eN`. The name is written as an escaped CSS identifier. A page that never adds the class leaves the code in its intro state; reduced motion still shows it. `Every(ms)` (1000–60000) turns each intro track into an endless animation one period long, with no delay: it waits in its first state until the track's own delay, plays the track, then holds the natural values until the period ends, so the whole intro restarts together. The intro (its delay and duration) must end by half the period, or `check` fails with `RenderError::ReplayTooSoon`. Idle loops keep their own timing through the replays; their transforms are written as the individual `translate`, `rotate` and `scale` properties, which compose with the intro's `transform` instead of replacing it. A palette shift's fades play once. Frames and the plan describe one run: a player restarts the finite tracks every period. Checked in Chrome by seeking the animations of every showcase code (one sample in each intro, the hold, and the second run), and by sampling the replayed tracks against the one-shot ones for every preset and logo intro. *(W20261026194504)*
 - **The animation is data first, CSS second.** The animate stage produces an `AnimationPlan` (§8.5), and the SVG writer serializes that plan to CSS. `Style::render_frame(&qr, t_ms)` evaluates the same plan at time *t* into a still SVG with no animation CSS (CSS semantics: easing between neighboring keyframes, backwards fill, later tracks win). `freeqrent_verify::scannable_after` uses these frames to measure when a code becomes readable for good.
 - **CSS keyframes over SMIL.** They work for inline SVG and in `<img src="x.svg">` in all evergreen browsers, respect `prefers-reduced-motion`, and allow class triggers. A `smil` fallback option may be added if a target environment needs it.
 
@@ -532,7 +533,7 @@ pub struct AnimationPlan {
     pub tracks: Vec<Track>,
     pub reveal: Option<Reveal>,
     pub total_ms: u32,               // end of the last finite track
-    pub trigger: Trigger,
+    pub trigger: Trigger,            // Load, Hover, Class(name) or Every(ms): JSON "load", "hover", {"class":..}, {"every":ms}
     pub reduced_motion: Fallback,    // always FinalState
 }
 
