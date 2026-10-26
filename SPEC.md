@@ -1,0 +1,564 @@
+# freeQRent: Styled & Animated SVG QR Codes (Rust)
+
+> Status: **Draft v0.3** · 2026-10-25
+> Name: **freeQRent** (package id `freeqrent`; free on crates.io, npm, PyPI, pub.dev, and as a GitHub org as of 2026-10-25)
+> License: **MIT**
+> Targets: **Rust, Dart/Flutter, TypeScript/JavaScript (Node + browser), Python, Go**
+>
+> **Phasing:** **Phase 1 builds the Rust core only** (§2, §12). The language bindings are specified here in §10 so the core's design accommodates them, but they are built in **Phase 2**, after the core is stable.
+
+---
+
+## 1. Goals
+
+1. Generate **beautiful, scannable** QR codes as **SVG**, static or animated.
+2. **Maximum embeddability:** zero runtime dependencies in the core, `no_std` + `alloc`, compiles to WASM, exposes a C ABI, and its output is deterministic. First-class bindings for **Dart, TS/JS, Python, and Go** follow in Phase 2 (§10). Phase 1 core decisions must not block them: every public option is plain data (serializable), there are no callbacks on the hot path, and the animation plan can be exported (§8.5).
+3. **Scannability is a hard constraint, not a suggestion.** Every style option is validated against an error-correction and contrast budget, and the library refuses or warns when a combination is likely to fail.
+4. Animation is **optional and additive.** An animated SVG must still render as a complete, scannable static code in renderers that ignore animation (resvg, Inkscape, email clients, print).
+
+### Non-goals (v1)
+
+- Raster output (PNG/JPEG/GIF/video). Output is SVG and animated SVG only. Developers can rasterize with resvg or similar.
+- Other animation formats (Lottie, Android VectorDrawable). `AnimationPlan` (§8.5) keeps these possible later; the Flutter widget (§10.4) is the only non-CSS player planned.
+- QR **decoding** in the core. Decoding is used only in tests and an optional `verify` crate.
+- Network access. The library never fetches URLs. "Site colors" means the caller passes in HTML/CSS text.
+- JavaScript in output SVGs. All motion is CSS, with no `<script>`.
+
+---
+
+## 2. Crate Layout
+
+Cargo workspace:
+
+| Crate | Phase | Purpose | Deps |
+|---|---|---|---|
+| `freeqrent` (core) | 1 | Encoder, matrix, styling, SVG writer, animation, palettes | **none** (`no_std` + `alloc`) |
+| `freeqrent-image` | 1 | Decodes PNG/JPEG into the core's `Rgba8Image` buffer type | `zune-png`, `zune-jpeg` (small, pure Rust), behind features |
+| `freeqrent-verify` | 1 | Rasterizes the output and decodes it to prove scannability | `resvg`, `rqrr` |
+| `freeqrent-cli` | 1 | CLI front end (also the main dev/preview tool during Phase 1) | `freeqrent`, `freeqrent-image`, arg parsing (`lexopt`, tiny) |
+| `freeqrent-ffi` | 2 | Stable C ABI (`cbindgen` header). This is the base for Dart, Go, and any other FFI host (Swift, Kotlin, C#) | none |
+| `freeqrent-wasm` | 2 | `wasm-bindgen` build, published to npm as `freeqrent` for **Node and browsers** | `wasm-bindgen` |
+| `freeqrent-py` | 2 | **Python** extension module via PyO3, built with `maturin` and published to PyPI | `pyo3` |
+| `bindings/go` | 2 | **Go** module over `freeqrent-ffi` via **cgo, linking prebuilt static libraries** (the default). An optional `freeqrent_wasm` build tag uses an embedded WASM build with `wazero` for pure-Go / `CGO_ENABLED=0` users. | cgo; `wazero` (tag only) |
+| `bindings/dart` | 2 | **Dart/Flutter** package (pub.dev) over `freeqrent-ffi` using Native Assets (`native_toolchain_rs`) and `ffigen`-generated bindings, plus a native Flutter animation widget (§10.4). Dart web uses the WASM build. | `freeqrent-ffi` |
+
+Binding crates sit outside the core. Their dependencies (`pyo3`, `wasm-bindgen`) never reach Rust users of `freeqrent`.
+
+Core feature flags (all additive, all dependency-free):
+
+| Feature | Default | Enables |
+|---|---|---|
+| `std` | yes | `std::io::Write` sink, `std::error::Error` impls |
+| `animate` | yes | Intro animations & palette transitions |
+| `palette-extract` | yes | Auto color tokens from pixel buffers / CSS text |
+| `halftone` | yes | Image-embedded QR (§7.7) |
+| `kanji` | no | Shift-JIS kanji mode tables (adds ~25 KB) |
+
+**Size budget:** core WASM build ≤ 120 KB gzipped with default features. CI will track this.
+
+**MSRV:** latest stable minus 4 releases. `#![forbid(unsafe_code)]` in core.
+
+---
+
+## 3. QR Encoder (in-house, zero-dep)
+
+The encoder is written in-house rather than taken from the `qrcode` crate. That keeps the core dependency-free, lets us expose internals the styling layer needs (function-pattern map, data/ECC module classification, per-module "importance"). It also enables the art-mode features (§7.7, §7.8), which need direct control over padding bits.
+
+### 3.1 Scope
+
+- **Versions** 1–40, **ECC** L / M / Q / H.
+- **Modes:** Numeric, Alphanumeric, Byte, Kanji (feature), **ECI** (UTF-8 by default for non-Latin-1 text).
+- **Automatic segmentation:** minimal-length mixed-mode encoding (dynamic programming over segment boundaries).
+- **Mask selection:** standard 4-rule penalty evaluation, with an option to force a mask.
+- **Free-bit solver (QArt technique):** after the payload and terminator, the remaining data bits in a symbol are ignored by decoders. Reed–Solomon is linear over GF(2), so every module in the data/ECC region is an XOR of data bits. The encoder exposes this linear map and solves it (Gaussian elimination), choosing free bits so that a prioritized set of target modules takes desired values. This is the engine behind §7.7 and §7.8.
+- **Version pinning:** choose a version explicitly (or by "alignment grid size", §7.8) even when the payload would fit in a smaller one.
+- **Structured Append:** deferred (poor phone support). The matrix model shouldn't preclude it.
+- **Micro QR:** stretch goal, v1.x.
+- Inputs: `&str` (UTF-8), `&[u8]` (raw bytes), or explicit segments.
+
+### 3.2 Matrix model
+
+```rust
+pub struct QrMatrix {
+    pub version: Version,
+    pub ecc: Ecc,
+    pub size: u16,             // modules per side
+    modules: BitVec,           // dark/light
+    roles: Vec<ModuleRole>,    // per-module classification
+}
+
+pub enum ModuleRole {
+    Finder { corner: Corner, ring: FinderRing }, // Outer, Gap, Eye
+    Separator,
+    Timing,
+    Alignment { center: (u16, u16) },
+    Format,
+    Version,
+    Data,
+    Ecc,
+}
+```
+
+The styling layer uses `roles` to render finders, alignment, and timing patterns separately from data modules. It also uses them to know which modules can be sacrificed for logos and imagery. Function patterns are never sacrificed.
+
+### 3.3 Helpers
+
+- `QrCode::encode(text, Ecc) -> Result<QrMatrix>`
+- `QrCode::builder()` with `.min_version()`, `.max_version()`, `.ecc()`, `.boost_ecc(true)` (raise ECC as long as the version doesn't grow), `.mask()`, `.segments()`.
+- `matrix.capacity_report()` returns data bits used and available, ECC codewords, and the theoretical max damage tolerance. The logo and halftone budgets use this.
+
+---
+
+## 4. Rendering Pipeline
+
+```
+payload ─▶ encode ─▶ QrMatrix ─▶ Layout ─▶ Geometry ─▶ Paint ─▶ (Animate) ─▶ SVG writer
+                                  │          │          │
+                          frame/round   shapes→paths  tokens→CSS vars
+                          logo cutout   finders       gradients
+                          multi-code    merging
+```
+
+1. **Layout:** places one or more matrices in the canvas, applies the frame (square/circle), quiet zone, and logo cutout, and generates decorative filler modules for round codes.
+2. **Geometry:** turns modules into SVG path data per shape style. Modules are **merged into as few `<path>` elements as possible**, which keeps file size small and makes animation cheap (§8.4).
+3. **Paint:** resolves color tokens into CSS custom properties and gradient defs.
+4. **Animate:** adds `<style>` keyframes and assigns elements to stagger groups.
+5. **SVG writer:** a streaming writer into `core::fmt::Write`. There is no DOM or tree allocation.
+
+### 4.1 Output guarantees
+
+- **Deterministic:** the same inputs and the same library version produce byte-identical output. Any randomness comes from a seeded internal PRNG (SplitMix64), with the seed defaulting to a hash of the payload.
+- Coordinates are in **module units** (`viewBox="0 0 N N"`), numbers are written with ≤ 3 decimals, and there are no redundant attributes.
+- Output is valid SVG 1.1 with CSS. It contains no `<script>`, no `<foreignObject>`, and no external references (logos/images are inlined as `data:` URIs or nested SVG).
+- Optional `<title>`/`<desc>` and `role="img"` + `aria-label` (defaults to the payload when it's a URL, otherwise "QR code").
+- Option: `minify` (default on) or pretty-printed.
+
+---
+
+## 5. Public API Sketch
+
+```rust
+use freeqrent::{QrCode, Ecc, Style, ModuleShape, FinderStyle, Frame, Palette, Logo, Intro};
+
+let qr = QrCode::encode("https://example.com", Ecc::Q)?;
+
+let svg: String = Style::new()
+    .modules(ModuleShape::Liquid { smoothness: 0.8 })
+    .finders(FinderStyle::Squircle)
+    .frame(Frame::Circle { filler_density: 0.5 })
+    .palette(Palette::from_tokens([
+        ("bg", "#f7f3ec"),
+        ("fg", "oklch(32% 0.08 265)"),
+        ("finder.eye", "oklch(62% 0.19 35)"),
+    ])?)
+    .logo(Logo::svg(include_str!("logo.svg")).scale(0.22).backdrop(true))
+    .intro(Intro::Ripple.duration_ms(900))
+    .render(&qr)?;           // -> Result<String, RenderError>
+
+// Streaming, no intermediate String:
+style.render_to(&qr, &mut writer)?;
+
+// Validation without rendering:
+let report = style.check(&qr);   // ScanReport { ok, warnings, ecc_budget_used, contrast, ... }
+```
+
+- `RenderError` is returned for **hard failures**, such as a logo too large for the ECC budget, contrast below the floor, or no quiet zone.
+- `ScanReport.warnings` covers **soft risks**, such as inverted colors, low-contrast gradients, or very small module size at the target print size.
+- `Style` implements `Clone` and (with feature `serde`, optional dep) `Serialize`/`Deserialize`, so presets can be stored as JSON.
+- **Presets:** `Style::preset("ink")`, `"candy"`, `"terminal"`, … (a curated set that ships with the crate).
+
+---
+
+## 6. Color Tokens (feature 5)
+
+### 6.1 Token set
+
+| Token | Applies to | Default |
+|---|---|---|
+| `bg` | Canvas background (can be `transparent`) | `#ffffff`-ish warm white |
+| `fg` | Data modules | near-black |
+| `finder.outer` | Finder outer ring | `fg` |
+| `finder.eye` | Finder 3×3 center | `fg` |
+| `alignment` | Alignment patterns | `finder.outer` |
+| `timing` | Timing patterns | `fg` |
+| `filler` | Decorative modules (round frame) | `fg` at 0.35 opacity |
+| `logo.backdrop` | Plate behind logo | `bg` |
+| `frame` | Frame stroke/ring | `fg` |
+
+Values can be any CSS color: hex, `rgb()`, `hsl()`, or **`oklch()`**. The library parses all of these internally, so it can do contrast math. `fg` and `finder.*` also accept **gradients** (`linear`/`radial`, with angle and stops).
+
+### 6.2 Output form
+
+Tokens are emitted as **CSS custom properties** on the root `<svg>`:
+
+```svg
+<svg style="--qr-bg:#f7f3ec;--qr-fg:oklch(32% .08 265);…">
+  <path class="qr-data" fill="var(--qr-fg)" d="…"/>
+```
+
+with **literal fallback** fills for renderers that don't support CSS variables (`fill="#2b2f55"` plus a `style` override). Host pages can re-theme an inline SVG by setting `--qr-*` variables.
+
+### 6.3 Scannability rules for color
+
+- **Contrast floor:** the luminance difference between `fg` and `bg` (computed in OKLab L) must be ≥ 0.40 to render. Values below 0.55 produce a warning. For gradients, the check uses the **worst** stop.
+- **Polarity:** dark-on-light is the default. Inverted codes (light modules on dark) are allowed with `.allow_inverted(true)` and a warning, because some older scanners fail on them.
+- Finder colors may vary in hue but must meet the same contrast floor.
+
+### 6.4 Auto tokens (feature 6) — `palette-extract`
+
+**From an image:** `Palette::from_image(&Rgba8Image, PaletteOpts)`
+- The core takes a raw RGBA buffer. Decoding PNG/JPEG lives in `freeqrent-image`, so the core stays dependency-free.
+- Algorithm: downsample to ≤ 64×64, cluster in **OKLab** (k-means++, k = 6, seeded), weight clusters by population × chroma, then assign roles:
+  - `bg` = the lightest high-population cluster (or a tinted near-white derived from the dominant hue)
+  - `fg` = the darkest cluster that meets the contrast floor against `bg`. If none qualifies, the dominant hue is darkened in OKLCH until it passes.
+  - `finder.eye` = the most chromatic cluster that passes contrast (the "accent")
+- Returns a `Palette` along with a `PaletteReport` that shows which colors were adjusted and why.
+
+**From a site:** `Palette::from_css(&str)` / `Palette::from_html(&str)`
+- Parses `<meta name="theme-color">`, `:root` custom properties, and color literals in inline `<style>`, and ranks them by frequency and selector importance (`:root`, `body`, `a`, `button`).
+- No network access. The CLI (`freeqrent --palette-from-url`) and the WASM wrapper perform the fetch and pass in the text.
+
+### 6.5 Animated palette change
+
+- `Intro::palette_from(old: &Palette)` emits keyframes that cross-fade each token from its old value to the new one (default 600 ms, ease-out-quart).
+- **Runtime re-theme:** every painted element has `transition: fill 600ms var(--qr-ease)`, so a host page that changes `--qr-fg` on an inline SVG gets a smooth transition for free. The library also exports `palette.to_css_vars()` to make this a one-liner in JS.
+- Each intermediate color must also pass the contrast floor. The library interpolates in OKLab and checks sampled midpoints. If the path dips below the floor, it routes through a darker midpoint so the code stays scannable during the transition.
+
+---
+
+## 7. Visual Features
+
+### 7.1 Module shapes (feature 2)
+
+| Shape | Description | Geometry strategy |
+|---|---|---|
+| `Square` ("box") | Classic squares, optional `gap` (0–0.3) | Merge horizontal runs into rects, then one path |
+| `Rounded { radius }` | Squares with corners rounded only where they don't touch a neighbor | Per-corner neighbor test (4-neighborhood) |
+| `Dots { size }` | Circles, size 0.6–1.0 | Arc path per module; `size < 0.75` raises a warning |
+| `Liquid { smoothness }` | Neighboring modules flow into one blob, with concave inner corners filled ("gooey") | Contour tracing on the dark-region boundary, then corners rounded with quadratic Béziers. Inner fillets are added at L-junctions. One path per connected region. |
+| `Bars { axis, radius }` | Vertical or horizontal pills that merge runs along an axis | Run-length per row/column → rounded rects |
+| `Diamond`, `Star`, `Plus`, … | Fun extras (v1.x) | Per-module glyph |
+| `Custom(fn)` | User callback returning path data for a module, given its 8-neighborhood mask | Escape hatch |
+
+All shapes receive the **8-neighborhood bitmask** of each module, so shape logic stays local and testable.
+
+### 7.2 Scan boxes: finders, alignment & timing patterns (feature 4)
+
+A QR code has two kinds of "scan box":
+
+- **Finders:** the three large 7×7 corner boxes that locate the code.
+- **Alignment patterns:** smaller 5×5 boxes that scanners use to correct perspective and curvature. Version 1 has none. From version 2 they form a grid that grows with the version: 1 box (v2–6), 6 (v7–13), 13 (v14–20), 22 (v21–27), up to 46 (v35–40).
+
+**Timing patterns** are the alternating dotted lines that run between the finders.
+
+All three are rendered as separate layers from the data, so they can be emphasized and styled on their own. That is how the reference design gets its grid of crisp boxes over a busy image (§7.8).
+
+Finder styles (independent outer ring and eye):
+- Outer: `Square`, `Rounded(r)`, `Circle`, `Squircle`, `Leaf` (one sharp corner pointing to center), `Dashed`
+- Eye: `Square`, `Rounded(r)`, `Circle`, `Squircle`, `Diamond`, `Leaf`
+- Per-corner overrides (e.g. a different color for the top-left finder).
+
+Alignment styles:
+- `Match` (follows the finder style, scaled), or its own outer and eye shape.
+- `emphasis`: `None` (blend with data), `Outline` (draw on a clean `bg` plate one module wider, as in the reference), or `Accent` (use the `alignment` token).
+
+Timing styles: `Plain`, `Dotted` (dots in the module shape), `Dashed`, `Hidden-on-image` (rendered only at the sampled center, as in halftone mode).
+
+**Constraints:**
+- Finders keep the 7×7 footprint and the 1:1:3:1:1 ratio along both axes through the center. Alignment patterns keep the 5×5 footprint and the 1:1:1:1:1 ratio. These ratios are what scanners detect. Styles that would break them (e.g. `Dashed` at small sizes) produce a warning.
+- Only the real alignment positions for the chosen version are drawn. The library never adds decorative fake boxes, because scanners would try to use them.
+
+### 7.3 Logo in the middle (feature 1)
+
+- `Logo::svg(&str)` (inlined as a nested `<svg>` after sanitizing out scripts, external refs, and event attributes) or `Logo::raster(bytes, mime)` (inlined as a base64 `data:` URI using an in-house base64 encoder).
+- Options: `scale` (fraction of the QR width), `shape` (`Square` / `Circle` / `Rounded`), `backdrop` (a plate in `logo.backdrop` color with `padding`), and `clear_modules` (excavate the modules underneath, default on).
+- **ECC budget:** covered *data/ECC* modules are counted against the code's recoverable codewords. The budget defaults to ≤ 60% of the theoretical correction capacity, leaving margin for print and camera damage. If the logo exceeds the budget, then (a) `boost_ecc` is tried, (b) the version is bumped, or (c) the render fails with `LogoTooLarge { max_scale }`.
+- Excavation snaps to whole modules, and a ring of modules is never left partially cut.
+
+### 7.4 Round QR codes (feature 3)
+
+- `Frame::Circle { filler_density, ring }`: the square code is inscribed in a circle, and the area between the square and the circle is filled with **decorative filler modules** in the same shape style (seeded random, `filler` token).
+- A **quiet gap** of ≥ 1 module separates the real code from the filler so decoders don't confuse them. Filler near the finders is suppressed in a 2-module halo.
+- Optional `ring`: a solid or dashed outer circle stroke in the `frame` token.
+- Other frames: `Square` (default), `RoundedSquare(r)`, `None`.
+
+### 7.5 Gradients & texture
+
+- Linear/radial gradients on `fg` and finders (§6.1).
+- Optional per-module **opacity jitter** or **hue drift** (seeded, small amplitude, contrast-checked) for an organic, hand-printed look.
+
+### 7.6 Quiet zone
+
+- Default is 4 modules (spec minimum). This can be reduced to 2 with a warning, since many modern scanners cope with that. Frames and filler never intrude on it.
+
+### 7.7 Image-embedded QR / halftone (feature 6b) — `halftone`
+
+The code is built *from* the image: the picture is visible, and the code scans.
+
+Two techniques combine:
+
+**A. Module steering (QArt, Cox 2012).** The free-bit solver (§3.1) sets the free data bits so that as many modules as possible already match the image's light/dark at that spot. Modules are prioritized by image importance (edges, faces/subject, center weighting, or a user-supplied priority mask). All 8 masks are tried, and the one that matches the image best wins. The shorter the payload and the bigger the version, the more modules can be steered.
+
+**B. Halftone sub-cells (Chu et al., 2013).** Each module is split into a 3×3 sub-grid. The **center sub-cell carries the true module value**, since that is where scanners sample. The 8 surrounding sub-cells follow the image's dithered luminance (Floyd–Steinberg or blue-noise ordered dither, in OKLab L).
+
+A makes the code's own pattern resemble the image. B fills in detail at 3× resolution. Together they let the whole picture read as the code.
+
+Further rules:
+1. ECC level is configurable. **M is the default in art mode.** Lower ECC frees more bits for steering. Halftone doesn't spend the error budget, because the sampled centers are always correct.
+2. Function patterns (finders, timing, alignment, format/version) are rendered at full contrast, though they may be tinted.
+3. Color mode: sub-cells keep the image's hue but are clamped to dark/light luminance bands so contrast is preserved.
+4. A **clarity map** (auto or user-supplied) marks regions where image contrast is pulled toward pure modules, giving scanners a cleaner area, and regions where the image dominates.
+5. Output: one path per color band (not per sub-cell) to keep file size reasonable. Target ≤ 150 KB for a v20 code.
+
+Input is `Rgba8Image` (same as palette extraction). The image is cropped/fit with `Fit::Cover | Contain` and optional focal point.
+
+**Compatibility note:** steered padding bits are non-standard (the spec suggests alternating `0xEC 0x11` pad bytes), but decoders stop reading at the terminator. ZXing, iOS Camera, and Google Lens all accept them, and the verify suite (§9) pins this per release. A `strict_padding` option turns steering off for conservative environments.
+
+### 7.8 Art mode: large image codes with a tracking grid (feature 7)
+
+The goal: a **short payload** (such as a website URL) rendered as a **large, image-filled code**, studded with a grid of crisp tracking boxes, so the whole picture looks like the QR code and still scans reliably.
+
+**How it works.** This is one real QR symbol at a deliberately oversized version, not several codes stitched together:
+
+1. **Pin a large version.** The user picks a tracking grid density instead of a version:
+
+   | `TrackingGrid` | Alignment boxes | Versions | Modules/side |
+   |---|---|---|---|
+   | `Sparse` (3×3 grid) | 6 | 7–13 | 45–69 |
+   | `Standard` (4×4 grid) | 13 | 14–20 | 73–97 |
+   | `Dense` (5×5 grid) | 22 | 21–27 | 101–125 |
+
+   The reference design is `Standard`. The library picks the smallest version in the range unless told otherwise.
+2. **Steer the spare capacity.** A ~30-byte URL in a v17-M code uses under 10% of the data capacity. The free-bit solver (§3.1) turns the rest into image-matching modules (§7.7 A), and halftone sub-cells add detail (§7.7 B).
+3. **Make the tracking boxes stand out.** Alignment patterns are drawn with `emphasis: Outline` on clean plates, finders are drawn in an accent color, and timing lines are dotted (§7.2). The boxes are real: they are what lets a scanner lock onto a large, busy code and correct perspective across it. That is where the "better scan result" comes from.
+4. **Optional clarity map** (§7.7 rule 4) keeps a calmer zone for scanners while the rest of the picture carries the visual.
+
+**Feasibility:** proven. This is the QArt technique plus halftone QR, both demonstrated in the literature, and the reference image matches a v14–20 code with emphasized alignment patterns. The trade-offs are:
+- **Minimum size goes up.** A v17 code is 85 modules plus quiet zone. The code must be displayed at ≥ 3 device pixels per module (about 280 px on screen) or printed at ≥ 0.4 mm per module (about 4 cm; 5 cm or more is recommended). `Style::check` takes an optional `target_size` and warns below these thresholds.
+- **Payload must stay small.** As the payload grows, fewer bits can be steered and the image fidelity drops. `ScanReport` includes `steerable_modules` (count and %) so callers can see the effect.
+- **Decoding is still global.** A scanner must read the whole symbol; there is no "scan only the clean zone." The clarity map improves the odds, but it is not a separate code.
+
+**Deferred:** layouts with multiple independent codes (several redundant mini codes in a row, Structured Append, rMQR strips). These may return later as `MultiCode` layouts.
+
+---
+
+## 8. Animation (`animate` feature)
+
+### 8.1 Motion principles
+
+Based on the impeccable `animate` guidelines:
+
+- **One signature entrance.** A code gets one well-orchestrated intro, not a pile of effects.
+- **Easing:** exponential ease-outs only. No bounce, no elastic.
+  ```css
+  --qr-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);   /* default, refined */
+  --qr-ease-quint: cubic-bezier(0.22, 1, 0.36, 1);  /* snappier */
+  --qr-ease-expo:  cubic-bezier(0.16, 1, 0.3, 1);   /* confident */
+  ```
+- **Durations:** each element animates in 500–800 ms. **Total intro ≤ 1200 ms** by default (the stagger is compressed to fit). The code must be scannable soon after it appears. Configurable, but anything over 2000 ms raises a warning.
+- **Stagger:** 8–16 groups with 40–100 ms offsets (derived from total duration).
+- **Properties:** `transform` and `opacity` first. `clip-path`/`mask` for wipes, `stroke-dashoffset` for draw-ons, `fill` for color. Layout-ish attributes (`x`, `width`, `r`) are never animated.
+- **Reduced motion is mandatory.** Every animated SVG includes:
+  ```css
+  @media (prefers-reduced-motion: reduce) {
+    .qr * { animation: none !important; transition: none !important; }
+  }
+  ```
+  Palette transitions degrade to an instant swap.
+- **No looping by default.** Idle loops (§8.3) are opt-in, subtle, and also disabled under reduced motion.
+
+### 8.2 The static-fallback rule (critical)
+
+The **un-animated document state is the finished, scannable code.** Keyframes animate *from* an intro state *to* the natural state using `animation-fill-mode: backwards`. This means:
+
+- Renderers that ignore CSS animation (resvg, print, many email clients, thumbnailers) show the complete code.
+- No SMIL `<animate>` elements that set initial hidden states.
+- Snapshot tests assert that stripping `<style>` produces the same visual as the final frame.
+
+### 8.3 Preset intros (brainstorm)
+
+**Core set (v1):**
+
+| Preset | Motion | Best with |
+|---|---|---|
+| `Settle` | Groups fade in from `opacity 0, scale .92` toward their own centers; uniform gentle stagger | Everything (default) |
+| `Ripple` | Radial stagger from center outward; modules scale up from 0 | Dots, Liquid, Round |
+| `LockOn` | The three finders draw on first (`stroke-dashoffset` around the outer ring, then the eye pops in at 150 ms), then data fills via `Settle` | Branded/"scan me" moments |
+| `Sweep` | Diagonal mask wipe from top-left to bottom-right, with a soft feathered edge | Square, Bars |
+| `Raster` | Row-by-row (or column-by-column for vertical Bars) reveal, like a printer head | Bars, Square |
+| `Iris` | Circular `clip-path` opens from the center | Round frame |
+| `Assemble` | Groups start offset (seeded scatter, ≤ 3 modules) and converge with ease-out-expo | Dots, Square |
+| `Develop` | For halftone: the image fades in at low contrast, then contrast resolves to full QR bands, like a photo developing | Halftone only |
+| `LogoReveal` | Composable suffix: the logo scales 0.94 → 1 with fade after data settles | Any with logo |
+
+**Extended (v1.x):**
+
+| Preset | Motion |
+|---|---|
+| `Bloom` | Liquid blobs grow from region centroids (scale per connected region) |
+| `Rain` | Columns drop in from above with a staggered offset (no overshoot) |
+| `Spiral` | Stagger ordered by polar angle from the center |
+| `Ink` | Radial mask with a noisy edge, like ink soaking into paper |
+| `Glitch` | 2–3 quick horizontal offset slices, then lock (very short, opt-in) |
+| `Typeset` | For multi-code strips: codes reveal left to right one after another |
+
+**Idle loops (opt-in, off by default):**
+
+- `FinderPulse`: the finder eye scales 1 → 1.06 → 1 every 4 s
+- `Shimmer`: a low-opacity highlight band sweeps across every 6 s
+- `Breathe`: `bg` lightness drifts ±2% in OKLCH (contrast-checked)
+
+**Transitions:** `PaletteShift` (§6.5) and `Morph` (v2, cross-fade between two shape styles of the same code).
+
+All presets take `.duration_ms()`, `.delay_ms()`, `.ease(Ease::Quart|Quint|Expo|Custom(..))`, `.stagger(StaggerOrder::Radial|Linear|Diagonal|Random(seed)|Polar)`, and `.trigger(Trigger::Load|Hover|Class("is-visible"))`. The `Class` trigger lets host pages start the intro on scroll-into-view without the SVG containing JS.
+
+### 8.4 Implementation strategy
+
+- **Group, don't atomize.** A v40 code has ~31,000 modules, and one animated element per module would bloat file size and stall browsers. The geometry stage buckets modules into *K* stagger groups (default 12) according to the stagger order. Each group is **one `<path>`** with one keyframe delay. Liquid's connected regions are split along group boundaries.
+- Element budget: ≤ 64 animated elements per code by default.
+- Keyframes are emitted once and shared through classes. The only per-group variation is `animation-delay` (inline `style`).
+- `transform-box: fill-box; transform-origin: center` for per-group scaling.
+- **The animation is data first, CSS second.** The animate stage produces an `AnimationPlan` (§8.5), and the SVG writer serializes that plan to CSS. Other players (the Flutter widget in Phase 2) consume the same plan.
+- **CSS keyframes over SMIL.** They work for inline SVG and in `<img src="x.svg">` in all evergreen browsers, respect `prefers-reduced-motion`, and allow class triggers. A `smil` fallback option may be added if a target environment needs it.
+
+### 8.5 `AnimationPlan` (exportable)
+
+```rust
+pub struct AnimationPlan {
+    pub view_box: (f32, f32),
+    pub layers: Vec<Layer>,          // static geometry: path data + paint token per group
+    pub tracks: Vec<Track>,          // one per animated group
+    pub total_ms: u32,
+    pub reduced_motion: Fallback,    // what to show when motion is off (always: final state)
+}
+
+pub struct Track {
+    pub layer: usize,
+    pub delay_ms: u32,
+    pub duration_ms: u32,
+    pub ease: CubicBezier,           // (x1, y1, x2, y2)
+    pub keys: Vec<Keyframe>,         // offset 0..1, property, value
+}
+
+pub enum Property { Opacity, Scale, TranslateX, TranslateY, Fill(TokenId), ClipRadius, ClipSweep, DashOffset }
+```
+
+`style.plan(&qr) -> AnimationPlan` is public in Phase 1 and serializable with the optional `serde` feature. It is the contract the Flutter widget (and any future native player, such as Lottie export) is built on. Only properties every player can reproduce are allowed in a plan.
+
+---
+
+## 9. Scannability Assurance
+
+| Layer | What it checks | Where |
+|---|---|---|
+| Static rules | Contrast floor, quiet zone, logo ECC budget, finder ratio, min dot size, filler gap | core `Style::check` (always runs before render) |
+| Per-feature budgets | Halftone sub-cell center preserved; palette transition midpoints | core |
+| Round-trip verify | Rasterize at 3 sizes (and at intro midpoints for animations), add noise/blur/perspective, decode with `rqrr` | `freeqrent-verify` crate and CI |
+| Real-device matrix | iOS Camera, Android Google Lens, WeChat, ZXing | manual, per release, for presets |
+
+CI runs the round-trip suite over the full preset × shape × frame matrix. A preset that fails is a release blocker.
+
+---
+
+## 10. Language Bindings & Interfaces (Phase 2)
+
+Not built in Phase 1. Specified here so the core is designed for it. Dart, TS/JS, Python, and Go ship together at the end of Phase 2. To keep them in sync, the **binding boundary is narrow and data-driven**: each binding exposes a few functions that take a **Style document** (JSON, schema generated from the Rust types) plus typed wrappers in each language. New styles and presets reach every language without binding changes.
+
+### 10.1 Shared boundary
+
+```
+render(payload: string | bytes, style: Style) -> string        // SVG
+check(payload, style) -> ScanReport
+palette_from_image(rgba: bytes, width, height, opts) -> Palette
+palette_from_css(text) / palette_from_html(text) -> Palette
+presets() -> list of preset names
+```
+
+Errors cross the boundary as a structured `{ code, message, detail }` value and become an idiomatic exception or `Result` in each language.
+
+### 10.2 Per language
+
+| Language | Mechanism | Package | Idiomatic surface |
+|---|---|---|---|
+| **Rust** | Native crate | crates.io `freeqrent` | Builder API (§5) |
+| **TypeScript / JS** | WASM (`wasm-bindgen`), one artifact for **Node ≥ 18** and browsers (ESM + CJS entry points) | npm `freeqrent` | `render(text, style): string`, full `.d.ts` types generated from the style schema, discriminated unions for shapes/intros. Optional native `napi-rs` build later if WASM speed isn't enough. |
+| **Python** | PyO3 + maturin, **abi3** wheels (CPython ≥ 3.9) for manylinux/musllinux x86_64 + aarch64, macOS universal2, Windows x64 | PyPI `freeqrent` | `freeqrent.render(text, style=Style(...))`, dataclass-like style objects with type stubs (`.pyi`), `Palette.from_image()` also accepts a Pillow `Image` duck-typed via `tobytes()` (no Pillow dependency) |
+| **Dart / Flutter** | `dart:ffi` over `freeqrent-ffi`, compiled through **Native Assets** (`native_toolchain_rs`) for iOS, Android, macOS, Linux, Windows; Dart web via the WASM build | pub.dev `freeqrent` | `FreeQrent.render(text, style: QrStyle(...))` with sealed classes for shapes/intros. The SVG string works with `flutter_svg` for static codes. Animated codes use the native `FreeQrentAnimated` widget (§10.4). |
+| **Go** | Default: **cgo** over `freeqrent-ffi`, linking prebuilt static libraries that ship in the module for linux/darwin/windows × amd64/arm64 (consumers need a C toolchain but no Rust). Opt-in: `-tags freeqrent_wasm` for pure Go via embedded WASM + `wazero` (`CGO_ENABLED=0`, roughly 2–5× slower). | Go module `github.com/freeqrent/freeqrent-go` | `freeqrent.Render(text, freeqrent.Style{...}) (string, error)`, safe for concurrent use. Functional options for styles. |
+| **C / others** | `freeqrent-ffi`: `freeqrent_render(const char* text, const char* style_json, char** out_svg, QrsvgError* err) -> int`, `freeqrent_free(char*)` | GitHub release artifacts + header | For Swift, Kotlin, Go, and C# later |
+
+### 10.3 Consistency rules
+
+- One **conformance suite** (a JSON list of payload + style → expected SVG hash) runs in all five languages in CI. Because output is deterministic, every binding must produce byte-identical SVG.
+- Versions are released in lockstep: `freeqrent` 1.2.0 means the same core in every package.
+- Prebuilt binaries are produced for every platform, so users never need a Rust toolchain. Dart Native Assets can download prebuilt libraries and falls back to a local build.
+
+### 10.4 Flutter native animation
+
+`flutter_svg` draws static SVG only, so the Dart package includes a `FreeQrentAnimated` widget that replays intro presets with Flutter's own animation system.
+
+- The core exports an **`AnimationPlan`** (§8.5): the static geometry as path data, plus per-group keyframes (property, from/to values, delay, duration, easing as cubic-bezier control points).
+- The widget parses the path data into `ui.Path` once and drives it with a `CustomPainter` and an `AnimationController`. It respects `MediaQuery.disableAnimations` (Flutter's reduced-motion setting).
+- Intro triggers: on build, on visible (via a visibility callback), or manually through a controller.
+- Palette transitions are exposed as an implicit animation: change `palette` and the widget tweens in OKLab.
+- Conformance: golden-image tests compare the widget's final frame against the static SVG rendered by resvg.
+
+### 10.5 CLI
+
+`freeqrent "https://x.y" --shape liquid --finder squircle --frame circle --logo logo.svg --palette-from-image hero.jpg --intro ripple -o code.svg`
+
+Phase 1: `cargo install` and GitHub releases. Phase 2: also an npm `bin` (WASM, so it works anywhere Node runs).
+
+---
+
+## 11. Decisions
+
+No open questions remain. Settled so far:
+
+- **Name:** freeQRent, package id `freeqrent` everywhere.
+- **License:** MIT.
+- **Scan boxes (feature 4):** styled finders + emphasized alignment/timing patterns (§7.2).
+- **Tracking boxes (feature 7):** art mode, one oversized code with an alignment grid and steered modules (§7.8). Multi-code layouts are deferred.
+- **Image input:** the core takes a raw RGBA buffer; PNG/JPEG decoding lives in the optional `freeqrent-image` crate. No SVG image input.
+- **Output formats:** SVG and animated SVG only. No PNG export, Lottie, or VectorDrawable for now.
+- **Art-mode defaults:** ECC M and the `Standard` (4×4) tracking grid, to be re-checked against the real-device scan matrix in M5.
+- **Flutter:** native `FreeQrentAnimated` widget driven by `AnimationPlan` (§10.4).
+- **Go:** cgo by default; pure-Go WASM via the `freeqrent_wasm` tag (§10.2).
+- **Phasing:** Rust core first (Phase 1), language bindings second (Phase 2).
+
+---
+
+## 12. Milestones
+
+Each milestone is an **M wave**, built from small timestamp-named **W waves**. See `docs/waves/README.md` for the protocol and `docs/waves/LOG.md` for progress.
+
+### Phase 1: Rust core
+
+| Milestone | Scope |
+|---|---|
+| **M0: Encoder** | Versions 1–40, all ECC, auto segmentation, masks, `QrMatrix` + roles, version pinning. Verified against `rqrr` and published ISO test vectors. Fuzzing (`cargo fuzz`) on inputs. |
+| **M1: Static styles** | SVG writer, Square/Rounded/Dots/Bars, finder/alignment/timing styles, tokens + contrast checks, quiet zone, `Style::check`, CLI for previewing. |
+| **M2: Liquid + logo + round** | Contour-traced Liquid, logo excavation with ECC budget, circle frame with filler. |
+| **M3: Animation** | `AnimationPlan`, grouping engine, core intro presets, reduced motion, static-fallback tests, palette transitions. |
+| **M4: Palettes** | OKLab k-means extraction, CSS/HTML parsing, `freeqrent-image`. |
+| **M5: Halftone + art mode** | Free-bit solver, module steering, 3×3 halftone, clarity map, tracking grids, `Develop` intro, real-device scan matrix. |
+| **M6: Core 1.0** | API review, docs, preset gallery, `freeqrent` 1.0 on crates.io. |
+
+### Phase 2: Language bindings
+
+| Milestone | Scope |
+|---|---|
+| **M7: Boundary** | `freeqrent-ffi` C ABI, Style JSON schema, cross-language conformance suite. |
+| **M8: Bindings** | npm (WASM), Python (PyO3), Dart (FFI + Native Assets + `FreeQrentAnimated`), Go (cgo + `wazero` tag), prebuilt binaries for all platforms. |
+| **M9: Release** | Lockstep 1.x release in all registries, docs site with live WASM playground. |
+
+---
+
+## 13. Testing & Quality
+
+- Unit tests per stage. **Snapshot tests** (`insta`, dev-dep) on SVG output; determinism makes these reliable.
+- Round-trip scan tests (§9) in CI.
+- `cargo fuzz` targets: encoder, CSS color parser, CSS/HTML palette parser, logo SVG sanitizer.
+- Benchmarks: target < 1 ms to render a v10 styled static code, and < 5 ms with Liquid + animation, on a modern laptop.
+- WASM size check in CI (§2).
+- `cargo deny` to keep the core's dependency tree empty.

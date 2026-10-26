@@ -1,0 +1,24 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Detailed wave plans and package notes (the public summary is docs/waves/LOG.md)
+docs/waves/notes/
+
+# Agents
+.claude/
+.agents/
+.codex/
+.cursor/
+.gemini/
+.mcp.json
+.worktrees/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+
+# Fuzzing output
+fuzz/artifacts/
+fuzz/corpus/
