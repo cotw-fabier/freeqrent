@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026173249 · M6 · Kickoff: what Core 1.0 needs
+
+- Landed: SPEC §12's M6 row becomes a six-item done-when list: API review with `#[non_exhaustive]` on growable enums, style presets (`Style::preset`, `Style::presets()`, the §9 preset matrix, a gallery section, `--preset`), complete docs (`missing_docs` denied in core), measured render times and a CI-checked WASM size, the scan matrix rechecked at the release candidate, and release prep up to `cargo publish --dry-run`.
+- Decisions: core, `freeqrent-image`, `freeqrent-verify` and `freeqrent-cli` publish together at 1.0.0; benchmarks add no dependency; publishing, tagging and pushing wait for the owner's go.
+- Checks: docs only.
+
 ## 20261026171519 · M5 · A smaller logo budget at ECC H; `ModuleShape::Custom` out of 1.0
 
 - Landed: `DAMAGE_BUDGET_H` = 45%: at ECC H, logos and Outline may use 45% of each block's correctable codewords instead of 60%, so `LogoSize::Largest` and fitting take smaller logos there. `ModuleShape::Custom` is dropped from the spec for 1.0 and stays in the ROADMAP as an additive data form.

@@ -671,7 +671,16 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 | **M3: Animation** | `AnimationPlan`, grouping engine, core intro presets, reduced motion, static-fallback tests, palette transitions. **Done 2026-10-26** (`Develop` moves to M5 with halftone). |
 | **M4: Palettes** | OKLab k-means extraction, CSS/HTML parsing, `freeqrent-image`. **Done 2026-10-26.** |
 | **M5: Halftone + art mode** | Free-bit solver, module steering, 3×3 halftone, clarity map, tracking grids, `Develop` intro, real-device scan matrix. **Built 2026-10-26**; the scan matrix is recorded for iOS Camera and Google Lens (W20261026164853). WeChat and a ZXing app are pending: no device with them yet (W20261026171229). |
-| **M6: Core 1.0** | API review, docs, preset gallery, `freeqrent` 1.0 on crates.io. |
+| **M6: Core 1.0** | API review, docs, preset gallery, `freeqrent` 1.0 on crates.io. The done-when list is below *(rev. W20261026173249)*. |
+
+**M6 is done when** *(W20261026173249)*:
+
+1. **The API is reviewed.** Every public item in `freeqrent` has been read once for naming, argument order, plain-data options and structured errors, and §5 matches the real API. Enums that will grow in 1.x (module shapes, finder parts, frames, logo frames, intros, idles, warnings, errors) are `#[non_exhaustive]`, so the ROADMAP's additions (a data form of custom modules, extra glyphs, more finder shapes) stay additive. Breaking changes land before 1.0; after it, semver.
+2. **Style presets ship.** `Style::preset(name)` returns one of a curated, named set, and `Style::presets()` lists the names (the list §10.1's bindings expose). Every preset is held to its bar across module shapes and frames (§9's preset × shape × frame matrix), has a gallery section, and the CLI takes `--preset`.
+3. **Docs are complete.** `missing_docs` is denied in the core; the crate docs tour each feature with doctests that run; `RUSTDOCFLAGS="-D warnings" cargo doc` is clean with all features and with none. The README describes 1.0: a quick start, the feature flags, the MSRV and the scannability guarantee.
+4. **§2 and §13's numbers are measured.** Render times for a v10 styled static code (target < 1 ms) and Liquid with animation (< 5 ms) are benchmarked without a new dependency and recorded; the core's default-feature WASM build is measured against the 120 KB gzipped budget, and CI checks it.
+5. **The scan matrix holds at the release.** The scan sheet regenerated from the release candidate reads on iOS Camera and Google Lens, including the cards that changed since the first results (S14, S47–S66; W20261026171519).
+6. **The release is prepared.** The workspace is at 1.0.0; the core, `freeqrent-image`, `freeqrent-verify` and `freeqrent-cli` have complete crate metadata and publish together; a CHANGELOG exists; `cargo publish --dry-run` is clean for each, in dependency order; this spec's status reads 1.0. Publishing, tagging and pushing wait for the owner's go.
 
 ### Phase 2: Language bindings
 
