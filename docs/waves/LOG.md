@@ -2,6 +2,11 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026150437 · M5 · Floating theme switch
+
+- Landed: the gallery's Auto / Light / Dark switch floats in the bottom-right corner (a lime pill with a soft shadow), so it can be flipped anywhere on the page; the grid gets extra bottom padding so the last captions clear it.
+- Checks: headless Chrome screenshots in both schemes; gallery tests unchanged.
+
 ## 20261026145847 · M5 · Dark pictures
 
 - Landed: light ink for pictures. With `fg` lighter than `bg`, halftones and art mode turn the picture's lightness over for steering and sub-cells, so ink lands where the picture is light and the picture stays upright on the dark background. In color, ink takes the light band, and colors still come from the picture. `--dark` now works on picture codes, and every gallery card, pictures included, has a dark twin (140 codes). Gallery cards may set `--ecc`.

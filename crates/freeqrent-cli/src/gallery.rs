@@ -932,7 +932,7 @@ main {{
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
   gap: 48px 28px;
-  padding: clamp(28px, 4vw, 48px) clamp(16px, 4vw, 48px) 64px;
+  padding: clamp(28px, 4vw, 48px) clamp(16px, 4vw, 48px) 96px;
 }}
 figure {{ margin: 0; }}
 .code {{ position: relative; }}
@@ -971,10 +971,11 @@ code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, mon
   :root:not([data-theme="light"]) .variant.dark {{ display: block; }}
   :root:not([data-theme="light"]) .variant.light {{ display: none; }}
 }}
-.top {{ display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
-  gap: 16px 24px; }}
-.theme {{ display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px;
-  border: 1.5px solid var(--on-fluor); }}
+/* The switch floats in the corner, so it's in reach anywhere on the page. */
+.theme {{ position: fixed; right: 16px; bottom: 16px; z-index: 10;
+  display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px;
+  background: var(--fluor); border: 1.5px solid var(--on-fluor);
+  box-shadow: 0 6px 20px oklch(20% .03 140 / .28); }}
 .theme button {{ font: 600 13px/1 ui-sans-serif, system-ui, sans-serif; color: var(--on-fluor);
   background: transparent; border: 0; border-radius: 999px; padding: 8px 14px; cursor: pointer;
   transition: background-color .2s cubic-bezier(.25, 1, .5, 1), color .2s cubic-bezier(.25, 1, .5, 1); }}
@@ -984,16 +985,14 @@ code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, mon
 </head>
 <body>
 <header>
-<div class="top">
 <h1>Style families</h1>
+<p>{payload}</p>
+</header>
 <div class="theme" role="group" aria-label="Codes and page">
 <button type="button" data-theme="auto" aria-pressed="true">Auto</button>
 <button type="button" data-theme="light" aria-pressed="false">Light</button>
 <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
 </div>
-</div>
-<p>{payload}</p>
-</header>
 <main>
 {cards}</main>
 <script>
