@@ -78,9 +78,9 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 67);
+    assert_eq!(html.matches("<figure>").count(), 68);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 67);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 68);
     // Without pictures the picture cards use the sample.
     assert!(html.contains("--art sample --clarity 0.5"));
 
@@ -96,7 +96,7 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 67);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 68);
     assert!(!html.contains("--art sample --clarity 0.5"));
     assert!(html.contains("brand.png --clarity 0.5"));
     std::fs::remove_dir_all(&dir).unwrap();
@@ -195,6 +195,52 @@ fn frame_widths_colors_moons_spins_and_flips() {
     ]);
     assert_eq!(out.status.code(), Some(1));
     assert!(stderr(&out).contains("Logo.moon_size"));
+}
+
+#[test]
+fn frames_cut_loose_from_the_logo() {
+    let args = [
+        "https://example.com",
+        "--logo",
+        "sample",
+        "--logo-frame",
+        "brackets",
+        "--logo-intro",
+        "shrink",
+        "--logo-frame-intro",
+        "spin",
+        "--logo-frame-timing",
+        "after",
+    ];
+    let out = freeqrent(&[&args[..], &["--verify"]].concat());
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stderr(&out).contains("verified: decodes"));
+    let out = freeqrent(&args);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let svg = stdout(&out);
+    assert!(svg.contains("rotate(-90deg) scale(.9)"), "{svg}");
+    // The frame's options need a frame, and the names are the logo's.
+    for bad in [
+        &["--logo-frame-intro", "spin"][..],
+        &["--logo-frame-timing", "with"],
+    ] {
+        let mut args = vec!["https://example.com", "--logo", "sample"];
+        args.extend_from_slice(bad);
+        let out = freeqrent(&args);
+        assert_eq!(out.status.code(), Some(2), "{bad:?}");
+        assert!(stderr(&out).contains("need --logo-frame"), "{bad:?}");
+    }
+    let out = freeqrent(&[
+        "https://example.com",
+        "--logo",
+        "sample",
+        "--logo-frame",
+        "ring",
+        "--logo-frame-intro",
+        "twirl",
+    ]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("spin"));
 }
 
 #[test]
@@ -365,13 +411,13 @@ fn the_scan_sheet_names_every_card() {
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
     let cards = html.matches("<figure data-id=").count();
-    assert_eq!(cards, 65);
+    assert_eq!(cards, 66);
     // Every code renders, and each payload names its card.
     assert!(!html.contains("Refused"));
     assert!(html.contains("https://example.com/scan/S01"));
     assert!(html.contains("FQ-S46"));
     // The logo cards come last, so the earlier ids keep their cards.
-    assert!(html.contains("https://example.com/scan/S65"));
+    assert!(html.contains("https://example.com/scan/S66"));
     assert_eq!(html.matches("<select data-device=").count(), cards * 4);
     std::fs::remove_dir_all(&dir).unwrap();
 }

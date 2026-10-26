@@ -180,6 +180,78 @@ fn logo_intros_end_on_the_static_code() {
 }
 
 #[test]
+fn cut_loose_frames_end_on_the_static_code() {
+    for frame_intro in LogoIntro::ALL {
+        for timing in LogoTiming::ALL {
+            for (logo_intro, preset) in [
+                (LogoIntro::Shrink, Preset::Settle),
+                (LogoIntro::Ink, Preset::Iris),
+                (LogoIntro::None, Preset::Develop),
+            ] {
+                for (shape, frame) in [
+                    (LogoShape::Circle, LogoFrame::Ring),
+                    (LogoShape::Square, LogoFrame::Brackets),
+                ] {
+                    let logo = Logo::svg(MARK).unwrap().shape(shape).frame(frame);
+                    let plain = Style::new().logo(logo);
+                    let animated = plain.clone().intro(
+                        Intro::new(preset)
+                            .logo(logo_intro)
+                            .frame(frame_intro)
+                            .frame_timing(timing),
+                    );
+                    let label =
+                        format!("{logo_intro:?} + {frame_intro:?} {timing:?} {preset:?} {frame:?}");
+                    let qr = fitted(&plain);
+                    let a = rasterize(&plain.render(&qr).unwrap(), 6.0).unwrap();
+                    let b = rasterize(&animated.render(&qr).unwrap(), 6.0).unwrap();
+                    assert_eq!(differs(&a, &b), 0, "{label}: static picture");
+                    let plan = animated.plan(&qr).unwrap();
+                    assert!(plan.total_ms <= 1200, "{label}: {}", plan.total_ms);
+                    let end = animated.render_frame(&qr, plan.total_ms).unwrap();
+                    let c = rasterize(&end, 6.0).unwrap();
+                    assert_eq!(differs(&b, &c), 0, "{label}: last frame");
+                    assert_verifies(&animated, &qr, TEXT, &label);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn cut_loose_frames_scan_before_they_end() {
+    // ZXing at 6 px per module, every 50 ms (SPEC §8.1).
+    for (logo_intro, frame_intro, timing) in [
+        (LogoIntro::Shrink, LogoIntro::Draw, LogoTiming::After),
+        (LogoIntro::Shrink, LogoIntro::Spin, LogoTiming::After),
+        (LogoIntro::Ink, LogoIntro::Spin, LogoTiming::With),
+        (LogoIntro::Stamp, LogoIntro::Lock, LogoTiming::Before),
+        (LogoIntro::Spin, LogoIntro::Shrink, LogoTiming::After),
+        (LogoIntro::Reveal, LogoIntro::None, LogoTiming::After),
+    ] {
+        for version in [5, 10] {
+            let logo = Logo::svg(MARK)
+                .unwrap()
+                .shape(LogoShape::Circle)
+                .frame(LogoFrame::Ring)
+                .scale(0.14);
+            let style = Style::new().logo(logo).intro(
+                Intro::new(Preset::Settle)
+                    .logo(logo_intro)
+                    .frame(frame_intro)
+                    .frame_timing(timing),
+            );
+            let qr = code(TEXT, version, Ecc::Q);
+            let total = style.plan(&qr).unwrap().total_ms;
+            let at = freeqrent_verify::scannable_after(&style, &qr, TEXT, 50).unwrap();
+            let label = format!("{logo_intro:?} + {frame_intro:?} {timing:?} v{version}");
+            println!("{label}: scannable from {at} ms of {total}");
+            assert!(at <= total, "{label}: {at} > {total}");
+        }
+    }
+}
+
+#[test]
 fn idles_scan_all_the_way_round() {
     let render = Render {
         px_per_module: 6,

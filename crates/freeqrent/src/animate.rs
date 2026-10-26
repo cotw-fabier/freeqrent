@@ -228,11 +228,15 @@ pub enum LogoIntro {
     /// rest while the code comes in beneath them. It always plays with the
     /// code over the whole intro: the timing doesn't apply.
     Shrink,
+    /// The logo and frame turn in from a quarter turn back, growing from
+    /// 90% as they fade in (600 ms). With a frame, the frame turns and the
+    /// logo fades in inside it once it is a third of the way round.
+    Spin,
 }
 
 impl LogoIntro {
     /// Every logo intro.
-    pub const ALL: [LogoIntro; 7] = [
+    pub const ALL: [LogoIntro; 8] = [
         LogoIntro::None,
         LogoIntro::Reveal,
         LogoIntro::Stamp,
@@ -240,6 +244,7 @@ impl LogoIntro {
         LogoIntro::Lock,
         LogoIntro::Ink,
         LogoIntro::Shrink,
+        LogoIntro::Spin,
     ];
 
     /// The intro's lowercase name, as the CLI spells it.
@@ -252,6 +257,7 @@ impl LogoIntro {
             LogoIntro::Lock => "lock",
             LogoIntro::Ink => "ink",
             LogoIntro::Shrink => "shrink",
+            LogoIntro::Spin => "spin",
         }
     }
 
@@ -264,6 +270,7 @@ impl LogoIntro {
             LogoIntro::Draw => 700.0,
             LogoIntro::Lock => 550.0,
             LogoIntro::Ink => 800.0,
+            LogoIntro::Spin => 600.0,
             // The whole intro, whatever its length.
             LogoIntro::Shrink => f64::INFINITY,
         }
@@ -312,6 +319,10 @@ pub struct Intro {
     pub(crate) trigger: Trigger,
     pub(crate) logo: LogoIntro,
     pub(crate) logo_timing: LogoTiming,
+    /// The frame's own intro and timing, when it is cut loose from the
+    /// logo's; the timing defaults to the logo's.
+    pub(crate) frame: Option<LogoIntro>,
+    pub(crate) frame_timing: Option<LogoTiming>,
 }
 
 // By hand, so the logo's intro shows only when it isn't the default: the
@@ -335,6 +346,12 @@ impl fmt::Debug for Intro {
         }
         if self.logo_timing != LogoTiming::After {
             d.field("logo_timing", &self.logo_timing);
+        }
+        if let Some(frame) = self.frame {
+            d.field("frame", &frame);
+        }
+        if let Some(timing) = self.frame_timing {
+            d.field("frame_timing", &timing);
         }
         d.finish()
     }
@@ -363,6 +380,8 @@ impl Intro {
             trigger: Trigger::Load,
             logo: LogoIntro::Reveal,
             logo_timing: LogoTiming::After,
+            frame: None,
+            frame_timing: None,
         }
     }
 
@@ -442,9 +461,32 @@ impl Intro {
         self
     }
 
+    /// Cuts the logo's frame loose from the logo's intro: the frame plays
+    /// `frame` on its own, at [`Intro::frame_timing`] (default: the
+    /// logo's timing), while the plate and logo play theirs as if they had
+    /// no frame. So a frame can draw itself in as a Shrink lands, or spin
+    /// in around a logo that only fades. `LogoIntro::None` here holds the
+    /// frame still while the logo moves. No effect without a frame.
+    pub fn frame(mut self, frame: LogoIntro) -> Intro {
+        self.frame = Some(frame);
+        self
+    }
+
+    /// When a cut-loose frame's intro plays against the code's. Setting it
+    /// cuts the frame loose too, with the logo's own intro.
+    pub fn frame_timing(mut self, timing: LogoTiming) -> Intro {
+        self.frame_timing = Some(timing);
+        self
+    }
+
     /// The logo's intro.
     pub fn logo_intro(&self) -> LogoIntro {
         self.logo
+    }
+
+    /// The frame's own intro, when it is cut loose from the logo's.
+    pub fn frame_intro(&self) -> Option<LogoIntro> {
+        self.frame.or(self.frame_timing.map(|_| self.logo))
     }
 
     /// The entrance preset, or `None` for a palette shift.
@@ -1192,19 +1234,44 @@ fn tracks(
     } else {
         LogoIntro::None
     };
-    let logo_ms = match logo_intro {
+    let has_frame = elements.iter().any(|e| e.role == LayerRole::LogoFrame);
+    // A frame cut loose plays its own intro; the logo then plays as if it
+    // had none.
+    let cut = intro
+        .frame_intro()
+        .filter(|_| has_frame && style.logo.is_some());
+    let length = |intro: LogoIntro| match intro {
         LogoIntro::None => 0.0,
         LogoIntro::Reveal => LOGO_MS.min(total * 0.4),
         LogoIntro::Shrink => total,
         other => other.ms().min(total * 0.6),
     };
-    // The code's own stretch: it overlaps the logo's intro by half.
-    let (code_start, code_end, logo_at) = match intro.logo_timing {
-        _ if logo_ms == 0.0 || logo_intro == LogoIntro::Shrink => (0.0, total, 0.0),
-        LogoTiming::After => (0.0, total - logo_ms / 2.0, total - logo_ms),
-        LogoTiming::Before => (logo_ms / 2.0, total, 0.0),
-        LogoTiming::With => (0.0, total, (total - logo_ms) / 2.0),
+    let logo_ms = length(logo_intro);
+    let frame_ms = cut.map_or(0.0, length);
+    let frame_timing = intro.frame_timing.unwrap_or(intro.logo_timing);
+    // Where an intro of `ms` starts. Shrink always runs the whole intro.
+    let start_of = |intro: LogoIntro, ms: f64, timing| match timing {
+        _ if intro == LogoIntro::Shrink => 0.0,
+        LogoTiming::After => total - ms,
+        LogoTiming::Before => 0.0,
+        LogoTiming::With => (total - ms) / 2.0,
     };
+    let logo_at = start_of(logo_intro, logo_ms, intro.logo_timing);
+    let frame_at = cut.map_or(0.0, |f| start_of(f, frame_ms, frame_timing));
+    // The code's own stretch: it overlaps the logo's and the frame's
+    // intros by half.
+    let (mut code_start, mut code_end) = (0.0f64, total);
+    for (intro, ms, timing) in [
+        (logo_intro, logo_ms, intro.logo_timing),
+        (cut.unwrap_or(LogoIntro::None), frame_ms, frame_timing),
+    ] {
+        match timing {
+            _ if ms == 0.0 || intro == LogoIntro::Shrink => {}
+            LogoTiming::After => code_end = code_end.min(total - ms / 2.0),
+            LogoTiming::Before => code_start = code_start.max(ms / 2.0),
+            LogoTiming::With => {}
+        }
+    }
     let window = code_end - code_start;
     let k = intro.groups.clamp(1, 16) as f64;
     let ease = intro.curve();
@@ -1226,7 +1293,6 @@ fn tracks(
         ]
     };
 
-    let has_frame = elements.iter().any(|e| e.role == LayerRole::LogoFrame);
     // Shrink starts the plate as wide as the code.
     let plate = 2.0 * plate_half(style, qr);
     let wide = if plate > 0.0 {
@@ -1236,14 +1302,12 @@ fn tracks(
     };
     let logo_track = |i: usize, e: &Element| {
         let drawable = e.outline.as_ref().is_some_and(|o| o.dashes.is_empty());
-        logo_keys(logo_intro, e.role, has_frame, drawable, wide).map(|(at, length, keys)| {
-            track(
-                Target::Layer(i),
-                logo_at + at * logo_ms,
-                length * logo_ms,
-                keys,
-            )
-        })
+        let (intro, start, ms) = match cut {
+            Some(f) if e.role == LayerRole::LogoFrame => (f, frame_at, frame_ms),
+            _ => (logo_intro, logo_at, logo_ms),
+        };
+        logo_keys(intro, e.role, has_frame && cut.is_none(), drawable, wide)
+            .map(|(at, length, keys)| track(Target::Layer(i), start + at * ms, length * ms, keys))
     };
 
     let mut tracks = Vec::new();
@@ -1405,6 +1469,18 @@ fn logo_keys(
         (LogoIntro::Lock, _) => Some((0.0, 1.0, fade(1.2))),
         (LogoIntro::Ink, _) if frame => Some((0.0, 0.4, fade(0.94))),
         (LogoIntro::Ink, _) => Some((0.25, 0.1, fade_in())),
+        (LogoIntro::Spin, _) if has_frame && !frame => Some((0.35, 0.65, fade(0.94))),
+        (LogoIntro::Spin, _) => Some((
+            0.0,
+            1.0,
+            // Opaque by 40%, so the turn's slow end is the part you see.
+            alloc::vec![
+                number(Property::Opacity, 0.0, 0.0),
+                number(Property::Opacity, 0.4, 1.0),
+                number(Property::Rotate, 0.0, -90.0),
+                number(Property::Scale, 0.0, 0.9),
+            ],
+        )),
     }
 }
 
@@ -1416,7 +1492,10 @@ fn reveal(style: &Style, intro: &Intro, canvas: &Canvas, elements: &[Element]) -
     let first = elements
         .iter()
         .position(|e| e.role != LayerRole::Background)?;
-    let logo_apart = intro.logo != LogoIntro::None && style.logo.is_some();
+    // A logo with no intro of its own still leaves the mask when its frame
+    // has one, and then shows from the start.
+    let logo_apart =
+        (intro.logo != LogoIntro::None || intro.frame_intro().is_some()) && style.logo.is_some();
     let last = elements
         .iter()
         .rposition(|e| !(e.role.is_logo() && logo_apart))?;
@@ -3214,6 +3293,81 @@ mod tests {
                 assert!((v as f64 * plate - qr.size() as f64).abs() < 1e-3);
             }
         }
+    }
+
+    #[test]
+    fn a_frame_cut_loose_plays_its_own_intro() {
+        let ring = framed(crate::LogoFrame::Ring);
+        let qr = framed_code(&ring);
+        let span = |intro: Intro, role| {
+            let plan = ring.clone().intro(intro).plan(&qr).unwrap();
+            let i = plan.layers.iter().position(|l| l.role == role).unwrap();
+            let t = plan
+                .tracks
+                .iter()
+                .find(|t| t.target == Target::Layer(i))
+                .unwrap()
+                .clone();
+            (t.delay_ms, t.delay_ms + t.duration_ms, t.keys)
+        };
+        // The logo shrinks over the whole intro; the ring draws in last.
+        let cut = Intro::new(Preset::Settle)
+            .logo(LogoIntro::Shrink)
+            .frame(LogoIntro::Draw)
+            .frame_timing(LogoTiming::After);
+        let (start, end, _) = span(cut.clone(), LayerRole::Logo);
+        assert_eq!((start, end), (0, 1200));
+        let (start, end, keys) = span(cut.clone(), LayerRole::LogoFrame);
+        assert_eq!((start, end), (500, 990));
+        assert!(keys.iter().all(|k| k.property == Property::Draw));
+        // Followed, the ring would shrink with the logo instead.
+        let (start, _, keys) = span(
+            Intro::new(Preset::Settle).logo(LogoIntro::Shrink),
+            LayerRole::LogoFrame,
+        );
+        assert_eq!(start, 0);
+        assert!(keys.iter().any(|k| k.property == Property::Scale));
+        // Cut loose, a Draw logo no longer waits for its frame.
+        let (start, _, _) = span(
+            Intro::new(Preset::Settle)
+                .logo(LogoIntro::Draw)
+                .frame(LogoIntro::None),
+            LayerRole::Logo,
+        );
+        assert_eq!(start, 1200 - 700);
+        // The code makes room for both: the frame first, the logo last.
+        let both = Intro::new(Preset::Settle)
+            .logo(LogoIntro::Stamp)
+            .frame(LogoIntro::Spin)
+            .frame_timing(LogoTiming::Before);
+        let style = ring.clone().intro(both.clone());
+        let plan = style.plan(&qr).unwrap();
+        let code: Vec<&Track> = plan
+            .tracks
+            .iter()
+            .filter(|t| match t.target {
+                Target::Layer(i) => !plan.layers[i].role.is_logo(),
+                _ => false,
+            })
+            .collect();
+        let first = code.iter().map(|t| t.delay_ms).min().unwrap();
+        let last = code
+            .iter()
+            .map(|t| t.delay_ms + t.duration_ms)
+            .max()
+            .unwrap();
+        assert_eq!((first, last), (300, 1200 - 225));
+        let (start, end, keys) = span(both.clone(), LayerRole::LogoFrame);
+        assert_eq!((start, end), (0, 600));
+        assert!(keys.contains(&number(Property::Rotate, 0.0, -90.0)));
+        let (start, _, _) = span(both, LayerRole::Logo);
+        assert_eq!(start, 1200 - 450);
+        // The timing alone cuts the frame loose with the logo's intro.
+        let timed = Intro::new(Preset::Settle).frame_timing(LogoTiming::Before);
+        assert_eq!(timed.frame_intro(), Some(LogoIntro::Reveal));
+        assert_eq!(Intro::new(Preset::Settle).frame_intro(), None);
+        let text = alloc::format!("{:?}", Intro::new(Preset::Settle).frame(LogoIntro::Spin));
+        assert!(text.ends_with("frame: Spin }"), "{text}");
     }
 
     #[test]

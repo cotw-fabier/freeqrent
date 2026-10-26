@@ -373,13 +373,15 @@ pub(crate) const LOGO_FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
-        "Shrink logo intro",
+        "Logo shrinks, then its ring draws",
         &[
             ("intro", "settle"),
             ("logo", "sample"),
             ("logo-shape", "rounded:1.5"),
             ("logo-frame", "ring"),
             ("logo-intro", "shrink"),
+            ("logo-frame-intro", "draw"),
+            ("logo-frame-timing", "after"),
             ("shape", "rounded:0.5"),
             ("finder", "rounded:2/rounded:1"),
         ],
@@ -405,6 +407,18 @@ pub(crate) const LOGO_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("logo-frame", "ring"),
             ("shape", "liquid:0.8"),
             ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
+        "Spin logo intro",
+        &[
+            ("intro", "ripple"),
+            ("logo", "sample"),
+            ("logo-shape", "rounded:1.5"),
+            ("logo-frame", "brackets"),
+            ("logo-size", "large"),
+            ("logo-intro", "spin"),
+            ("shape", "rounded:0.4"),
         ],
     ),
 ];
@@ -625,7 +639,7 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
-        "Picture palette, ink logo",
+        "Picture palette, ink logo, frame spins in",
         &[
             ("intro", "settle"),
             ("palette-from-image", "{b}"),
@@ -633,6 +647,8 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("logo-shape", "circle"),
             ("logo-frame", "stamp"),
             ("logo-intro", "ink"),
+            ("logo-frame-intro", "spin"),
+            ("logo-frame-timing", "with"),
             ("shape", "dots:0.85"),
             ("finder", "rounded:2/circle"),
         ],

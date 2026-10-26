@@ -72,8 +72,13 @@ Style:
                            or an accent found by --palette-from-*)
   --logo-moon D            an orbit's moon, 0.4-4 modules across (default 2.4)
   --logo-intro INTRO       reveal (default), stamp, draw, lock, ink, shrink
-                           (from as wide as the code, with its intro), none
+                           (from as wide as the code, with its intro), spin,
+                           none
   --logo-timing WHEN       after (default), before, with the code's intro
+  --logo-frame-intro INTRO the frame's own intro, cut loose from the logo's
+                           (same names; none holds the frame still)
+  --logo-frame-timing WHEN when the frame's own intro plays (default: the
+                           logo's timing)
   --intro PRESET           settle, ripple, lock-on, sweep, raster, iris, assemble,
                            develop (for pictures)
   --intro-ms N             whole intro length (default 1200)
@@ -167,6 +172,8 @@ pub struct StyleArgs {
     logo_moon: Option<f32>,
     logo_intro: Option<LogoIntro>,
     logo_timing: Option<LogoTiming>,
+    logo_frame_intro: Option<LogoIntro>,
+    logo_frame_timing: Option<LogoTiming>,
     intro: Option<Preset>,
     intro_ms: Option<u32>,
     stagger: Option<StaggerOrder>,
@@ -319,6 +326,8 @@ impl StyleArgs {
             "logo-moon" => self.logo_moon = Some(options::number(flag, value)?),
             "logo-intro" => self.logo_intro = Some(options::logo_intro(value)?),
             "logo-timing" => self.logo_timing = Some(options::logo_timing(value)?),
+            "logo-frame-intro" => self.logo_frame_intro = Some(options::logo_intro(value)?),
+            "logo-frame-timing" => self.logo_frame_timing = Some(options::logo_timing(value)?),
             "intro" => self.intro = Some(options::preset(value)?),
             "intro-ms" => {
                 self.intro_ms = Some(
@@ -487,7 +496,9 @@ impl StyleArgs {
                 || self.logo_frame_width.is_some()
                 || self.logo_moon.is_some()
                 || self.logo_intro.is_some()
-                || self.logo_timing.is_some())
+                || self.logo_timing.is_some()
+                || self.logo_frame_intro.is_some()
+                || self.logo_frame_timing.is_some())
         {
             return Err("logo options need --logo".to_string());
         }
@@ -537,8 +548,16 @@ impl StyleArgs {
                 if let Some(moon) = self.logo_moon {
                     logo = logo.moon_size(moon);
                 }
-            } else if self.logo_frame_width.is_some() || self.logo_moon.is_some() {
-                return Err("--logo-frame-width and --logo-moon need --logo-frame".to_string());
+            } else if self.logo_frame_width.is_some()
+                || self.logo_moon.is_some()
+                || self.logo_frame_intro.is_some()
+                || self.logo_frame_timing.is_some()
+            {
+                return Err(
+                    "--logo-frame-width, --logo-moon and --logo-frame-intro/timing \
+                     need --logo-frame"
+                        .to_string(),
+                );
             }
             if let Some(shape) = self.logo_shape {
                 logo = logo.shape(shape);
@@ -554,7 +573,9 @@ impl StyleArgs {
             || self.groups.is_some()
             || self.trigger.is_some()
             || self.logo_intro.is_some()
-            || self.logo_timing.is_some();
+            || self.logo_timing.is_some()
+            || self.logo_frame_intro.is_some()
+            || self.logo_frame_timing.is_some();
         if !self.from_tokens.is_empty() {
             if self.intro.is_some() {
                 return Err("--intro and --from-* can't be combined".to_string());
@@ -598,6 +619,12 @@ impl StyleArgs {
             }
             if let Some(timing) = self.logo_timing {
                 intro = intro.logo_timing(timing);
+            }
+            if let Some(frame) = self.logo_frame_intro {
+                intro = intro.frame(frame);
+            }
+            if let Some(timing) = self.logo_frame_timing {
+                intro = intro.frame_timing(timing);
             }
             style = style.intro(intro);
         }

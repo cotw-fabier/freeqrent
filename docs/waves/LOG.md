@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026130519 · M5 · Cut-loose logo frames and the Spin intro
+
+- Landed: `Intro::frame(LogoIntro)` and `Intro::frame_timing(LogoTiming)` cut the logo's frame loose from the logo's intro: the frame plays its own intro at its own timing, and the plate and logo play theirs as if they had no frame. The code's stagger makes room for both. `LogoIntro::Spin` (600 ms): a quarter turn in, from 90%, opaque by 40%; with a frame, the frame turns and the logo fades in inside it. CLI `--logo-intro spin`, `--logo-frame-intro`, `--logo-frame-timing`. Gallery: the Shrink card (scan sheet S63) now has its ring draw in after the Shrink, the picture-palette Ink card's stamp frame spins in with the code, and a new Spin card comes last among the logo cards (68 families; the sheet gains S66, and earlier ids keep their cards).
+- Measured: scannable from 500–750 ms of 1200 for six cut-loose pairs on v5 and v10; Spin alone 500–600 After, 700–750 With, 800–900 Before, in line with the other logo intros.
+- Decisions: Spin uses the intro's own ease-out and no overshoot (impeccable animate: no bounce or elastic); the turn's fast part happens while it is still fading, so what you see is the slow settle. Keyframes that turn write `rotate()` in each rule so browsers interpolate the angle. Reduced motion still stops everything. Default documents are unchanged: the new fields reach the ID prefix only when set.
+- Checks: a unit test of the cut-loose timing; verify tests that every frame intro × timing over Shrink, Ink and no logo intro (Settle, Iris, Develop; ring and brackets) ends on the static code and scans, and that six pairs scan before they end; `LogoIntro::ALL` grows, so the existing logo intro tests cover Spin; a CLI test of the flags.
+
 ## 20261026121853 · M5 · Pictures break up in intros
 
 - Landed: group intros (Settle, Ripple, LockOn, Assemble) cut a picture into 3 × 3-module tiles staggered like modules, instead of moving it as one piece. Each group's strokes are plan layers of their own; in the SVG they share one animated group (`Element::joins`, `Motion::joined`), so a six-color art code animates 12 groups, not 281 strokes. Two art gallery cards (Assemble, Ripple; 67 families, all decode).
