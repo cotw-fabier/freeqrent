@@ -11,9 +11,9 @@ use std::process::ExitCode;
 
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Corner, Ease, Ecc, Emphasis, EyeShape, FinderStyle, FrameRing,
-    Idle, Intro, Logo, LogoShape, ModuleShape, Palette, Preset, QrBuilder, QrCode, QrMatrix,
-    RasterFormat, RingShape, ScanReport, StaggerOrder, Style, TargetSize, TimingStyle, Trigger,
-    Version,
+    Idle, Intro, Logo, LogoShape, ModuleShape, Origin, Paint, Palette, PaletteError, PaletteOpts,
+    PaletteReport, Preset, QrBuilder, QrCode, QrMatrix, RasterFormat, Rgba8Image, RingShape,
+    ScanReport, StaggerOrder, Style, TargetSize, TimingStyle, Token, Trigger, Version,
 };
 
 const HELP: &str = "\
@@ -38,6 +38,14 @@ Style:
   --fg COLOR, --bg COLOR   shortcuts for --token fg=COLOR, --token bg=COLOR
   --token NAME=PAINT       any color token, e.g. finder.eye=oklch(55% .2 30)
                            or fg=\"linear-gradient(135deg, #123, #456)\"
+  --palette-from-image FILE
+                           take bg, fg and finder.eye from a PNG or JPEG
+  --palette-from-css FILE  ... from a style sheet (`-` for stdin, `sample`)
+  --palette-from-html FILE ... from a page: theme-color, <style>, style attributes
+                           (`-` for stdin, e.g. curl -s URL | freeqrent ...)
+  --palette-clusters K     colors to cluster an image into, 2-12 (default 6)
+  --palette-contrast D     least contrast for image palettes, 0.6-0.9 (0.66)
+                           --fg, --bg and --token override what was found
   --quiet-zone N           modules of margin (default 4)
   --frame FRAME            square, rounded[:r], circle[:filler density], none
   --frame-ring RING        none, solid, dashed (circle frames)
@@ -71,6 +79,7 @@ Output:
   --frame-at MS            write the intro stopped at MS as a still SVG
   --plan                   write the animation plan as JSON instead
   --check                  print the scan report instead of the SVG
+  --show-palette           print what --palette-from-* found, as flags
   --verify                 rasterize and decode the result before writing it
   --gallery FILE           write an HTML page of style families for TEXT
   -h, --help               show this help
@@ -125,6 +134,33 @@ pub struct StyleArgs {
     from_tokens: Vec<(String, String)>,
     idle: Vec<Idle>,
     theme_transition: Option<u32>,
+    palette_source: Option<PaletteSource>,
+    palette_clusters: Option<u8>,
+    palette_contrast: Option<f32>,
+}
+
+/// Where `--palette-from-*` takes colors from, read once.
+#[derive(Clone)]
+enum PaletteSource {
+    Image(Rgba8Image),
+    Css(String),
+    Html(String),
+}
+
+/// The style sheet `--palette-from-css sample` uses.
+const SAMPLE_CSS: &str = ":root { --paper: #f6f1e7; --ink: #23201c; --brand: #c2410c }
+body { background: var(--paper); color: var(--ink) }
+a, .button { color: var(--brand) }";
+
+/// Reads a text source: a file, or standard input for `-`.
+fn read_text(flag: &str, source: &str) -> Result<String, String> {
+    if source == "-" {
+        let mut text = String::new();
+        io::Read::read_to_string(&mut io::stdin(), &mut text)
+            .map_err(|e| format!("--{flag} -: {e}"))?;
+        return Ok(text);
+    }
+    fs::read_to_string(source).map_err(|e| format!("--{flag} {source}: {e}"))
 }
 
 /// The mark `--logo sample` uses.
@@ -229,6 +265,29 @@ impl StyleArgs {
                         .map_err(|_| format!("{value:?} isn't a whole number of ms"))?,
                 )
             }
+            "palette-from-image" => {
+                let bytes = fs::read(value).map_err(|e| format!("{value}: {e}"))?;
+                let image = freeqrent_image::decode(&bytes).map_err(|e| format!("{value}: {e}"))?;
+                self.palette_source = Some(PaletteSource::Image(image));
+            }
+            "palette-from-css" => {
+                let css = match value {
+                    "sample" => SAMPLE_CSS.to_string(),
+                    _ => read_text(flag, value)?,
+                };
+                self.palette_source = Some(PaletteSource::Css(css));
+            }
+            "palette-from-html" => {
+                self.palette_source = Some(PaletteSource::Html(read_text(flag, value)?));
+            }
+            "palette-clusters" => {
+                self.palette_clusters = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("{value:?} isn't a number 2-12"))?,
+                )
+            }
+            "palette-contrast" => self.palette_contrast = Some(options::number(flag, value)?),
             "title" => self.title = Some(value.to_string()),
             "label" => self.label = Some(value.to_string()),
             _ => return Ok(false),
@@ -236,11 +295,47 @@ impl StyleArgs {
         Ok(true)
     }
 
+    /// The palette `--palette-from-*` derives, with its report.
+    pub fn extract(&self) -> Result<Option<(Palette, PaletteReport)>, String> {
+        let found = match &self.palette_source {
+            None => return Ok(None),
+            Some(PaletteSource::Image(image)) => {
+                let mut opts = PaletteOpts::new();
+                if let Some(k) = self.palette_clusters {
+                    opts = opts.clusters(k);
+                }
+                if let Some(d) = self.palette_contrast {
+                    opts = opts.min_contrast(d);
+                }
+                Palette::from_image(image, opts)
+            }
+            Some(PaletteSource::Css(css)) => Palette::from_css(css),
+            Some(PaletteSource::Html(html)) => Palette::from_html(html),
+        };
+        found
+            .map(Some)
+            .map_err(|e| format!("--palette-from-*: {e}"))
+    }
+
     /// The style these flags describe, labeled for `text`.
     pub fn build(&self, text: &str) -> Result<Style, String> {
-        let palette =
-            Palette::from_tokens(self.tokens.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-                .map_err(|e| e.to_string())?;
+        let mut palette = match self.extract()? {
+            Some((palette, _)) => palette,
+            None => Palette::new(),
+        };
+        for (name, value) in &self.tokens {
+            let wrap = |error| {
+                PaletteError {
+                    token: name.clone(),
+                    error,
+                }
+                .to_string()
+            };
+            let token =
+                Token::from_name(name).ok_or_else(|| wrap(freeqrent::ColorError::UnknownToken))?;
+            let paint = Paint::parse(value).map_err(wrap)?;
+            palette.set(token, paint).map_err(wrap)?;
+        }
         let (ring, eye) = self.finder.unwrap_or((RingShape::Square, EyeShape::Square));
         let mut finders = FinderStyle::new(ring, eye);
         for &(corner, ring, eye) in &self.corners {
@@ -358,6 +453,7 @@ struct Args {
     verify: bool,
     frame_at: Option<u32>,
     plan: bool,
+    show_palette: bool,
 }
 
 fn parse_args() -> Result<Option<Args>, Failure> {
@@ -369,7 +465,7 @@ fn parse_args() -> Result<Option<Args>, Failure> {
     let mut version = None;
     let mut style = StyleArgs::default();
     let (mut output, mut gallery, mut check, mut verify) = (None, None, false, false);
-    let (mut frame_at, mut plan) = (None, false);
+    let (mut frame_at, mut plan, mut show_palette) = (None, false, false);
     while let Some(arg) = parser.next()? {
         match arg {
             Short('h') | Long("help") => {
@@ -381,6 +477,7 @@ fn parse_args() -> Result<Option<Args>, Failure> {
             Long("check") => check = true,
             Long("verify") => verify = true,
             Long("plan") => plan = true,
+            Long("show-palette") => show_palette = true,
             Long("frame-at") => {
                 let v = parser.value()?.string()?;
                 frame_at = Some(v.parse().map_err(|_| {
@@ -432,7 +529,44 @@ fn parse_args() -> Result<Option<Args>, Failure> {
         verify,
         frame_at,
         plan,
+        show_palette,
     }))
+}
+
+/// Prints what extraction found, and the flags that reproduce the palette.
+fn print_palette(out: &mut dyn Write, report: &PaletteReport) -> io::Result<()> {
+    writeln!(out, "palette: {} colors found", report.swatches.len())?;
+    for (i, s) in report.swatches.iter().enumerate() {
+        writeln!(
+            out,
+            "  {i:>2}  {:<24} {:>5.1}%",
+            s.color.to_string(),
+            s.share * 100.0
+        )?;
+    }
+    let mut flags = Vec::new();
+    for c in &report.choices {
+        let why = match c.origin {
+            Origin::Swatch(i) => format!("color {i}"),
+            Origin::Tinted(Some(i)) => format!("near-white tinted by color {i}"),
+            Origin::Tinted(None) => "neutral".to_string(),
+            Origin::Darkened { swatch, delta_l } => {
+                format!("color {swatch} darkened from contrast {delta_l:.2}")
+            }
+            _ => "derived".to_string(),
+        };
+        writeln!(
+            out,
+            "  {:<11} {:<24} {why}",
+            c.token.name(),
+            c.color.to_string()
+        )?;
+        flags.push(match c.token {
+            Token::Bg | Token::Fg => format!("--{} '{}'", c.token.name(), c.color),
+            t => format!("--token '{}={}'", t.name(), c.color),
+        });
+    }
+    writeln!(out, "  as flags: {}", flags.join(" "))
 }
 
 fn print_report(out: &mut dyn Write, report: &ScanReport) -> io::Result<()> {
@@ -494,6 +628,13 @@ fn run() -> Result<(), Failure> {
             .map_err(|e| Failure::Failed(format!("{}: {e}", path.display())));
     }
 
+    if args.show_palette {
+        match args.style.extract().map_err(Failure::Failed)? {
+            Some((_, report)) => print_palette(&mut io::stderr(), &report),
+            None => writeln!(io::stderr(), "palette: no --palette-from-* given"),
+        }
+        .map_err(|e| Failure::Failed(e.to_string()))?;
+    }
     let style = args.style.build(&args.text).map_err(Failure::Usage)?;
     let qr = args
         .builder

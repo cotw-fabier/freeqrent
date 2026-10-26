@@ -78,9 +78,9 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 21);
+    assert_eq!(html.matches("<figure>").count(), 22);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 21);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 22);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -107,4 +107,96 @@ fn logos_grow_the_code_until_they_fit() {
         "{}",
         stdout(&pinned)
     );
+}
+
+/// A 40×40 PNG: a warm white page with a navy block and an orange one.
+fn sample_png(path: &std::path::Path) {
+    let mut data = Vec::new();
+    for y in 0..40u32 {
+        for x in 0..40u32 {
+            data.extend_from_slice(match (x < 16, y < 12) {
+                (true, true) => &[230, 90, 20, 255],
+                (true, false) => &[20, 30, 80, 255],
+                _ => &[250, 248, 244, 255],
+            });
+        }
+    }
+    let file = std::fs::File::create(path).unwrap();
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), 40, 40);
+    enc.set_color(png::ColorType::Rgba);
+    enc.write_header().unwrap().write_image_data(&data).unwrap();
+}
+
+#[test]
+fn palettes_come_from_images_and_pages() {
+    let dir = std::env::temp_dir().join(format!("freeqrent-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = dir.join("brand.png");
+    sample_png(&png);
+    let png = png.to_str().unwrap();
+
+    let out = freeqrent(&[
+        "HELLO",
+        "--palette-from-image",
+        png,
+        "--show-palette",
+        "--verify",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("palette: 3 colors found"), "{err}");
+    assert!(err.contains("finder.eye"), "{err}");
+    assert!(err.contains("darkened"), "{err}");
+    assert!(err.contains("as flags: --bg"), "{err}");
+    assert!(err.contains("verified: decodes"), "{err}");
+    assert!(!err.contains("warning"), "{err}");
+
+    // The printed flags reproduce the same document.
+    let flags = err
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("as flags: "))
+        .unwrap();
+    let mut args = vec!["HELLO".to_string()];
+    for part in flags.split(" --").map(|p| p.trim_start_matches("--")) {
+        let (flag, value) = part.split_once(' ').unwrap();
+        args.push(format!("--{flag}"));
+        args.push(value.trim_matches('\'').to_string());
+    }
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let again = freeqrent(&args);
+    let first = freeqrent(&["HELLO", "--palette-from-image", png]);
+    assert_eq!(stdout(&again), stdout(&first));
+
+    // Explicit tokens win over extracted ones.
+    let out = freeqrent(&["HELLO", "--palette-from-css", "sample", "--fg", "#101010"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stdout(&out).contains("fill=\"#101010\""));
+
+    let html = dir.join("page.html");
+    std::fs::write(
+        &html,
+        r##"<meta name="theme-color" content="#0f7b6c"><style>body{background:#fbfbf8;color:#1f2328}</style>"##,
+    )
+    .unwrap();
+    let out = freeqrent(&[
+        "HELLO",
+        "--palette-from-html",
+        html.to_str().unwrap(),
+        "--show-palette",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stderr(&out).contains("#fbfbf8"), "{}", stderr(&out));
+
+    for bad in [
+        &["HELLO", "--palette-from-image", "/nonexistent.png"][..],
+        &["HELLO", "--palette-from-image", html.to_str().unwrap()],
+    ] {
+        assert_eq!(freeqrent(bad).status.code(), Some(2), "{bad:?}");
+    }
+    let plain = dir.join("plain.css");
+    std::fs::write(&plain, "p { margin: 0 }").unwrap();
+    let empty = freeqrent(&["HELLO", "--palette-from-css", plain.to_str().unwrap()]);
+    assert_eq!(empty.status.code(), Some(2), "{}", stderr(&empty));
+    assert!(stderr(&empty).contains("no colors"), "{}", stderr(&empty));
+    std::fs::remove_dir_all(&dir).unwrap();
 }

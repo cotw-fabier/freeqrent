@@ -130,6 +130,14 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "Site palette",
+        &[
+            ("palette-from-css", "sample"),
+            ("shape", "rounded:0.4"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
+    (
         "Mixed corners",
         &[
             ("corner", "top-right=leaf/circle"),

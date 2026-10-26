@@ -2,6 +2,16 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## M4 complete · 2026-10-26
+
+Palettes: OKLab k-means extraction from pixels, CSS/HTML parsing with role hints, `freeqrent-image`, CLI flags. Waves 20261026073538, 20261026074436, 20261026075708.
+
+## 20261026075708 · M4 · freeqrent-image and CLI palettes
+
+- Landed: the `freeqrent-image` crate (`decode`/`decode_with`, PNG through zune-png and JPEG through zune-jpeg behind default features, every PNG color type, 16-bit stripped to 8, `Limits` checked after headers and before allocation). CLI `--palette-from-image`, `--palette-from-css` (`sample`, `-`), `--palette-from-html` (`-`), `--palette-clusters`, `--palette-contrast`, `--show-palette` (swatches, origins, and reproducing flags); explicit tokens override extracted ones. A "Site palette" gallery card (22 families).
+- Decision: the decoders' own size caps are lifted so every oversized image is reported as `TooLarge` by our check, not as a decoder message.
+- Checks: round trips through the `png` and `jpeg-encoder` crates; CLI end to end (the printed flags reproduce the same SVG byte for byte); contact sheet of three extracted site palettes rendered with resvg and reviewed. The gallery's 22 families all decode.
+
 ## 20261026074436 · M4 · Site palettes from CSS and HTML
 
 - Landed: `Palette::from_css` and `Palette::from_html` (theme-color, `<style>`, `style` attributes), a tolerant scanner with selector and property weights, role hints from properties and custom-property names, `var()` resolution (including `hsl(var(--x))`), dark-scheme rules skipped. The role assigner is now shared: role hints win where present, the pixel rules apply otherwise. `palette_parse` fuzz target with seeds, in CI.
