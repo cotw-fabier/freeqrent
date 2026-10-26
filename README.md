@@ -2,6 +2,34 @@
 
 Styled and animated SVG QR codes from a zero-dependency Rust core. MIT licensed.
 
+<p align="center">
+  <img src="docs/showcase/hi-mom.svg" width="250" alt="A berry-to-violet liquid QR code with a heart in the middle">
+  <img src="docs/showcase/secret-fee.svg" width="250" alt="An emerald dotted QR code with an orbiting gold coin">
+  <img src="docs/showcase/rusty.svg" width="250" alt="A round, rust-colored QR code with a gear in the middle">
+</p>
+<p align="center">
+  <img src="docs/showcase/secret-level.svg" width="250" alt="A phosphor green-to-cyan QR code on black">
+  <img src="docs/showcase/achievement.svg" width="250" alt="A red-to-violet QR code made of vertical bars">
+  <img src="docs/showcase/hug.svg" width="250" alt="A round, blue dotted QR code with violet eyes">
+</p>
+<p align="center"><em>Every one of these scans, and every one of them has something to say. Point a phone at them.</em></p>
+
+<details>
+<summary>Spoilers: what they say, and how they were made</summary>
+
+| Code | Says | Style |
+|---|---|---|
+| Heart | Hi Mom! | liquid modules, ripple intro, a heart stamped in, breathing |
+| Coin | Secret $4 Fee Not Included | dots, sweep intro, a spinning coin in orbit, shimmer |
+| Gear | Built with Claude because my programming skills got RUSTy (get it?) | round frame, assemble intro, a turning gear, pulsing finders |
+| Terminal | You found the secret level. There is no secret level. | inverted, raster intro, shimmer |
+| Bars | Achievement unlocked: pointed phone at square | vertical bars, polar iris intro, pulsing finders |
+| Bubble | This QR code is legally a hug | round frame, radial settle intro, breathing |
+
+Each was rendered by the `freeqrent` CLI and decoded with ZXing before it was written. The exact flags are in [`scripts/showcase.sh`](scripts/showcase.sh).
+
+</details>
+
 - **Styles:** square, rounded, dot, bar and liquid modules; styled finders, alignment and timing patterns; color tokens and gradients; round frames; logos with frames; pictures drawn into the code; art mode.
 - **Motion:** intros that play *into* the finished code as CSS keyframes. Renderers that ignore animation, and viewers who prefer reduced motion, see the static code.
 - **Scannability first:** every style is checked against an error-correction and contrast budget, and the crate refuses what it can't verify. The limits come from measurements with ZXing and rqrr, and from scans on iOS Camera and Google Lens.

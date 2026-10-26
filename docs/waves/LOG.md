@@ -2,6 +2,11 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026192529 · M6 · A README showcase
+
+- Landed: six animated codes at the top of the README (`docs/showcase/`), each with a gradient, an intro and an idle loop, and a joke for a payload behind a spoiler. Three carry small SVG logos (`docs/showcase/logos/`). `scripts/showcase.sh` renders them with the CLI's `--verify`, so a code that doesn't decode isn't written.
+- Checks: all six decode with ZXing (the inverted one with rqrr too), legible from 250–850 ms into their intros; a second run is byte-identical.
+
 ## M6 complete · 2026-10-26
 
 - All six done-when items have landed: API review (W20261026173421), presets (W20261026174357), docs (W20261026175640), measured render times and WASM size (W20261026180849), the scan matrix at the release candidate (W20261026190646), and release prep (W20261026181929). The 1.0.0 publish, tag and push wait for the owner's go.
