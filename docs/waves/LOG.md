@@ -4,7 +4,7 @@ One short entry per W wave, newest first. The protocol is in `README.md`.
 
 ## 20261026100651 · M5 · First device results
 
-- An Android phone read all eight v1 contrast cards of the scan sheet (ΔL 0.60–0.66 on bg L 0.85 and 0.95); the bench's blurred, noisy render had failed six. Decision: no lightness-aware warning in `check`; `EXTRACT_CONTRAST` stays 0.66 until an iPhone result is in (ROADMAP).
+- A Pixel 10 XL (built-in camera, which reads codes through Google Lens) read all eight v1 contrast cards of the scan sheet (ΔL 0.60–0.66 on bg L 0.85 and 0.95); the bench's blurred, noisy render had failed six. Decision: no lightness-aware warning in `check`; `EXTRACT_CONTRAST` stays 0.66 until an iPhone result is in (ROADMAP).
 - Still to record: the other 38 cards, and iPhone Camera, WeChat and a ZXing app.
 
 ## 20261026095000 · M5 · Develop intro and the scan sheet

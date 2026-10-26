@@ -49,7 +49,7 @@ Each item says where it came from, so we remember why it's here.
 
 ## Scannability
 
-- **Extraction contrast back to 0.60?** `EXTRACT_CONTRAST` is 0.66 because v1 codes on backgrounds of L 0.80–0.95 failed the bench's blurred, noisy render up to ΔL 0.64 (W20261026073538). An Android phone read every v1 card on the scan sheet, ΔL 0.60–0.66 on L 0.85 and 0.95 (W20261026100651), so the bench is harsher than that camera and a lightness-aware warning isn't needed. With an iPhone result too, the extraction floor could drop to the warning threshold, 0.60.
+- **Extraction contrast back to 0.60?** `EXTRACT_CONTRAST` is 0.66 because v1 codes on backgrounds of L 0.80–0.95 failed the bench's blurred, noisy render up to ΔL 0.64 (W20261026073538). A Pixel 10 XL's built-in camera read every v1 card on the scan sheet, ΔL 0.60–0.66 on L 0.85 and 0.95 (W20261026100651), so the bench is harsher than that camera and a lightness-aware warning isn't needed. With an iPhone result too, the extraction floor could drop to the warning threshold, 0.60.
 
 ## Bindings
 
