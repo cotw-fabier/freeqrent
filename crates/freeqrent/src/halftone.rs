@@ -503,6 +503,7 @@ const SPANS: [(usize, usize); 3] = [(0, 1), (1, 3), (4, 1)];
 pub(crate) const CELL_SPAN: f64 = 0.2;
 
 /// The drawn sub-cells of a code: 3 × 3 per module.
+#[derive(Clone)]
 pub(crate) struct Subcells {
     /// Sub-cells per side.
     pub(crate) side: usize,

@@ -55,16 +55,45 @@ fn build_paths(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
 /// The picture's elements: one per paint, in sub-cell units.
 #[cfg(feature = "halftone")]
 pub(crate) fn halftone_elements(style: &Style, qr: &QrMatrix) -> Vec<Element> {
-    let Some(h) = &style.halftone else {
-        return Vec::new();
-    };
-    let cells = crate::halftone::subcells(
+    halftone_cells(style, qr).map_or_else(Vec::new, |cells| halftone_strokes(&cells, None))
+}
+
+/// The picture's sub-cells, if the style has one.
+#[cfg(feature = "halftone")]
+pub(crate) fn halftone_cells(style: &Style, qr: &QrMatrix) -> Option<crate::halftone::Subcells> {
+    let h = style.halftone.as_ref()?;
+    Some(crate::halftone::subcells(
         h,
         qr,
         &scene::removed(style, qr),
         style.palette.background(),
-    );
-    crate::halftone::paths(&cells)
+    ))
+}
+
+/// The picture's strokes, one element per paint and height; with `only`,
+/// just the sub-cells of the modules it sets (an intro's tile of them).
+#[cfg(feature = "halftone")]
+pub(crate) fn halftone_strokes(
+    cells: &crate::halftone::Subcells,
+    only: Option<&geometry::Grid>,
+) -> Vec<Element> {
+    let masked;
+    let cells = match only {
+        Some(grid) => {
+            let side = cells.side;
+            let mut c = cells.clone();
+            for (i, d) in c.dark.iter_mut().enumerate() {
+                let (x, y) = ((i % side) / 3, (i / side) / 3);
+                if !grid.get(x as i64, y as i64) {
+                    *d = None;
+                }
+            }
+            masked = c;
+            &masked
+        }
+        None => cells,
+    };
+    crate::halftone::paths(cells)
         .into_iter()
         .map(|s| {
             let token = if s.dark { Token::Fg } else { Token::Bg };
@@ -208,6 +237,10 @@ pub(crate) struct Element {
     pub(crate) stroke: Option<u8>,
     /// A logo frame stroked along its path instead of filled.
     pub(crate) outline: Option<logo::Outline>,
+    /// A picture's strokes that move with the element before them: drawn
+    /// inside its animated group rather than in a group of their own.
+    #[cfg_attr(not(feature = "animate"), allow(dead_code))]
+    pub(crate) joins: bool,
 }
 
 impl Element {
@@ -225,6 +258,7 @@ impl Element {
             color: None,
             stroke: None,
             outline: None,
+            joins: false,
         }
     }
 }
@@ -605,7 +639,8 @@ pub(crate) fn write<W: Write + ?Sized>(
                 write!(out.w, " d=\"{}\"/>", e.path.data())?;
             }
             _ if e.stroke.is_some() => {
-                write_subcells(out.w, palette, e, &prefix, &canvas, qr.size())?
+                let next_joins = elements.get(i + 1).is_some_and(|n| n.joins);
+                write_subcells(out.w, palette, e, &prefix, &canvas, qr.size(), next_joins)?
             }
             _ => {
                 out.w.write_str("<path")?;
@@ -636,6 +671,9 @@ pub(crate) fn write<W: Write + ?Sized>(
 /// A path in sub-cells: a nested viewport over the code's modules, so the
 /// path's integer coordinates scale exactly. Motion goes on a group around
 /// it, so transform origins stay in the document's units.
+/// With `next_joins`, the element after this one moves with it, so the
+/// group carrying the motion stays open; a joining element writes no group
+/// of its own and closes its owner's when nothing joins after it.
 fn write_subcells<W: Write + ?Sized>(
     w: &mut W,
     palette: &Palette,
@@ -643,9 +681,10 @@ fn write_subcells<W: Write + ?Sized>(
     prefix: &str,
     canvas: &Canvas,
     size: u16,
+    next_joins: bool,
 ) -> fmt::Result {
-    let group = e.anim.is_some() || e.pose.is_some_and(|p| p != Pose::NATURAL);
-    if group {
+    let opens = !e.joins && (e.anim.is_some() || e.pose.is_some_and(|p| p != Pose::NATURAL));
+    if opens {
         w.write_str("<g")?;
         if let Some(n) = e.anim {
             write!(w, " class=\"{prefix}-e{n}\"")?;
@@ -689,7 +728,7 @@ fn write_subcells<W: Write + ?Sized>(
         write!(w, " stroke-width=\"{width}\"")?;
     }
     write!(w, " d=\"{}\"/></svg>", e.path.data())?;
-    if group {
+    if (opens || e.joins) && !next_joins {
         w.write_str("</g>")?;
     }
     Ok(())

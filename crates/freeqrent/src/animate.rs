@@ -780,6 +780,9 @@ pub(crate) struct Motion {
     pub(crate) origins: Vec<(f64, f64)>,
     /// Each element's dash length, for outlines that draw on.
     pub(crate) dashes: Vec<Option<f64>>,
+    /// Elements drawn inside the element before them, which carries their
+    /// motion: their tracks get no CSS of their own.
+    pub(crate) joined: Vec<bool>,
     pub(crate) reveal: Option<Reveal>,
     pub(crate) total_ms: u32,
     pub(crate) trigger: Trigger,
@@ -798,9 +801,12 @@ enum Unit {
     Corner(Corner),
     Center((u16, u16)),
     Ring,
-    /// A whole layer that moves as one: a picture's sub-cells.
-    Whole,
 }
+
+/// A picture splits into square tiles of this many modules a side, each
+/// one a piece of the stagger like a run of modules (cut on module edges,
+/// so the strokes meet exactly).
+const PICTURE_TILE: u16 = 3;
 
 #[derive(Clone, Debug)]
 struct Piece {
@@ -921,7 +927,18 @@ fn pieces(
                 let s = canvas.side as f64;
                 push(Unit::Ring, (0.0, 0.0, s, s));
             }
-            Part::Halftone => push(Unit::Whole, (o, o, o + n as f64, o + n as f64)),
+            Part::Halftone => {
+                for ty in (0..n).step_by(PICTURE_TILE as usize) {
+                    for tx in (0..n).step_by(PICTURE_TILE as usize) {
+                        let (x1, y1) = ((tx + PICTURE_TILE).min(n), (ty + PICTURE_TILE).min(n));
+                        let cells = (ty..y1).flat_map(|y| (tx..x1).map(move |x| (x, y)));
+                        push(
+                            Unit::Cells(cells.collect()),
+                            (o + tx as f64, o + ty as f64, o + x1 as f64, o + y1 as f64),
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -1019,6 +1036,8 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
         elements.push(bg);
     }
     let n = qr.size() as usize;
+    #[cfg(feature = "halftone")]
+    let picture = svg::halftone_cells(style, qr);
     for (li, layer) in layers.iter().enumerate() {
         let mine: Vec<&Piece> = pieces.iter().filter(|p| p.layer == li).collect();
         // Finders stay one element per corner, so each scales about its
@@ -1032,12 +1051,35 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
                 .iter()
                 .filter(|p| p.group == group && corner_of(&p.unit) == corner)
                 .collect();
-            if matches!(layer.part, Part::Halftone) {
-                for mut e in svg::halftone_elements(style, qr) {
+            let b = chosen
+                .iter()
+                .fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |b, p| {
+                    (
+                        b.0.min(p.bounds.0),
+                        b.1.min(p.bounds.1),
+                        b.2.max(p.bounds.2),
+                        b.3.max(p.bounds.3),
+                    )
+                });
+            #[cfg(feature = "halftone")]
+            if let (Part::Halftone, Some(cells)) = (&layer.part, &picture) {
+                // This group's tiles of the picture.
+                let mut grid = Grid::new(n);
+                for p in &chosen {
+                    if let Unit::Cells(c) = &p.unit {
+                        for &(x, y) in c {
+                            grid.set(x as usize, y as usize);
+                        }
+                    }
+                }
+                for mut e in svg::halftone_strokes(cells, Some(&grid)) {
                     e.group = Some(group);
-                    e.origin = (mid, mid);
+                    e.origin = ((b.0 + b.2) / 2.0, (b.1 + b.3) / 2.0);
                     elements.push(e);
                 }
+                continue;
+            }
+            if matches!(layer.part, Part::Halftone) {
                 continue;
             }
             let part = match &layer.part {
@@ -1080,16 +1122,6 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
             if path.is_empty() {
                 continue;
             }
-            let b = chosen
-                .iter()
-                .fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |b, p| {
-                    (
-                        b.0.min(p.bounds.0),
-                        b.1.min(p.bounds.1),
-                        b.2.max(p.bounds.2),
-                        b.3.max(p.bounds.3),
-                    )
-                });
             let mut e = Element::new(layer.role(), layer.token, layer.part.evenodd(), path);
             e.group = Some(group);
             e.corner = corner;
@@ -1843,17 +1875,48 @@ pub(crate) fn build(
             .iter()
             .map(|e| e.outline.as_ref().and_then(|o| o.dashes.first().copied()))
             .collect(),
+        joined: alloc::vec![false; elements.len()],
         reveal: intro.and_then(|i| reveal(style, i, canvas, &elements)),
         tracks,
         total_ms,
         trigger: intro.map_or(Trigger::Load, |i| i.trigger.clone()),
         at,
     };
+    // A picture's strokes in one group move alike: live, they share one
+    // animated group, so browsers move a group per tile set, not a stroke
+    // per paint.
+    let mut motion = motion;
+    if at.is_none() {
+        let same = |a: usize, b: usize| {
+            let of = |i: usize| {
+                motion
+                    .tracks
+                    .iter()
+                    .filter(move |t| t.target == Target::Layer(i))
+                    .map(|t| (t.delay_ms, t.duration_ms, t.ease, t.iterations, &t.keys))
+            };
+            of(a).eq(of(b)) && of(a).next().is_some()
+        };
+        for i in 1..elements.len() {
+            let (prev, e) = (&elements[i - 1], &elements[i]);
+            if e.role == LayerRole::Halftone
+                && prev.role == LayerRole::Halftone
+                && prev.group == e.group
+                && same(i - 1, i)
+            {
+                motion.joined[i] = true;
+            }
+        }
+    }
     for (i, e) in elements.iter_mut().enumerate() {
         let mine = motion
             .tracks
             .iter()
             .filter(|t| t.target == Target::Layer(i));
+        if motion.joined[i] {
+            e.joins = true;
+            continue;
+        }
         match at {
             Some(t) => {
                 let natural = solid(&style.palette, e.token);
@@ -2205,9 +2268,14 @@ impl Motion {
         if self.at.is_some() {
             return Ok(());
         }
-        // Identical keyframe lists are written once.
-        let keys: Vec<Vec<Keyframe>> = self
+        // Joined elements move with the one before them.
+        let tracks: Vec<&Track> = self
             .tracks
+            .iter()
+            .filter(|t| !matches!(t.target, Target::Layer(i) if self.joined[i]))
+            .collect();
+        // Identical keyframe lists are written once.
+        let keys: Vec<Vec<Keyframe>> = tracks
             .iter()
             .map(|t| css_keys(t, self.reveal.as_ref(), &self.dashes))
             .collect();
@@ -2229,7 +2297,7 @@ impl Motion {
         }
         // Each target once, in order of its first track.
         let mut targets: Vec<Target> = Vec::new();
-        for t in &self.tracks {
+        for t in &tracks {
             if !targets.contains(&t.target) {
                 targets.push(t.target);
             }
@@ -2237,7 +2305,7 @@ impl Motion {
         // Elements whose tracks differ only in delay share one rule; each
         // element then sets its delays and origin.
         let signature = |target: Target| -> Vec<Signature> {
-            self.tracks
+            tracks
                 .iter()
                 .zip(&name_of)
                 .filter(|(t, _)| t.target == target)
@@ -2300,7 +2368,7 @@ impl Motion {
                 write!(w, "{n}")?;
             }
             w.write_str("{animation-delay:")?;
-            let mine = self.tracks.iter().filter(|t| t.target == target);
+            let mine = tracks.iter().filter(|t| t.target == target);
             for (j, t) in mine.enumerate() {
                 if j > 0 {
                     w.write_char(',')?;

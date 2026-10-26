@@ -456,6 +456,27 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "Art, assembling",
+        &[
+            ("intro", "assemble"),
+            ("art", "{a}"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
+            ("ink", "color:6"),
+        ],
+    ),
+    (
+        "Art, rippling in",
+        &[
+            ("intro", "ripple"),
+            ("art", "{b}"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
+            ("ink", "color:6"),
+            ("palette-from-image", "{b}"),
+        ],
+    ),
+    (
         "Halftone dots",
         &[
             ("halftone", "{a}"),

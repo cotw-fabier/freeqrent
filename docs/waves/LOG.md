@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026121853 · M5 · Pictures break up in intros
+
+- Landed: group intros (Settle, Ripple, LockOn, Assemble) cut a picture into 3 × 3-module tiles staggered like modules, instead of moving it as one piece. Each group's strokes are plan layers of their own; in the SVG they share one animated group (`Element::joins`, `Motion::joined`), so a six-color art code animates 12 groups, not 281 strokes. Two art gallery cards (Assemble, Ripple; 67 families, all decode).
+- Measured: scannable from 750–850 ms of 1200 on a v10 picture in mono and four-color ink; static picture and last frame pixel-identical for every preset (existing test); no animated-element warning.
+- Decisions: tiles on module edges (no seams, and clarity still pulls toward each module); Develop keeps whole layers, since it is about the picture developing as one.
+- Checks: a verify test that the picture lands in all 12 groups with 12 animated wrappers and scans before the end.
+
 ## 20261026115722 · M5 · Gallery replay button off the code; art mode capture
 
 - Landed: the gallery's replay button sits beside each card's title instead of on the code's corner, where it covered modules. The gallery's picture cards use clarity 0.5 and the sparse grid (the dense-grid card 0.75).

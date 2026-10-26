@@ -7,8 +7,8 @@ mod common;
 use common::picture;
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Clarity, Ecc, Emphasis, Fit, Frame, FrameRing, Halftone, Ink,
-    Intro, Logo, Palette, Preset, QrCode, QrMatrix, RenderError, Rgba8Image, Style, TimingStyle,
-    Token, Version, Warning,
+    Intro, LayerRole, Logo, Palette, Preset, QrCode, QrMatrix, RenderError, Rgba8Image, Style,
+    TimingStyle, Token, Version, Warning,
 };
 use freeqrent_verify::{Render, rasterize, verify_one, verify_style};
 
@@ -169,6 +169,57 @@ fn intros_end_on_the_static_picture() {
             assert_eq!(b, c, "{preset:?} {ink:?}: last frame");
             assert_verifies(&animated, &qr, &format!("{preset:?} {ink:?}"));
         }
+    }
+}
+
+#[test]
+fn intros_break_the_picture_into_tiles() {
+    for ink in [Ink::Mono, Ink::Color { colors: 4 }] {
+        let plain = Style::new().halftone(Halftone::new(picture("photo", 120)).ink(ink));
+        let qr = fitted(&plain, 10, Ecc::M);
+        for preset in [
+            Preset::Settle,
+            Preset::Ripple,
+            Preset::Assemble,
+            Preset::LockOn,
+        ] {
+            let animated = plain.clone().intro(Intro::new(preset));
+            let plan = animated.plan(&qr).unwrap();
+            let mut groups: Vec<u8> = plan
+                .layers
+                .iter()
+                .filter(|l| l.role == LayerRole::Halftone)
+                .filter_map(|l| l.group)
+                .collect();
+            groups.dedup();
+            // Tiles of the picture land in every stagger group, in order.
+            assert_eq!(groups, (0..12).collect::<Vec<u8>>(), "{preset:?} {ink:?}");
+            // Live, each group's strokes share one animated group.
+            let svg = animated.render(&qr).unwrap();
+            let wrappers = svg.matches("\"><svg x=").count();
+            assert_eq!(wrappers, 12, "{preset:?} {ink:?}");
+            let report = animated.check(&qr);
+            assert!(
+                report.warnings.is_empty(),
+                "{preset:?}: {:?}",
+                report.warnings
+            );
+            let at = freeqrent_verify::scannable_after(&animated, &qr, TEXT, 50).unwrap();
+            println!(
+                "{preset:?} {ink:?} v10: scannable from {at} ms of {}",
+                plan.total_ms
+            );
+            assert!(at <= plan.total_ms);
+        }
+        // Develop fades the picture whole.
+        let develop = plain.clone().intro(Intro::new(Preset::Develop));
+        let plan = develop.plan(&qr).unwrap();
+        assert!(
+            plan.layers
+                .iter()
+                .filter(|l| l.role == LayerRole::Halftone)
+                .all(|l| l.group.is_none())
+        );
     }
 }
 
