@@ -1,23 +1,12 @@
 //! Round trips for every style option (SPEC §9): render, rasterize with
-//! resvg, decode with ZXing and rqrr. Styles without warnings must survive
-//! every render in `RENDERS`; styles with a low-contrast warning must still
-//! decode from the clean renders, which is what the contrast floor promises.
+//! resvg, decode with ZXing and rqrr, against each style's own bar
+//! (`Bar::for_report`).
 
-use freeqrent::{Axis, Ecc, ModuleShape, Palette, QrCode, Style, Token, Version, Warning};
-use freeqrent_verify::{rasterize, verify, verify_clean};
+mod common;
 
-const PAYLOADS: [(&str, u8); 4] = [
-    ("HELLO", 1),
-    ("https://example.com/menu", 5),
-    (
-        "https://example.com/order/12345678901234567890?ref=freeqrent",
-        10,
-    ),
-    (
-        "A longer payload that needs a larger symbol to hold it; version 25 at ECC M.",
-        25,
-    ),
-];
+use common::assert_scans;
+use freeqrent::{Axis, Ecc, ModuleShape, Palette, QrCode, Style, Token, Warning};
+use freeqrent_verify::rasterize;
 
 fn shapes() -> Vec<ModuleShape> {
     vec![
@@ -38,30 +27,6 @@ fn shapes() -> Vec<ModuleShape> {
             radius: 0.2,
         },
     ]
-}
-
-fn assert_scans(style: &Style, label: &str) {
-    for (text, version) in PAYLOADS {
-        let qr = QrCode::builder()
-            .ecc(Ecc::M)
-            .version(Version::new(version).unwrap())
-            .encode_text(text)
-            .unwrap();
-        let svg = style.render(&qr).unwrap();
-        let low_contrast = style
-            .check(&qr)
-            .warnings
-            .iter()
-            .any(|w| matches!(w, Warning::LowContrast { .. }));
-        let result = if low_contrast {
-            verify_clean(&svg, text)
-        } else {
-            verify(&svg, text)
-        };
-        if let Err(e) = result {
-            panic!("{label} v{version}: {e}");
-        }
-    }
 }
 
 #[test]

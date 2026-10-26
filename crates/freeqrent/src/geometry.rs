@@ -102,6 +102,16 @@ impl Path {
         self.at = (x, y);
     }
 
+    /// A cubic Bézier through control points `c1`, `c2` to `end`.
+    pub(crate) fn cubic_to(&mut self, c1: (i64, i64), c2: (i64, i64), end: (i64, i64)) {
+        self.cmd('c');
+        for (x, y) in [c1, c2, end] {
+            self.num(x - self.at.0);
+            self.num(y - self.at.1);
+        }
+        self.at = end;
+    }
+
     pub(crate) fn close(&mut self) {
         self.cmd('z');
         self.at = self.start;

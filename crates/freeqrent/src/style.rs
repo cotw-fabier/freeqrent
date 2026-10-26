@@ -8,6 +8,7 @@ use core::fmt;
 use crate::check::{self, RenderError, ScanReport};
 use crate::matrix::QrMatrix;
 use crate::palette::Palette;
+use crate::scanbox::{AlignmentStyle, FinderStyle, TimingStyle};
 use crate::svg;
 
 /// Direction of [`ModuleShape::Bars`].
@@ -64,6 +65,9 @@ impl Default for ModuleShape {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Style {
     pub(crate) modules: ModuleShape,
+    pub(crate) finders: FinderStyle,
+    pub(crate) alignment: AlignmentStyle,
+    pub(crate) timing: TimingStyle,
     pub(crate) palette: Palette,
     pub(crate) quiet_zone: u8,
     pub(crate) allow_inverted: bool,
@@ -78,6 +82,9 @@ impl Default for Style {
     fn default() -> Style {
         Style {
             modules: ModuleShape::default(),
+            finders: FinderStyle::default(),
+            alignment: AlignmentStyle::default(),
+            timing: TimingStyle::default(),
             palette: Palette::default(),
             quiet_zone: 4,
             allow_inverted: false,
@@ -91,7 +98,8 @@ impl Default for Style {
 }
 
 impl Style {
-    /// Square modules, the default palette, a 4-module quiet zone.
+    /// Square modules and finders, the default palette, a 4-module quiet
+    /// zone.
     pub fn new() -> Style {
         Style::default()
     }
@@ -99,6 +107,24 @@ impl Style {
     /// Sets the data module shape.
     pub fn modules(mut self, shape: ModuleShape) -> Style {
         self.modules = shape;
+        self
+    }
+
+    /// Sets the finder shapes (SPEC §7.2).
+    pub fn finders(mut self, finders: FinderStyle) -> Style {
+        self.finders = finders;
+        self
+    }
+
+    /// Sets how alignment patterns are drawn.
+    pub fn alignment(mut self, alignment: AlignmentStyle) -> Style {
+        self.alignment = alignment;
+        self
+    }
+
+    /// Sets how the timing patterns are drawn.
+    pub fn timing(mut self, timing: TimingStyle) -> Style {
+        self.timing = timing;
         self
     }
 
@@ -158,6 +184,21 @@ impl Style {
     /// The data module shape.
     pub fn module_shape(&self) -> ModuleShape {
         self.modules
+    }
+
+    /// The finder shapes.
+    pub fn finder_style(&self) -> FinderStyle {
+        self.finders
+    }
+
+    /// The alignment pattern style.
+    pub fn alignment_style(&self) -> AlignmentStyle {
+        self.alignment
+    }
+
+    /// The timing pattern style.
+    pub fn timing_style(&self) -> TimingStyle {
+        self.timing
     }
 
     /// The color tokens.

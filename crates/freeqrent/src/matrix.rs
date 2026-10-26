@@ -187,6 +187,25 @@ impl QrMatrix {
         }
     }
 
+    /// For every module (row-major), the interleaved codeword it carries a
+    /// bit of and that codeword's Reed–Solomon block; `None` for function
+    /// patterns and remainder bits. Damage budgets count against blocks.
+    pub(crate) fn codeword_map(&self) -> Vec<Option<(u16, u16)>> {
+        let size = self.size as usize;
+        let layout = BlockLayout::new(self.version, self.ecc);
+        let blocks = interleaved_blocks(&layout);
+        let mut map = vec![None; size * size];
+        let mut bit = 0;
+        for_each_placement(size, |idx| {
+            if matches!(self.roles[idx], ModuleRole::Data | ModuleRole::Ecc) {
+                let codeword = bit / 8;
+                map[idx] = Some((codeword as u16, blocks[codeword]));
+                bit += 1;
+            }
+        });
+        map
+    }
+
     /// Builds the symbol from its final codeword sequence (data then ECC,
     /// already interleaved). Picks the lowest-penalty mask unless one is given.
     pub(crate) fn build(
@@ -376,42 +395,25 @@ impl Builder {
         }
     }
 
-    /// Zigzag placement: two-column strips from the right, alternating up
-    /// and down, skipping the vertical timing column.
+    /// Fills the free modules in zigzag order (see [`for_each_placement`]).
     fn place_codewords(&mut self, codewords: &[u8], data_codewords: usize) {
-        let size = self.size;
         let total_bits = codewords.len() * 8;
         let data_bits = data_codewords * 8;
         let mut i = 0;
-        let mut right = size - 1;
-        loop {
-            if right == 6 {
-                right = 5;
+        let mut roles = core::mem::take(&mut self.roles);
+        for_each_placement(self.size, |idx| {
+            if roles[idx] != ModuleRole::Remainder || i >= total_bits {
+                return;
             }
-            let upward = (right + 1) & 2 == 0;
-            for vert in 0..size {
-                let y = if upward { size - 1 - vert } else { vert };
-                for x in [right, right - 1] {
-                    let idx = y * size + x;
-                    if self.roles[idx] != ModuleRole::Remainder {
-                        continue;
-                    }
-                    if i < total_bits {
-                        self.modules[idx] = (codewords[i / 8] >> (7 - i % 8)) & 1 != 0;
-                        self.roles[idx] = if i < data_bits {
-                            ModuleRole::Data
-                        } else {
-                            ModuleRole::Ecc
-                        };
-                        i += 1;
-                    }
-                }
-            }
-            if right < 2 {
-                break;
-            }
-            right -= 2;
-        }
+            self.modules[idx] = (codewords[i / 8] >> (7 - i % 8)) & 1 != 0;
+            roles[idx] = if i < data_bits {
+                ModuleRole::Data
+            } else {
+                ModuleRole::Ecc
+            };
+            i += 1;
+        });
+        self.roles = roles;
         debug_assert_eq!(i, total_bits);
     }
 
@@ -522,9 +524,51 @@ impl CapacityReport {
     }
 }
 
+/// Zigzag placement order: two-column strips from the right, alternating
+/// up and down, skipping the vertical timing column. Calls `f` with every
+/// module index in order; callers skip function modules themselves.
+fn for_each_placement(size: usize, mut f: impl FnMut(usize)) {
+    let mut right = size - 1;
+    loop {
+        if right == 6 {
+            right = 5;
+        }
+        let upward = (right + 1) & 2 == 0;
+        for vert in 0..size {
+            let y = if upward { size - 1 - vert } else { vert };
+            for x in [right, right - 1] {
+                f(y * size + x);
+            }
+        }
+        if right < 2 {
+            break;
+        }
+        right -= 2;
+    }
+}
+
+/// The block of each interleaved codeword: data column by column (short
+/// blocks drop out of the last column), then ECC column by column.
+fn interleaved_blocks(layout: &BlockLayout) -> Vec<u16> {
+    let short = layout.num_short_blocks();
+    let short_len = layout.short_block_data_len();
+    let mut blocks = Vec::with_capacity(layout.total_codewords);
+    for i in 0..=short_len {
+        for b in 0..layout.num_blocks {
+            if i < short_len || b >= short {
+                blocks.push(b as u16);
+            }
+        }
+    }
+    for _ in 0..layout.ecc_per_block {
+        blocks.extend((0..layout.num_blocks).map(|b| b as u16));
+    }
+    blocks
+}
+
 /// Codewords reserved against misdecodes in the smallest symbols
 /// (ISO 18004 Table 9, the `p` column).
-fn misdecode_protection(version: Version, ecc: Ecc) -> usize {
+pub(crate) fn misdecode_protection(version: Version, ecc: Ecc) -> usize {
     match (version.number(), ecc) {
         (1, Ecc::L) => 3,
         (1, Ecc::M) | (2, Ecc::L) => 2,
@@ -546,6 +590,66 @@ fn format_bits(ecc: Ecc, mask: Mask) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codeword_map_rebuilds_valid_reed_solomon_blocks() {
+        // Read every codeword back out of the modules through the map, then
+        // check each block's ECC against its data. This only holds if the
+        // map's codeword and block assignments are exactly right.
+        for (text, version, ecc) in [
+            ("HELLO", 1, Ecc::M),
+            ("https://example.com/menu", 5, Ecc::Q),
+            ("freeqrent", 10, Ecc::H),
+            ("x", 21, Ecc::L),
+            ("block layout", 33, Ecc::Q),
+        ] {
+            let qr = crate::QrCode::builder()
+                .ecc(ecc)
+                .boost_ecc(false)
+                .version(Version::new(version).unwrap())
+                .encode_text(text)
+                .unwrap();
+            let layout = BlockLayout::new(qr.version(), qr.ecc());
+            let size = qr.size() as usize;
+            let mut codewords = vec![0u8; layout.total_codewords];
+            let mut bits = vec![0u8; layout.total_codewords];
+            let mut block_of = vec![u16::MAX; layout.total_codewords];
+            let map = qr.codeword_map();
+            // Bits arrive MSB first in placement order.
+            for_each_placement(size, |idx| {
+                if let Some((cw, block)) = map[idx] {
+                    let dark = qr.modules[idx] ^ qr.mask.inverts(idx % size, idx / size);
+                    let cw = cw as usize;
+                    codewords[cw] = codewords[cw] << 1 | dark as u8;
+                    bits[cw] += 1;
+                    assert!(block_of[cw] == u16::MAX || block_of[cw] == block);
+                    block_of[cw] = block;
+                }
+            });
+            assert!(
+                bits.iter().all(|&b| b == 8),
+                "v{version}: every codeword has 8 modules"
+            );
+            let generator = crate::gf::generator(layout.ecc_per_block);
+            let data_total = layout.data_codewords();
+            for b in 0..layout.num_blocks as u16 {
+                let of_block = |range: core::ops::Range<usize>| -> Vec<u8> {
+                    range
+                        .filter(|&i| block_of[i] == b)
+                        .map(|i| codewords[i])
+                        .collect()
+                };
+                let data = of_block(0..data_total);
+                let ecc_words = of_block(data_total..layout.total_codewords);
+                assert_eq!(ecc_words.len(), layout.ecc_per_block);
+                assert_eq!(
+                    crate::gf::remainder(&data, &generator),
+                    ecc_words,
+                    "v{version} block {b}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn format_bits_match_iso_table() {

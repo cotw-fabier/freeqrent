@@ -5,6 +5,7 @@
 
 use std::fmt;
 
+use freeqrent::{QrMatrix, ScanReport, Style, Warning};
 use resvg::{tiny_skia, usvg};
 
 /// A greyscale image, 0 = black, row-major.
@@ -56,6 +57,8 @@ pub const RENDERS: [Render; 4] = [
 /// Why verification failed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VerifyError {
+    /// The style refused to render.
+    Render(String),
     /// resvg couldn't parse the SVG.
     Parse(String),
     /// The SVG has no size or is too large to render.
@@ -71,6 +74,7 @@ pub enum VerifyError {
 impl fmt::Display for VerifyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            VerifyError::Render(e) => write!(f, "didn't render: {e}"),
             VerifyError::Parse(e) => write!(f, "SVG didn't parse: {e}"),
             VerifyError::Size => f.write_str("SVG has no usable size"),
             VerifyError::NotFound(r, d) => write!(f, "{d:?} found no code ({r:?})"),
@@ -154,33 +158,73 @@ pub fn decode(image: &Gray, decoder: Decoder) -> Result<Vec<String>, String> {
     }
 }
 
-/// Checks that `svg` decodes to `expected` under every one of [`RENDERS`].
+/// What a code must survive (SPEC §9). Every code must decode with ZXing
+/// from the clean renders; the full bar adds the soft, noisy render and
+/// rqrr on the clean ones.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Bar {
+    /// Also the blurred, noisy render.
+    pub degraded: bool,
+    /// Also rqrr, on the clean renders.
+    pub rqrr: bool,
+}
+
+impl Bar {
+    /// Everything.
+    pub const FULL: Bar = Bar {
+        degraded: true,
+        rqrr: true,
+    };
+
+    /// The bar for a style, from its own check. A low-contrast warning
+    /// drops the degraded render (that is what the warning means); a
+    /// rounded-finder warning drops rqrr, which can't locate rounded rings,
+    /// and the degraded render, which round rings miss at large versions.
+    pub fn for_report(report: &ScanReport) -> Bar {
+        let warned = |f: fn(&Warning) -> bool| report.warnings.iter().any(f);
+        let low_contrast = warned(|w| matches!(w, Warning::LowContrast { .. }));
+        let rounded = warned(|w| matches!(w, Warning::RoundedFinder));
+        Bar {
+            degraded: !low_contrast && !rounded,
+            rqrr: !rounded,
+        }
+    }
+}
+
+/// Checks that `svg` decodes to `expected` under every one of [`RENDERS`]
+/// with both decoders.
 pub fn verify(svg: &str, expected: &str) -> Result<(), VerifyError> {
-    verify_renders(svg, expected, &RENDERS)
+    verify_with(svg, expected, Bar::FULL)
 }
 
-/// Checks only the clean renders of [`RENDERS`]: the bar for styles that
-/// carry a low-contrast warning.
-pub fn verify_clean(svg: &str, expected: &str) -> Result<(), VerifyError> {
-    let clean: Vec<Render> = RENDERS
-        .into_iter()
-        .filter(|r| !r.blur && !r.noise)
-        .collect();
-    verify_renders(svg, expected, &clean)
-}
-
-/// Checks that `svg` decodes to `expected` under each of `renders`.
-pub fn verify_renders(svg: &str, expected: &str, renders: &[Render]) -> Result<(), VerifyError> {
-    for &render in renders {
-        verify_one(svg, expected, render)?;
+/// Checks `svg` against `bar`.
+pub fn verify_with(svg: &str, expected: &str, bar: Bar) -> Result<(), VerifyError> {
+    for render in RENDERS {
+        let degraded = render.blur || render.noise;
+        if degraded && !bar.degraded {
+            continue;
+        }
+        verify_one(svg, expected, render, bar.rqrr && !degraded)?;
     }
     Ok(())
 }
 
-/// Checks one render. ZXing must decode every render; rqrr only the clean
-/// ones, because its binarizer loses large codes after even a 3×3 blur
-/// (plain squares included, so that says nothing about a style).
-pub fn verify_one(svg: &str, expected: &str, render: Render) -> Result<(), VerifyError> {
+/// Renders `qr` with `style` and checks it against the style's own bar
+/// ([`Bar::for_report`]).
+pub fn verify_style(style: &Style, qr: &QrMatrix, expected: &str) -> Result<(), VerifyError> {
+    let svg = style
+        .render(qr)
+        .map_err(|e| VerifyError::Render(e.to_string()))?;
+    verify_with(&svg, expected, Bar::for_report(&style.check(qr)))
+}
+
+/// Checks one render with ZXing, and with rqrr too when `rqrr` is set.
+pub fn verify_one(
+    svg: &str,
+    expected: &str,
+    render: Render,
+    rqrr: bool,
+) -> Result<(), VerifyError> {
     let mut image = rasterize(svg, render.px_per_module as f32)?;
     if render.blur {
         image = box_blur(&image);
@@ -188,11 +232,12 @@ pub fn verify_one(svg: &str, expected: &str, render: Render) -> Result<(), Verif
     if render.noise {
         add_noise(&mut image, 0x5eed);
     }
-    let clean = !render.blur && !render.noise;
-    for decoder in [Decoder::Zxing, Decoder::Rqrr] {
-        if decoder == Decoder::Rqrr && !clean {
-            continue;
-        }
+    let decoders: &[Decoder] = if rqrr {
+        &[Decoder::Zxing, Decoder::Rqrr]
+    } else {
+        &[Decoder::Zxing]
+    };
+    for &decoder in decoders {
         let found = decode(&image, decoder).map_err(|e| VerifyError::Decode(render, decoder, e))?;
         match found.as_slice() {
             [] => return Err(VerifyError::NotFound(render, decoder)),

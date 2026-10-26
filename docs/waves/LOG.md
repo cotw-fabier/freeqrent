@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261025214510 · M1 · Scan boxes: finder, alignment and timing styles
+
+- Landed: `FinderStyle` (rings Square/Rounded/Squircle/Leaf, eyes Square/Rounded/Circle/Squircle/Leaf, per-corner overrides), `AlignmentStyle` (Match/Own × None/Accent/Outline), `TimingStyle` (Plain/Dotted/Dashed). `QrMatrix::codeword_map` (verified by rebuilding every RS block from the modules) and a per-block damage budget for cleared modules (`DAMAGE_BUDGET` 60%, `ScanReport.ecc_budget_used`). `freeqrent_verify::{Bar, verify_style}` hold each style to the bar its own report implies.
+- Decisions (measured): dropped the `Circle` ring (~1/200 clean ZXing misses from v15), finder `Rounded` capped at 2.5, dropped the `Diamond` eye (ZXing diagonal check) and `Dashed` ring (clean v40 misses); any non-square ring warns `RoundedFinder` (rqrr can't read even r = 0.25). Outline is refused v7–v14 at every ECC; it's mostly for art mode.
+- Checks: 72 unit + 13 verify tests (36 ring × eye pairs, 40 alignment combos, timing × shapes, Outline on every budget-fitting version × ECC, a payload sweep for round rings at v15/25/40).
+
 ## 20261025212852 · M1 · SVG writer, module shapes, verify crate
 
 - Landed: `Style` (module shape, palette, quiet zone, inverted opt-in, minify, title/desc/label, id prefix) with `render`, `render_to` (any `fmt::Write`), `render_io`, and `check` → `ScanReport { errors, warnings, min_contrast }`. Shapes `Square { gap }`, `Rounded`, `Dots`, `Bars`; integer path geometry with relative commands. Finders and alignment patterns drawn solid on their own layers and tokens. New crate `freeqrent-verify`: resvg rasterization, ZXing (`rxing`) + rqrr decoding, four renders (4/6/10 px/module, and blur + noise at 8).

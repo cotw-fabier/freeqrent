@@ -14,9 +14,10 @@ use core::fmt::{self, Write};
 use crate::color::Color;
 use crate::geometry::{self, Path, UNIT};
 use crate::math;
-use crate::matrix::QrMatrix;
+use crate::matrix::{Corner, QrMatrix};
 use crate::num::write_scaled;
 use crate::palette::{Gradient, GradientKind, Paint, Palette, Token};
+use crate::scanbox::{self, AlignmentShape};
 use crate::scene::{self, Part};
 use crate::style::Style;
 
@@ -37,28 +38,52 @@ fn build_paths(style: &Style, qr: &QrMatrix) -> Vec<(Token, bool, Path)> {
             }
         };
         let path = &mut paths[i].2;
-        let at = |(x, y): (i64, i64)| (origin + x * UNIT, origin + y * UNIT);
+        // Center of a pattern whose top-left module is `(x, y)` and side `n`.
+        let center = |(x, y): (i64, i64), n: i64| {
+            (
+                origin + x * UNIT + n * UNIT / 2,
+                origin + y * UNIT + n * UNIT / 2,
+            )
+        };
         match &layer.part {
             Part::Modules(grid) => geometry::draw_modules(&style.modules, grid, origin, path),
+            Part::Timing(grid) => {
+                for (x, y, _, _) in qr.modules() {
+                    if grid.get(x as i64, y as i64) {
+                        let (px, py) = (origin + x as i64 * UNIT, origin + y as i64 * UNIT);
+                        scanbox::draw_timing_module(path, style.timing, px, py, y == 6);
+                    }
+                }
+            }
             Part::FinderOuter(corners) => {
                 for &c in corners {
-                    let (x, y) = at(scene::finder_origin(c, qr.size()));
-                    path.rect(x, y, 7 * UNIT, 7 * UNIT);
-                    path.rect(x + UNIT, y + UNIT, 5 * UNIT, 5 * UNIT);
+                    let at = center(scene::finder_origin(c, qr.size()), 7);
+                    let (ring, _) = style.finders.at(c);
+                    let toward = scene::finder_toward(c);
+                    scanbox::draw_ring(path, ring, scanbox::FINDER, false, at, toward);
                 }
             }
             Part::FinderEye(corners) => {
                 for &c in corners {
-                    let (x, y) = at(scene::finder_origin(c, qr.size()));
-                    path.rect(x + 2 * UNIT, y + 2 * UNIT, 3 * UNIT, 3 * UNIT);
+                    let at = center(scene::finder_origin(c, qr.size()), 7);
+                    let (_, eye) = style.finders.at(c);
+                    let toward = scene::finder_toward(c);
+                    scanbox::draw_eye(path, eye, scanbox::FINDER, false, at, toward);
                 }
             }
             Part::Alignment(centers) => {
+                let (ring, eye, scaled) = match style.alignment.shape {
+                    AlignmentShape::Match => {
+                        let (ring, eye) = style.finders.at(Corner::TopLeft);
+                        (ring, eye, true)
+                    }
+                    AlignmentShape::Own { outer, eye } => (outer, eye, false),
+                };
                 for &(cx, cy) in centers {
-                    let (x, y) = at((cx as i64 - 2, cy as i64 - 2));
-                    path.rect(x, y, 5 * UNIT, 5 * UNIT);
-                    path.rect(x + UNIT, y + UNIT, 3 * UNIT, 3 * UNIT);
-                    path.rect(x + 2 * UNIT, y + 2 * UNIT, UNIT, UNIT);
+                    let at = center((cx as i64 - 2, cy as i64 - 2), 5);
+                    let toward = scene::alignment_toward((cx, cy), qr.size());
+                    scanbox::draw_ring(path, ring, scanbox::ALIGNMENT, scaled, at, toward);
+                    scanbox::draw_eye(path, eye, scanbox::ALIGNMENT, scaled, at, toward);
                 }
             }
         }

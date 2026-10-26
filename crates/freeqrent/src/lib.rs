@@ -38,6 +38,7 @@ mod matrix;
 mod num;
 mod optimize;
 mod palette;
+mod scanbox;
 mod scene;
 mod segment;
 mod style;
@@ -45,13 +46,18 @@ mod svg;
 mod tables;
 mod version;
 
-pub use check::{CONTRAST_FLOOR, CONTRAST_WARNING, RenderError, ScanReport, Warning};
+pub use check::{
+    CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, RenderError, ScanReport, Warning,
+};
 pub use code::{QrBuilder, QrCode};
 pub use color::{Color, ColorError};
 pub use error::EncodeError;
 pub use matrix::{CapacityReport, Corner, FinderRing, Mask, ModuleRole, QrMatrix};
 pub use palette::{
     Contrast, Gradient, GradientKind, GradientStop, Paint, Palette, PaletteError, Token,
+};
+pub use scanbox::{
+    AlignmentShape, AlignmentStyle, Emphasis, EyeShape, FinderStyle, RingShape, TimingStyle,
 };
 pub use segment::{ECI_UTF8, EciPolicy, Mode, Segment};
 pub use style::{Axis, ModuleShape, Style};

@@ -143,13 +143,13 @@ payload ─▶ encode ─▶ QrMatrix ─▶ Layout ─▶ Geometry ─▶ Paint
 ## 5. Public API Sketch
 
 ```rust
-use freeqrent::{QrCode, Ecc, Style, ModuleShape, FinderStyle, Frame, Palette, Logo, Intro};
+use freeqrent::{QrCode, Ecc, Style, ModuleShape, FinderStyle, RingShape, EyeShape, Frame, Palette, Logo, Intro};
 
 let qr = QrCode::encode("https://example.com", Ecc::Q)?;
 
 let svg: String = Style::new()
     .modules(ModuleShape::Liquid { smoothness: 0.8 })
-    .finders(FinderStyle::Squircle)
+    .finders(FinderStyle::new(RingShape::Squircle, EyeShape::Circle))
     .frame(Frame::Circle { filler_density: 0.5 })
     .palette(Palette::from_tokens([
         ("bg", "#f7f3ec"),
@@ -168,7 +168,7 @@ let report = style.check(&qr);   // ScanReport { errors, warnings, min_contrast,
 ```
 
 - `RenderError` is returned for **hard failures**, such as a logo too large for the ECC budget, contrast below the floor, or no quiet zone.
-- `ScanReport.warnings` covers **soft risks**, such as inverted colors, low-contrast gradients, or very small module size at the target print size.
+- `ScanReport.warnings` covers **soft risks**, such as inverted colors, low-contrast gradients, rounded finder rings, or very small module size at the target print size.
 - `Style` implements `Clone` and (with feature `serde`, optional dep) `Serialize`/`Deserialize`, so presets can be stored as JSON.
 - **Presets:** `Style::preset("ink")`, `"candy"`, `"terminal"`, … (a curated set that ships with the crate).
 
@@ -267,19 +267,23 @@ A QR code has two kinds of "scan box":
 
 All three are rendered as separate layers from the data, so they can be emphasized and styled on their own. That is how the reference design gets its grid of crisp boxes over a busy image (§7.8).
 
-Finder styles (independent outer ring and eye):
-- Outer: `Square`, `Rounded(r)`, `Circle`, `Squircle`, `Leaf` (one sharp corner pointing to center), `Dashed`
-- Eye: `Square`, `Rounded(r)`, `Circle`, `Squircle`, `Diamond`, `Leaf`
-- Per-corner overrides (e.g. a different color for the top-left finder).
+Finder styles (`FinderStyle { outer, eye }`, independent ring and eye):
+- Ring (`RingShape`): `Square`, `Rounded(r)` (r ≤ 2.5 modules; rounded rings stay concentric, inner radius r − 1), `Squircle` (4-cubic superellipse, n ≈ 4), `Leaf` (three corners rounded, the one pointing at the code's center sharp).
+- Eye (`EyeShape`): `Square`, `Rounded(r)` (r ≤ 1.5), `Circle`, `Squircle`, `Leaf`.
+- Per-corner overrides of shape (`FinderStyle::corner`) and color (`finder.top-left.outer`, …).
+- **Measured, not shipped** (ROADMAP): a `Circle` ring, and `Rounded` above 2.5, made ZXing miss about 1 in 200 clean renders from v15 up (2.75: 1/360; 3.0: 2/360; 2.5: 0/720). A `Diamond` eye failed ZXing on clean 10 px/module renders at every version: ZXing also cross-checks finders along the diagonal. A `Dashed` ring failed clean v40 renders.
+- Any non-square ring raises `Warning::RoundedFinder`: ZXing-family scanners read it, but decoders that fit the ring's square corners to find perspective (quirc, rqrr) lose it. Even a 0.25-module radius made rqrr miss renders.
 
-Alignment styles:
-- `Match` (follows the finder style, scaled), or its own outer and eye shape.
-- `emphasis`: `None` (blend with data), `Outline` (draw on a clean `bg` plate one module wider, as in the reference), or `Accent` (use the `alignment` token).
+Alignment styles (`AlignmentStyle { shape, emphasis }`):
+- Shape: `Match` (the top-left finder's shapes, radii scaled × 5/7 for the ring and × 1/3 for the eye), or `Own { outer, eye }` (ring radius ≤ 2.5, which is a circle; eye ≤ 0.5). Alignment patterns never use the data module shape.
+- `emphasis`: `None` (painted `fg`, blending with data), `Accent` (the `alignment` token; the default, which falls back to `finder.outer`), or `Outline` (also on a clean `bg` plate one module wider: the data/ECC/remainder modules in that ring are left out). Outline spends the error-correction budget (§7.3 rule): a codeword is damaged when one of its cleared modules was dark, counted per Reed–Solomon block, and each block may lose at most `DAMAGE_BUDGET` = 60% of its correctable codewords (`(ecc − p) / 2`). `ScanReport.ecc_budget_used` reports the worst block. Measured: Outline fits v2–v5 at M and above and v20+ at Q/H, but from v7 to v14 the rings' codewords pile into a few blocks and it's refused. In art mode (§7.8) the free-bit solver can steer cleared modules light, which makes Outline free.
 
-Timing styles: `Plain`, `Dotted` (dots in the module shape), `Dashed`, `Hidden-on-image` (rendered only at the sampled center, as in halftone mode).
+Timing styles (`TimingStyle`): `Plain` (data module shape), `Dotted` (0.8 circles), `Dashed` (dashes along the line, 0.6 thick). `Hidden-on-image` waits for halftone (M5).
+
+*(rev. W20261025214510)*
 
 **Constraints:**
-- Finders keep the 7×7 footprint and the 1:1:3:1:1 ratio along both axes through the center. Alignment patterns keep the 5×5 footprint and the 1:1:1:1:1 ratio. These ratios are what scanners detect. Styles that would break them (e.g. `Dashed` at small sizes) produce a warning.
+- Finders keep the 7×7 footprint and the 1:1:3:1:1 ratio along both axes through the center: every shape crosses each axis at the module boundaries. Alignment patterns keep the 5×5 footprint and the 1:1:1:1:1 ratio.
 - Only the real alignment positions for the chosen version are drawn. The library never adds decorative fake boxes, because scanners would try to use them.
 
 ### 7.3 Logo in the middle (feature 1)
@@ -467,7 +471,7 @@ pub enum Property { Opacity, Scale, TranslateX, TranslateY, Fill(TokenId), ClipR
 |---|---|---|
 | Static rules | Contrast floor, quiet zone, logo ECC budget, finder ratio, min dot size, filler gap | core `Style::check` (always runs before render) |
 | Per-feature budgets | Halftone sub-cell center preserved; palette transition midpoints | core |
-| Round-trip verify | Rasterize with resvg at 4, 6 and 10 px/module plus a 3×3-blurred, ±24-noise render at 8 px/module (and at intro midpoints for animations); decode with ZXing (`rxing`) on every render and rqrr on the clean ones. rqrr loses large plain codes after even a 3×3 blur, so it isn't a fair judge of soft renders. Styles with a low-contrast warning must pass the clean renders; all others, every render. Perspective is still to come. *(rev. W20261025212852)* | `freeqrent-verify` crate and CI |
+| Round-trip verify | Rasterize with resvg at 4, 6 and 10 px/module plus a 3×3-blurred, ±24-noise render at 8 px/module (and at intro midpoints for animations); decode with ZXing (`rxing`) on every render and rqrr on the clean ones. rqrr loses large plain codes after even a 3×3 blur, so it isn't a fair judge of soft renders. Each style is held to the bar its own `ScanReport` implies (`freeqrent_verify::Bar::for_report`): ZXing must decode the clean renders, always; without warnings, also the degraded render, and rqrr the clean ones. A low-contrast warning drops the degraded render; a rounded-finder warning drops rqrr and the degraded render. Perspective is still to come. *(rev. W20261025212852, W20261025214510)* | `freeqrent-verify` crate and CI |
 | Real-device matrix | iOS Camera, Android Google Lens, WeChat, ZXing | manual, per release, for presets |
 
 CI runs the round-trip suite over the full preset × shape × frame matrix. A preset that fails is a release blocker.

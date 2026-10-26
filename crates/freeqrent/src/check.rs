@@ -4,14 +4,20 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::matrix::QrMatrix;
+use crate::matrix::{QrMatrix, misdecode_protection};
 use crate::palette::Token;
+use crate::scanbox::{AlignmentShape, EyeShape, RingShape};
 use crate::scene;
 use crate::style::{ModuleShape, Style};
+use crate::version::BlockLayout;
 
 /// The OKLab lightness difference below which a code isn't rendered. At
 /// or above it, codes decode from clean renders (`freeqrent-verify`).
 pub const CONTRAST_FLOOR: f32 = 0.40;
+/// The share of a block's correctable codewords that cleared modules may
+/// use up (SPEC §7.3), leaving the rest for print and camera damage.
+pub const DAMAGE_BUDGET: f32 = 0.60;
+
 /// The difference below which a code renders with a warning: under blur
 /// and sensor noise, ZXing starts missing codes below about 0.6, the
 /// finder eyes first.
@@ -50,6 +56,15 @@ pub enum RenderError {
         /// Largest allowed.
         max: f32,
     },
+    /// Modules the style leaves out (alignment `Outline`) damage more of a
+    /// Reed–Solomon block than [`DAMAGE_BUDGET`] allows. Raise the ECC
+    /// level or the version.
+    EccBudgetExceeded {
+        /// The worst block's damaged codewords.
+        damaged: u16,
+        /// What that block may lose within the budget.
+        allowed: u16,
+    },
     /// The output sink returned an error.
     Write,
 }
@@ -74,6 +89,10 @@ impl fmt::Display for RenderError {
                 min,
                 max,
             } => write!(f, "{option} is {value}; it must be in {min}–{max}"),
+            RenderError::EccBudgetExceeded { damaged, allowed } => write!(
+                f,
+                "cleared modules damage {damaged} codewords of one block; the budget allows {allowed}"
+            ),
             RenderError::Write => f.write_str("the output sink failed"),
         }
     }
@@ -111,6 +130,11 @@ pub enum Warning {
     /// The background isn't opaque, so contrast depends on what's behind
     /// the code; it was judged over white.
     TranslucentBackground,
+    /// A finder or alignment ring isn't square. ZXing-family scanners
+    /// (most phones) read it, but decoders that fit the ring's square
+    /// corners to find perspective, like quirc and rqrr, lose it: in the
+    /// verify suite even a 0.25-module radius made rqrr miss renders.
+    RoundedFinder,
 }
 
 impl fmt::Display for Warning {
@@ -138,6 +162,9 @@ impl fmt::Display for Warning {
                     "dots of {size} modules; 0.75 or more scans more reliably"
                 )
             }
+            Warning::RoundedFinder => f.write_str(
+                "rounded scan-box rings need a ZXing-family scanner; quirc-style decoders can't locate them",
+            ),
             Warning::TranslucentBackground => f.write_str(
                 "bg is translucent; contrast was judged over white and depends on the page",
             ),
@@ -154,6 +181,10 @@ pub struct ScanReport {
     pub warnings: Vec<Warning>,
     /// The lowest contrast of any painted token against `bg`.
     pub min_contrast: f32,
+    /// How much of the error-correction budget cleared modules use, in the
+    /// worst block: damaged codewords over correctable ones (0 when nothing
+    /// is cleared). Above [`DAMAGE_BUDGET`] the code isn't rendered.
+    pub ecc_budget_used: f32,
 }
 
 impl ScanReport {
@@ -203,6 +234,9 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         _ => {}
     }
 
+    check_scan_boxes(style, &mut errors, &mut warnings);
+    let ecc_budget_used = damage(style, qr, &mut errors);
+
     let palette = &style.palette;
     if palette.background().is_translucent() {
         warnings.push(Warning::TranslucentBackground);
@@ -236,5 +270,137 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         errors,
         warnings,
         min_contrast,
+        ecc_budget_used,
+    }
+}
+
+fn check_scan_boxes(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut Vec<Warning>) {
+    let mut rings = Vec::new();
+    for corner in scene::CORNERS {
+        let (ring, eye) = style.finders.at(corner);
+        rings.push(ring);
+        if let RingShape::Rounded(r) = ring {
+            in_range(errors, "FinderStyle.outer radius", r, 0.0, 2.5);
+        }
+        if let EyeShape::Rounded(r) = eye {
+            in_range(errors, "FinderStyle.eye radius", r, 0.0, 1.5);
+        }
+    }
+    if let AlignmentShape::Own { outer, eye } = style.alignment.shape {
+        rings.push(outer);
+        if let RingShape::Rounded(r) = outer {
+            in_range(errors, "AlignmentShape.outer radius", r, 0.0, 2.5);
+        }
+        if let EyeShape::Rounded(r) = eye {
+            in_range(errors, "AlignmentShape.eye radius", r, 0.0, 0.5);
+        }
+    }
+    if rings.iter().any(|&r| r != RingShape::Square) {
+        warnings.push(Warning::RoundedFinder);
+    }
+}
+
+/// Counts the codewords that cleared modules damage, per Reed–Solomon
+/// block. A codeword is damaged when one of its cleared modules was dark:
+/// a cleared module reads as light. Returns the worst block's share of its
+/// correctable codewords.
+fn damage(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
+    let cleared = scene::cleared(style, qr);
+    if cleared.is_empty() {
+        return 0.0;
+    }
+    let layout = BlockLayout::new(qr.version(), qr.ecc());
+    let correctable = (layout.ecc_per_block - misdecode_protection(qr.version(), qr.ecc())) / 2;
+    let allowed = (correctable as f32 * DAMAGE_BUDGET) as u16;
+    let map = qr.codeword_map();
+    let mut hit = alloc::vec![false; layout.total_codewords];
+    let mut per_block = alloc::vec![0u16; layout.num_blocks];
+    for (x, y, dark, _) in qr.modules() {
+        if !dark || !cleared.get(x as i64, y as i64) {
+            continue;
+        }
+        if let Some((codeword, block)) = map[y as usize * qr.size() as usize + x as usize]
+            && !core::mem::replace(&mut hit[codeword as usize], true)
+        {
+            per_block[block as usize] += 1;
+        }
+    }
+    let damaged = per_block.iter().copied().max().unwrap_or(0);
+    if damaged > allowed {
+        errors.push(RenderError::EccBudgetExceeded { damaged, allowed });
+    }
+    damaged as f32 / correctable as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scanbox::{AlignmentStyle, Emphasis, FinderStyle};
+    use crate::{Ecc, QrCode, Version};
+
+    fn qr(version: u8, ecc: Ecc) -> QrMatrix {
+        QrCode::builder()
+            .ecc(ecc)
+            .boost_ecc(false)
+            .version(Version::new(version).unwrap())
+            .encode_text("HELLO")
+            .unwrap()
+    }
+
+    fn outline() -> Style {
+        Style::new().alignment(AlignmentStyle {
+            emphasis: Emphasis::Outline,
+            ..AlignmentStyle::default()
+        })
+    }
+
+    #[test]
+    fn nothing_cleared_means_no_budget_used() {
+        assert_eq!(Style::new().check(&qr(7, Ecc::M)).ecc_budget_used, 0.0);
+        // Version 1 has no alignment patterns to outline.
+        assert_eq!(outline().check(&qr(1, Ecc::M)).ecc_budget_used, 0.0);
+    }
+
+    #[test]
+    fn outline_spends_the_budget() {
+        let report = outline().check(&qr(5, Ecc::M));
+        assert!(report.ok(), "{report:?}");
+        assert!(report.ecc_budget_used > 0.0 && report.ecc_budget_used <= DAMAGE_BUDGET);
+        // A single low-ECC block can't afford it.
+        let report = outline().check(&qr(2, Ecc::L));
+        assert!(
+            matches!(report.errors[..], [RenderError::EccBudgetExceeded { .. }]),
+            "{report:?}"
+        );
+        assert!(report.ecc_budget_used > DAMAGE_BUDGET);
+    }
+
+    #[test]
+    fn scan_box_options_are_range_checked() {
+        let style = Style::new().finders(FinderStyle::new(
+            RingShape::Rounded(4.0),
+            EyeShape::Rounded(-1.0),
+        ));
+        let report = style.check(&qr(1, Ecc::M));
+        assert_eq!(report.errors.len(), 6, "{report:?}"); // ring and eye at each corner
+        let style = Style::new().alignment(AlignmentStyle {
+            shape: AlignmentShape::Own {
+                outer: RingShape::Rounded(2.5),
+                eye: EyeShape::Rounded(0.6),
+            },
+            emphasis: Emphasis::Accent,
+        });
+        let report = style.check(&qr(5, Ecc::M));
+        assert!(matches!(
+            report.errors[..],
+            [RenderError::OptionOutOfRange { .. }]
+        ));
+        assert!(report.warnings.contains(&Warning::RoundedFinder));
+        assert!(
+            !Style::new()
+                .check(&qr(5, Ecc::M))
+                .warnings
+                .contains(&Warning::RoundedFinder)
+        );
     }
 }
