@@ -15,6 +15,8 @@ authors.workspace = true
 default = ["std"]
 # `std::error::Error` impls (and later the `std::io::Write` sink).
 std = []
+# Kanji mode for JIS X 0208 text (adds a ~27 KB table).
+kanji = []
 
 [dependencies]
 

@@ -1,7 +1,8 @@
 //! freeQRent: styled and animated SVG QR codes, with zero dependencies.
 //!
 //! This release contains the encoder (SPEC §3): versions 1–40, ECC L/M/Q/H,
-//! numeric/alphanumeric/byte/ECI segments, mask selection, and a
+//! numeric/alphanumeric/byte/Kanji/ECI segments with minimal-length
+//! segmentation, mask selection, and a
 //! [`QrMatrix`] that records the role of every module.
 //!
 //! ```
@@ -23,6 +24,8 @@ mod bits;
 mod code;
 mod error;
 mod gf;
+#[cfg(feature = "kanji")]
+mod kanji_table;
 mod matrix;
 mod optimize;
 mod segment;

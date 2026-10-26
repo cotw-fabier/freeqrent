@@ -254,3 +254,78 @@ fn segmentation_follows_the_version_band() {
     assert!(qr.version().number() >= 10);
     assert_eq!(decode_grid(&qr).1, text.as_bytes());
 }
+
+/// Kanji segments come back from `rqrr` as raw Shift-JIS; the expected bytes
+/// were produced independently with Python's `shift_jis` codec.
+#[cfg(feature = "kanji")]
+#[test]
+fn kanji_text_decodes_as_shift_jis() {
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+    let cases = [
+        ("点茗", hex("935fe4aa")),
+        ("日本語のテキスト", hex("93fa967b8cea82cc8365834c83588367")),
+        (
+            "https://example.jp/日本語の案内ページ",
+            [
+                b"https://example.jp/".as_slice(),
+                &hex("93fa967b8cea82cc88c493e08379815b8357"),
+            ]
+            .concat(),
+        ),
+    ];
+    for (text, expected) in cases {
+        let qr = QrCode::builder()
+            .boost_ecc(false)
+            .encode_text(text)
+            .unwrap();
+        assert_eq!(decode_grid(&qr).1, expected, "{text:?}");
+    }
+    // All-Kanji text needs no ECI header: mode + count + 13 bits per char.
+    let qr = QrCode::builder().encode_text("日本語のテキスト").unwrap();
+    assert_eq!(qr.capacity_report().data_bits_used, 4 + 8 + 13 * 8);
+}
+
+#[cfg(feature = "kanji")]
+#[test]
+fn every_version_holds_kanji_at_capacity() {
+    let text: String = "漢字モード".chars().cycle().take(400).collect();
+    for n in [1, 9, 10, 26, 27, 40] {
+        let version = Version::new(n).unwrap();
+        let mut lo = 0usize;
+        let mut hi = 400;
+        let encode = |k: usize| {
+            let part: String = text.chars().take(k).collect();
+            QrCode::builder()
+                .version(version)
+                .ecc(Ecc::L)
+                .encode_text(&part)
+                .map(|qr| (qr, part))
+        };
+        while lo < hi {
+            let mid = (lo + hi).div_ceil(2);
+            if encode(mid).is_ok() {
+                lo = mid
+            } else {
+                hi = mid - 1
+            }
+        }
+        let (qr, part) = encode(lo).unwrap();
+        let expected: Vec<u8> = part
+            .chars()
+            .flat_map(|c| match c {
+                '漢' => [0x8A, 0xBF],
+                '字' => [0x8E, 0x9A],
+                'モ' => [0x83, 0x82],
+                'ー' => [0x81, 0x5B],
+                'ド' => [0x83, 0x68],
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(decode_grid(&qr).1, expected, "v{n}");
+    }
+}

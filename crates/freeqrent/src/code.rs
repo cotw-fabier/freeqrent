@@ -100,7 +100,6 @@ impl QrBuilder {
     /// Encodes UTF-8 text, split into the shortest mix of modes
     /// ([`Segment::optimal`]), with an ECI header if the policy calls for one.
     pub fn encode_text(&self, text: &str) -> Result<QrMatrix, EncodeError> {
-        let eci = self.eci.applies_to(text);
         // Count-field widths change at versions 10 and 27, and the best split
         // can change with them, so plan once per band in range.
         let plans: [Vec<Segment>; 3] = core::array::from_fn(|band| {
@@ -108,12 +107,12 @@ impl QrBuilder {
             let in_range = Version::all()
                 .filter(|v| v.count_band() == band)
                 .any(|v| v >= self.min_version && v <= self.max_version);
-            let mut segments = Vec::new();
-            if in_range {
-                if eci {
-                    segments.push(Segment::eci(ECI_UTF8).expect("26 is a valid designator"));
-                }
-                segments.extend(Segment::optimal(text, first));
+            if !in_range {
+                return Vec::new();
+            }
+            let mut segments = Segment::optimal(text, first);
+            if self.eci.applies_to(&segments) {
+                segments.insert(0, Segment::eci(ECI_UTF8).expect("26 is a valid designator"));
             }
             segments
         });

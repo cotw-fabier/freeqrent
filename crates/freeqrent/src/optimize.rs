@@ -1,7 +1,8 @@
 //! Minimal-length segmentation: a shortest-path search over characters where
 //! the state is the current mode plus how far into its packing group the
 //! segment is. That makes every cost an exact bit count, so the result is the
-//! true minimum for the version's character-count widths.
+//! true minimum for the version's character-count widths. With the `kanji`
+//! feature, JIS X 0208 characters can also go in Kanji mode.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -16,16 +17,21 @@ enum State {
     Byte,
     Numeric(u8),
     Alphanumeric(u8),
+    #[cfg(feature = "kanji")]
+    Kanji,
 }
 
-const STATES: [State; 6] = [
+const STATES: &[State] = &[
     State::Byte,
     State::Numeric(0),
     State::Numeric(1),
     State::Numeric(2),
     State::Alphanumeric(0),
     State::Alphanumeric(1),
+    #[cfg(feature = "kanji")]
+    State::Kanji,
 ];
+const NUM_STATES: usize = STATES.len();
 
 impl State {
     fn index(self) -> usize {
@@ -33,6 +39,8 @@ impl State {
             State::Byte => 0,
             State::Numeric(k) => 1 + k as usize,
             State::Alphanumeric(k) => 4 + k as usize,
+            #[cfg(feature = "kanji")]
+            State::Kanji => 6,
         }
     }
 
@@ -41,6 +49,8 @@ impl State {
             State::Byte => Mode::Byte,
             State::Numeric(_) => Mode::Numeric,
             State::Alphanumeric(_) => Mode::Alphanumeric,
+            #[cfg(feature = "kanji")]
+            State::Kanji => Mode::Kanji,
         }
     }
 }
@@ -66,7 +76,8 @@ const UNREACHED: Cell = Cell {
 };
 
 impl Segment {
-    /// The shortest sequence of numeric, alphanumeric, and byte segments for
+    /// The shortest sequence of numeric, alphanumeric, byte (and, with the
+    /// `kanji` feature, Kanji) segments for
     /// `text` at `version` (character-count widths change at versions 10
     /// and 27). Byte segments hold UTF-8. Empty text gives no segments.
     pub fn optimal(text: &str, version: Version) -> Vec<Segment> {
@@ -76,7 +87,7 @@ impl Segment {
         }
         let header = |mode: Mode| 4 + mode.char_count_bits(version) as u32;
 
-        let mut dp = vec![[UNREACHED; 6]; chars.len()];
+        let mut dp = vec![[UNREACHED; NUM_STATES]; chars.len()];
         for (i, &(_, c)) in chars.iter().enumerate() {
             // Cheapest state after the previous char, for opening a segment.
             let prev = (i > 0).then(|| dp[i - 1]);
@@ -97,7 +108,7 @@ impl Segment {
                 (cell.bits != u32::MAX).then_some((cell.bits, Step::Continue(s.index())))
             };
 
-            let mut row = [UNREACHED; 6];
+            let mut row = [UNREACHED; NUM_STATES];
             let mut offer = |to: State, base: Option<(u32, Step)>, cost: u32| {
                 if let Some((bits, from)) = base
                     && bits != u32::MAX
@@ -145,14 +156,23 @@ impl Segment {
                     header(Mode::Alphanumeric) + 6,
                 );
             }
+            #[cfg(feature = "kanji")]
+            if crate::segment::kanji_value(c).is_some() {
+                offer(State::Kanji, continue_from(State::Kanji), 13);
+                offer(
+                    State::Kanji,
+                    Some(open_from(Mode::Kanji)),
+                    header(Mode::Kanji) + 13,
+                );
+            }
             dp[i] = row;
         }
 
         // Walk back from the cheapest final state, marking where segments open.
         let last = dp.len() - 1;
-        let mut state = (0..6)
+        let mut state = (0..NUM_STATES)
             .min_by_key(|&s| dp[last][s].bits)
-            .expect("six states");
+            .expect("states exist");
         let mut opens: Vec<(usize, Mode)> = Vec::new();
         for i in (0..chars.len()).rev() {
             match dp[i][state].from {
@@ -177,6 +197,8 @@ impl Segment {
             segments.push(match mode {
                 Mode::Numeric => Segment::numeric(part).expect("digits only"),
                 Mode::Alphanumeric => Segment::alphanumeric(part).expect("alphanumeric only"),
+                #[cfg(feature = "kanji")]
+                Mode::Kanji => Segment::kanji(part).expect("Kanji-mode characters only"),
                 _ => Segment::bytes(part.as_bytes()),
             });
         }
@@ -226,6 +248,8 @@ mod tests {
                     Segment::numeric(part).ok(),
                     Segment::alphanumeric(part).ok(),
                     Some(Segment::bytes(part.as_bytes())),
+                    #[cfg(feature = "kanji")]
+                    Segment::kanji(part).ok(),
                 ];
                 for seg in candidates.into_iter().flatten() {
                     if Some(seg.mode()) == prev {
@@ -311,7 +335,7 @@ mod tests {
 
     #[test]
     fn matches_brute_force_on_random_text() {
-        let alphabet: Vec<char> = "0123456789ABCXYZ $:abcxyzé€".chars().collect();
+        let alphabet: Vec<char> = "0123456789ABCXYZ $:abcxyzé€日本語カナ".chars().collect();
         let mut state: u64 = 0x2545_F491_4F6C_DD1D;
         let mut next = move || {
             state ^= state << 13;
@@ -334,5 +358,17 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[cfg(feature = "kanji")]
+    #[test]
+    fn kanji_runs_use_kanji_mode() {
+        assert_eq!(modes("日本語のテキスト", v(1)), [Mode::Kanji]);
+        assert_eq!(
+            modes("https://example.jp/日本語の案内ページ", v(1)),
+            [Mode::Byte, Mode::Kanji]
+        );
+        // U+FF5E has no JIS X 0208 form, so it stays in bytes.
+        assert_eq!(modes("～", v(1)), [Mode::Byte]);
     }
 }

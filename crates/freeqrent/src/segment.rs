@@ -19,6 +19,9 @@ pub enum Mode {
     Alphanumeric,
     /// Arbitrary bytes, 8 bits each.
     Byte,
+    /// JIS X 0208 characters as Shift-JIS, 13 bits each. Building Kanji
+    /// segments from text needs the `kanji` feature.
+    Kanji,
     /// Extended Channel Interpretation header (no characters).
     Eci,
 }
@@ -29,6 +32,7 @@ impl Mode {
             Mode::Numeric => 0b0001,
             Mode::Alphanumeric => 0b0010,
             Mode::Byte => 0b0100,
+            Mode::Kanji => 0b1000,
             Mode::Eci => 0b0111,
         }
     }
@@ -40,6 +44,7 @@ impl Mode {
             Mode::Numeric => [10, 12, 14],
             Mode::Alphanumeric => [9, 11, 13],
             Mode::Byte => [8, 16, 16],
+            Mode::Kanji => [8, 10, 12],
             Mode::Eci => [0, 0, 0],
         };
         widths[band]
@@ -49,7 +54,8 @@ impl Mode {
 /// How text input chooses an ECI header.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum EciPolicy {
-    /// ASCII text gets no header; any other text gets ECI 26 (UTF-8).
+    /// A header only when a byte segment carries non-ASCII (UTF-8) bytes.
+    /// Kanji segments don't need one.
     #[default]
     Auto,
     /// Never write an ECI header. Text is still encoded as UTF-8 bytes,
@@ -60,10 +66,10 @@ pub enum EciPolicy {
 }
 
 impl EciPolicy {
-    /// Whether `text` gets an ECI 26 header under this policy.
-    pub fn applies_to(self, text: &str) -> bool {
+    /// Whether segments get an ECI 26 header under this policy.
+    pub(crate) fn applies_to(self, segments: &[Segment]) -> bool {
         match self {
-            EciPolicy::Auto => !text.is_ascii(),
+            EciPolicy::Auto => segments.iter().any(|s| s.non_ascii),
             EciPolicy::Never => false,
             EciPolicy::Always => true,
         }
@@ -76,6 +82,8 @@ pub struct Segment {
     mode: Mode,
     num_chars: usize,
     data: BitBuffer,
+    /// A byte segment with bytes >= 0x80, which needs ECI to be read as UTF-8.
+    non_ascii: bool,
 }
 
 impl Segment {
@@ -98,6 +106,7 @@ impl Segment {
             mode: Mode::Numeric,
             num_chars: digits.len(),
             data,
+            non_ascii: false,
         })
     }
 
@@ -127,6 +136,7 @@ impl Segment {
             mode: Mode::Alphanumeric,
             num_chars: text.len(),
             data,
+            non_ascii: false,
         })
     }
 
@@ -140,6 +150,7 @@ impl Segment {
             mode: Mode::Byte,
             num_chars: bytes.len(),
             data,
+            non_ascii: !bytes.is_ascii(),
         }
     }
 
@@ -156,6 +167,29 @@ impl Segment {
             mode: Mode::Eci,
             num_chars: 0,
             data,
+            non_ascii: false,
+        })
+    }
+
+    /// A Kanji segment. Fails on characters outside JIS X 0208's Kanji-mode
+    /// range (which includes kana and full-width forms, but not ASCII).
+    #[cfg(feature = "kanji")]
+    pub fn kanji(text: &str) -> Result<Segment, EncodeError> {
+        let mut data = BitBuffer::new();
+        let mut count = 0;
+        for (index, c) in text.char_indices() {
+            let value = kanji_value(c).ok_or(EncodeError::InvalidCharacter {
+                mode: Mode::Kanji,
+                index,
+            })?;
+            data.push(value as u32, 13);
+            count += 1;
+        }
+        Ok(Segment {
+            mode: Mode::Kanji,
+            num_chars: count,
+            data,
+            non_ascii: false,
         })
     }
 
@@ -194,6 +228,17 @@ pub(crate) fn total_bits(segments: &[Segment], version: Version) -> Option<usize
     segments
         .iter()
         .try_fold(0usize, |acc, s| Some(acc + s.encoded_bits(version)?))
+}
+
+/// The 13-bit Kanji-mode value of `c`, if it has one.
+#[cfg(feature = "kanji")]
+pub(crate) fn kanji_value(c: char) -> Option<u16> {
+    let scalar = u16::try_from(c as u32).ok()?;
+    let table = &crate::kanji_table::KANJI;
+    table
+        .binary_search_by_key(&scalar, |&(u, _)| u)
+        .ok()
+        .map(|i| table[i].1)
 }
 
 pub(crate) fn is_alphanumeric(b: u8) -> bool {
@@ -262,10 +307,27 @@ mod tests {
 
     #[test]
     fn eci_policy() {
-        assert!(!EciPolicy::Auto.applies_to("plain"));
-        assert!(EciPolicy::Auto.applies_to("café"));
-        assert!(!EciPolicy::Never.applies_to("café"));
-        assert!(EciPolicy::Always.applies_to("plain"));
+        let plain = [Segment::bytes(b"plain")];
+        let utf8 = [Segment::bytes("café".as_bytes())];
+        assert!(!EciPolicy::Auto.applies_to(&plain));
+        assert!(EciPolicy::Auto.applies_to(&utf8));
+        assert!(!EciPolicy::Never.applies_to(&utf8));
+        assert!(EciPolicy::Always.applies_to(&plain));
+    }
+
+    #[cfg(feature = "kanji")]
+    #[test]
+    fn kanji_iso_example() {
+        // ISO 18004 7.4.6: 点 (0x935F) -> 0xD9F, 茗 (0xE4AA) -> 0x1AAA.
+        let s = Segment::kanji("点茗").unwrap();
+        assert_eq!(bits_of(&s), "10000000001001101100111111101010101010");
+        assert_eq!(
+            Segment::kanji("a"),
+            Err(EncodeError::InvalidCharacter {
+                mode: Mode::Kanji,
+                index: 0
+            })
+        );
     }
 
     #[test]
