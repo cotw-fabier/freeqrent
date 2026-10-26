@@ -265,6 +265,24 @@ fn load_logo(source: &str) -> Result<Logo, String> {
     logo.map_err(|e| format!("--logo {source}: {e}"))
 }
 
+/// The colors of `--logo`, so an extracted frame keeps apart from them: a
+/// vector logo's paints, or a raster's swatches by share.
+fn logo_colors(source: &str) -> Result<Vec<freeqrent::Color>, String> {
+    let logo = load_logo(source)?;
+    let colors = logo.colors();
+    if !colors.is_empty() || logo.sanitized_svg().is_some() {
+        return Ok(colors);
+    }
+    let bytes = fs::read(source).map_err(|e| format!("--logo {source}: {e}"))?;
+    let Ok(image) = freeqrent_image::decode(&bytes) else {
+        // GIF and WebP logos aren't decoded here; their frame can match.
+        return Ok(Vec::new());
+    };
+    let (_, report) = Palette::from_image(&image, PaletteOpts::new())
+        .map_err(|e| format!("--logo {source}: {e}"))?;
+    Ok(report.swatches.iter().map(|s| s.color).collect())
+}
+
 impl StyleArgs {
     /// Applies a flag without a value. Returns `false` when `flag` isn't
     /// one.
@@ -414,7 +432,11 @@ impl StyleArgs {
     /// The palette `--palette-from-*` derives, with its report.
     pub fn extract(&self) -> Result<Option<(Palette, PaletteReport)>, String> {
         // `--allow-inverted` lets a dark source keep its polarity.
-        let base = PaletteOpts::new().allow_inverted(self.allow_inverted);
+        let mut base = PaletteOpts::new().allow_inverted(self.allow_inverted);
+        // With a logo, the extracted frame keeps apart from its colors.
+        if let (Some(source), Some(_)) = (&self.logo, &self.palette_source) {
+            base = base.logo_colors(&logo_colors(source)?);
+        }
         let found = match &self.palette_source {
             None => return Ok(None),
             Some(PaletteSource::Image(image)) => {

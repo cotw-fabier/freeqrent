@@ -353,6 +353,17 @@ impl Logo {
         self.scale
     }
 
+    /// The solid colors a vector logo paints with (`fill`, `stroke` and
+    /// gradient stops, after sanitizing), in document order, each once;
+    /// empty for a raster. Palette extraction can keep the logo's frame
+    /// apart from them ([`PaletteOpts::logo_colors`](crate::PaletteOpts::logo_colors)).
+    pub fn colors(&self) -> Vec<crate::Color> {
+        match &self.content {
+            Content::Svg(doc) => doc.paints(),
+            Content::Raster { .. } => Vec::new(),
+        }
+    }
+
     /// The sanitized document of a vector logo, standalone.
     pub fn sanitized_svg(&self) -> Option<String> {
         match &self.content {
@@ -730,6 +741,21 @@ mod tests {
         let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
         assert!(cover(&logo(), &qr, 0.08).valid);
         assert!(!cover(&logo(), &qr, 0.2).valid);
+    }
+
+    #[test]
+    fn vector_logos_name_their_colors() {
+        let logo = Logo::svg(
+            r##"<svg viewBox="0 0 10 10"><defs><linearGradient id="g"><stop offset="0" stop-color="#123456"/></linearGradient></defs><rect fill="#c2410c" stroke="none" width="5" height="5"/><rect fill="url(#g)" width="1" height="1"/><path fill="#c2410c" stroke="teal" d="M0 0h1v1z"/></svg>"##,
+        )
+        .unwrap();
+        let parse = |s: &str| crate::Color::parse(s).unwrap();
+        assert_eq!(
+            logo.colors(),
+            [parse("#123456"), parse("#c2410c"), parse("teal")]
+        );
+        let raster = Logo::raster(b"\x89PNG\r\n\x1a\n".to_vec(), RasterFormat::Png).unwrap();
+        assert!(raster.colors().is_empty());
     }
 
     #[test]

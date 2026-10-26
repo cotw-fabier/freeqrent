@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026160831 · M5 · Frame colors that keep their light and leave the logo's alone
+
+- Landed: `logo.frame` has its own contrast floor, `FRAME_FLOOR` = 0.25, with no warning band; the check hadn't judged the frame at all before, since it's drawn outside the scene's layers. Extraction keeps the frame at ΔL 0.30 instead of darkening it to 0.66, and `PaletteOpts::logo_colors` keeps it ΔE 0.06 from the logo's colors (from `Logo::colors()`, a vector logo's paints), leaving it unset when nothing qualifies. The CLI passes `--logo`'s colors (a raster's swatches) to `--palette-from-*`.
+- Measured: on the largest affordable logos (every frame, square and circle plates, v4–v17 × L/M/Q/H, square and dot modules, light and dark), frames at ΔL 0.25, 0.40, 0.50 and 0.66 scan identically in gray, orange and blue; 0.13 and 0.05 missed more on dark twins. With the sample site and the sample logo, the frame no longer takes the logo's orange; alone, the site frames in `#c2410c` instead of a darkened `oklch(30% .17 38)`.
+- Found: the largest logos at ECC H miss the degraded render on a few v16–22 codes whatever the frame color, unframed too (ROADMAP).
+- Checks: unit tests (the frame's floor and message, frames apart from the logo, `Logo::colors`, the restated extraction tests), `faint_frames_scan_at_their_floor`, the palette corpus test and the `palette_parse` fuzz target with the frame's floor (336k runs clean), a CLI test for the logo-aware frame. Scan sheet: S24, S62 and S67 change frame color only.
+
 ## 20261026160240 · M5 · Fitting for bytes and segments
 
 - Landed: `QrBuilder::encode_bytes_for` and `encode_segments_for`, fitted to a style like `encode_text_for` ("boost ECC, then bump the version", steered for a picture). All three now share one fitting loop over a segment plan.

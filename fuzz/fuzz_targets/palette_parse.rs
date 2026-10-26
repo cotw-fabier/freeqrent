@@ -1,11 +1,12 @@
 //! Arbitrary CSS and HTML text: palette extraction never panics, and any
 //! palette it returns keeps every painted token at the extraction contrast,
-//! so a code drawn with it renders without a contrast warning. With
-//! inverted palettes allowed, a dark palette keeps the inverted contrast,
-//! with every token on the same side of `bg`.
+//! so a code drawn with it renders without a contrast warning, and the
+//! logo's frame above its own floor. With inverted palettes allowed, a dark
+//! palette keeps the inverted contrast, with every token on the same side
+//! of `bg`.
 #![no_main]
 
-use freeqrent::{EXTRACT_CONTRAST, INVERTED_CONTRAST, Palette, PaletteOpts, Token};
+use freeqrent::{EXTRACT_CONTRAST, FRAME_FLOOR, INVERTED_CONTRAST, Palette, PaletteOpts, Token};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|text: &str| {
@@ -30,9 +31,11 @@ fuzz_target!(|text: &str| {
         } else {
             EXTRACT_CONTRAST
         };
-        for token in [Token::Fg, Token::FinderEye, Token::LogoFrame] {
+        for token in [Token::Fg, Token::FinderEye] {
             let c = palette.contrast(token);
             assert!(c.inverted == dark && c.delta_l >= floor, "{token}: {c:?}");
         }
+        let c = palette.contrast(Token::LogoFrame);
+        assert!(c.inverted == dark && c.delta_l >= FRAME_FLOOR, "logo.frame: {c:?}");
     }
 });

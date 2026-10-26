@@ -340,3 +340,60 @@ fn logo_intros_scan_before_they_end() {
         }
     }
 }
+
+#[test]
+fn faint_frames_scan_at_their_floor() {
+    // The frame isn't read, so it only needs FRAME_FLOOR: at exactly that,
+    // gray and orange, on the largest logo each code affords, light and
+    // dark twin, it scans at the full bar (W20261026160831).
+    use freeqrent::{Color, FRAME_FLOOR, Palette, Token};
+    for hue in [(0.0, 0.0), (0.12, 50.0)] {
+        let mut palette = Palette::new();
+        let mut l = 1.0;
+        while palette.contrast(Token::LogoFrame).delta_l < FRAME_FLOOR {
+            l -= 0.002;
+            let color = Color::oklch(l, hue.0, hue.1);
+            palette.set(Token::LogoFrame, color).unwrap();
+        }
+        for dark in [false, true] {
+            let palette = if dark {
+                palette.dark_twin()
+            } else {
+                palette.clone()
+            };
+            for ecc in [Ecc::L, Ecc::M, Ecc::Q, Ecc::H] {
+                for version in [4, 8, 15] {
+                    let text = format!("FRAMED {version}");
+                    let qr = code(&text, version, ecc);
+                    for shape in [LogoShape::Square, LogoShape::Circle] {
+                        for frame in LogoFrame::ALL {
+                            let logo = Logo::svg(DARK)
+                                .unwrap()
+                                .shape(shape)
+                                .frame(frame)
+                                .size(LogoSize::Largest)
+                                .scale(0.05);
+                            let style = Style::new()
+                                .logo(logo)
+                                .palette(palette.clone())
+                                .allow_inverted(dark);
+                            let report = style.check(&qr);
+                            if report
+                                .errors
+                                .iter()
+                                .any(|e| matches!(e, RenderError::LogoTooLarge { .. }))
+                            {
+                                continue;
+                            }
+                            let label = format!("{hue:?} dark={dark} {ecc:?} {shape:?} {frame:?}");
+                            assert!(report.ok(), "{label}: {report:?}");
+                            if let Err(e) = verify_style(&style, &qr, &text) {
+                                panic!("{label} v{version}: {e}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

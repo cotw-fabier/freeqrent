@@ -60,6 +60,16 @@ fn spares_alignment(style: &Style) -> bool {
     false
 }
 
+/// The OKLab lightness difference below which `logo.frame` isn't rendered
+/// (SPEC §6.1). The frame sits on the logo's plate, among modules the
+/// budget already counts as lost, so it needs none of the read tokens'
+/// contrast. Measured (W20261026160831) on the largest logo each code
+/// affords, every frame and plate shape, square and dot modules, light and
+/// dark twins: frames from 0.25 to 0.66 scan exactly alike (the only
+/// misses, at ECC H on v16–17, happen at 0.66 too), and frames at 0.13
+/// and 0.05 missed the degraded render more often on dark twins.
+pub const FRAME_FLOOR: f32 = 0.25;
+
 /// The difference below which a code renders with a warning: under blur
 /// and sensor noise, ZXing starts missing codes below about 0.6, the
 /// finder eyes first.
@@ -134,10 +144,17 @@ pub enum RenderError {
 impl fmt::Display for RenderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RenderError::ContrastTooLow { token, delta_l } => write!(
-                f,
-                "{token} has contrast {delta_l:.2} against bg; at least {CONTRAST_FLOOR} is needed"
-            ),
+            RenderError::ContrastTooLow { token, delta_l } => {
+                let floor = if *token == Token::LogoFrame {
+                    FRAME_FLOOR
+                } else {
+                    CONTRAST_FLOOR
+                };
+                write!(
+                    f,
+                    "{token} has contrast {delta_l:.2} against bg; at least {floor} is needed"
+                )
+            }
             RenderError::InvertedColors { token } => write!(
                 f,
                 "{token} is lighter than bg; allow inverted colors to render it"
@@ -309,7 +326,8 @@ pub struct ScanReport {
     pub errors: Vec<RenderError>,
     /// Risks worth knowing about.
     pub warnings: Vec<Warning>,
-    /// The lowest contrast of any painted token against `bg`.
+    /// The lowest contrast of any painted token against `bg` (not the
+    /// logo's frame, which has [`FRAME_FLOOR`]).
     pub min_contrast: f32,
     /// How much of the error-correction budget cleared modules use, in the
     /// worst block: damaged codewords over correctable ones (0 when nothing
@@ -444,6 +462,18 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
             } else {
                 errors.push(RenderError::InvertedColors { token });
             }
+        }
+    }
+
+    // The logo's frame sits on its plate and isn't read: a floor of its own
+    // and no warning band, in either polarity.
+    if style.logo.as_ref().is_some_and(|l| l.frame.is_some()) {
+        let contrast = palette.contrast(Token::LogoFrame);
+        if contrast.delta_l < FRAME_FLOOR {
+            errors.push(RenderError::ContrastTooLow {
+                token: Token::LogoFrame,
+                delta_l: contrast.delta_l,
+            });
         }
     }
 
@@ -816,6 +846,43 @@ mod tests {
             .unwrap();
         let report = art.check(&steered);
         assert!(report.ok(), "{report:?}");
+    }
+
+    #[test]
+    fn logo_frames_have_a_floor_of_their_own() {
+        use crate::{Color, Logo, LogoFrame};
+        let logo = Logo::svg(r#"<svg viewBox="0 0 1 1"/>"#)
+            .unwrap()
+            .scale(0.1)
+            .frame(LogoFrame::Ring);
+        let framed = |l: f32| {
+            let mut palette = crate::Palette::new();
+            let bg = palette.background().to_oklab()[0];
+            let color = Color::oklch(bg - l, 0.0, 0.0);
+            palette.set(Token::LogoFrame, color).unwrap();
+            Style::new()
+                .palette(palette)
+                .logo(logo.clone())
+                .check(&qr(7, Ecc::M))
+        };
+        // Between the frame's floor and the read tokens' warning: clean,
+        // and not the code's contrast.
+        let report = framed(0.3);
+        assert!(report.ok() && report.warnings.is_empty(), "{report:?}");
+        assert!(report.min_contrast > CONTRAST_WARNING);
+        let report = framed(FRAME_FLOOR - 0.02);
+        assert!(
+            matches!(
+                report.errors[..],
+                [RenderError::ContrastTooLow {
+                    token: Token::LogoFrame,
+                    ..
+                }]
+            ),
+            "{report:?}"
+        );
+        let message = alloc::format!("{}", report.errors[0]);
+        assert!(message.contains("at least 0.25"), "{message}");
     }
 
     #[test]

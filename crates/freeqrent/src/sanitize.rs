@@ -753,6 +753,31 @@ impl SvgDoc {
         Ok(())
     }
 
+    /// The solid colors the document paints with (`fill`, `stroke`,
+    /// `stop-color`), in document order, each once.
+    pub(crate) fn paints(&self) -> Vec<crate::color::Color> {
+        let mut out = Vec::new();
+        for node in &self.nodes {
+            let Node::Open { attrs, .. } = node else {
+                continue;
+            };
+            for (name, value) in attrs {
+                if !matches!(*name, "fill" | "stroke" | "stop-color") {
+                    continue;
+                }
+                let [Seg::Text(text)] = &value.0[..] else {
+                    continue;
+                };
+                if let Ok(color) = crate::color::Color::parse(text)
+                    && !out.contains(&color)
+                {
+                    out.push(color);
+                }
+            }
+        }
+        out
+    }
+
     /// The viewBox attribute value.
     pub(crate) fn write_view_box<W: Write + ?Sized>(&self, w: &mut W) -> fmt::Result {
         for (i, &v) in self.view_box.iter().enumerate() {

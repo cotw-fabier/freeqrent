@@ -504,3 +504,30 @@ fn the_scan_sheet_names_every_card() {
     assert_eq!(html.matches("<select data-device=").count(), cards * 4);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn extracted_frames_keep_apart_from_the_logo() {
+    // The sample site's accent is the sample logo's orange: alone it
+    // frames the logo at its own lightness; with the logo it's left out.
+    let alone = freeqrent(&["HELLO", "--palette-from-css", "sample", "--show-palette"]);
+    assert!(alone.status.success(), "{}", stderr(&alone));
+    assert!(
+        stderr(&alone).contains("logo.frame=#c2410c"),
+        "{}",
+        stderr(&alone)
+    );
+    let framed = freeqrent(&[
+        "HELLO",
+        "--palette-from-css",
+        "sample",
+        "--logo",
+        "sample",
+        "--show-palette",
+    ]);
+    assert!(framed.status.success(), "{}", stderr(&framed));
+    assert!(
+        !stderr(&framed).contains("logo.frame"),
+        "{}",
+        stderr(&framed)
+    );
+}

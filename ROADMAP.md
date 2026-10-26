@@ -42,7 +42,6 @@ Each item says where it came from, so we remember why it's here.
 - **More logo motion:** a `Spin` intro (the frame turns 90° → 0 as it lands); `Heartbeat` (two quick shrink-pulses every 6 s) and `Sync` (the logo pulses with `FinderPulse`) idles; a hover lift on `Trigger::Hover`; Draw for filled frames (beads appearing in order round the ring) (W20261026102223).
 - **True 3D logo turns:** `LogoFlip` fakes an X-axis turn with a vertical scale; a `rotateX` with perspective (a Y-axis turn too) would need CSS 3D transforms in SVG, which renderers handle unevenly, and a plan property every player can reproduce (W20261026105648).
 - **Spin and flip intervals:** both run every 8 s; an option for the interval (and for flipping to a back face, such as a second logo) (W20261026105648).
-- **Frame color contrast against the logo:** the auto `logo.frame` is chosen against `bg` and `fg`, not against the logo's own colors, so an accent taken from the logo can match it (the sample logo and the sample style sheet share an orange) (W20261026105648).
 - **Turning square frames:** `LogoTurn` needs a round frame because a turning square leaves the plate. Quarter turns that rest between steps, or a frame inset far enough to clear the plate's corners as it turns, would allow it (W20261026102223).
 - **Animated gradient tokens:** palette shifts swap gradients at once; re-themable stops (above) would let them fade (W20261025235601).
 
@@ -51,12 +50,12 @@ Each item says where it came from, so we remember why it's here.
 - **`--palette-from-url`:** the CLI fetching a page itself, behind an opt-in feature with a small HTTP client. Dropped from M4 to keep TLS out of the CLI's tree; `curl -s URL | freeqrent … --palette-from-html -` does the same (W20261026074436).
 - **Linked style sheets:** `from_html` reads inline `<style>` only; a caller could pass `<link rel=stylesheet>` targets back in (W20261026074436).
 - **Dark-scheme palettes:** `from_css`/`from_html` skip `@media (prefers-color-scheme: dark)` rules even with `allow_inverted`; reading a light site's dark scheme would give it a dark palette of its own (W20261026141235).
-- **Lighter auto frame colors:** extraction darkens `logo.frame` to the same 0.66 contrast as the read tokens, so a bright accent (a sunset orange) lands at L 0.31 and turns muddy. The frame sits on the plate and is never read; it could keep more of its lightness (W20261026114047).
 - **Accents from small areas:** a wallpaper's yellow eyes or a single bright sun are too small a share to become an accent, so muted pictures give no `finder.eye` or `logo.frame`; a saliency or chroma-weighted pick could find them (W20261026114047).
 
 ## Scannability
 
 - **Extraction contrast back to 0.60?** `EXTRACT_CONTRAST` is 0.66 because v1 codes on backgrounds of L 0.80–0.95 failed the bench's blurred, noisy render up to ΔL 0.64 (W20261026073538). A Pixel 10 XL's built-in camera read every v1 card on the scan sheet, ΔL 0.60–0.66 on L 0.85 and 0.95 (W20261026100651), so the bench is harsher than that camera and a lightness-aware warning isn't needed. With an iPhone result too, the extraction floor could drop to the warning threshold, 0.60.
+- **Largest logos at ECC H:** the largest logo a code affords (60% of a block's budget) at ECC H missed ZXing's degraded render on a few codes: v22 light and v16 dark with a striped dark logo and no frame (1 of 112 each), and v16–17 with frames, 2–6 of 160 (W20261026160831). The spec's measurement covered v2–v40 with one logo per level; a lower budget at H for large versions, or framed plates counting their band twice, would close it.
 - **More sizes in the bar:** halftone logos over an alignment pattern passed the bar's 4, 6 and 10 px and missed rqrr at 7 or 12 (W20261026151955). The rule that fixed them came from a 4–14 px sweep, which the picture tests now run; an odd size such as 7 px in `RENDERS` would catch the next gap of this kind everywhere, for about a third more verify time.
 - **Art mode tuned for capture:** clarity 0.5–0.6 on the sparse grid decodes six to seven times as often as the defaults under camera-like blur and noise (SPEC §7.7, W20261026115722). Options: make that art mode's default, add a `Clarity::Auto` that picks the least clarity passing the harsh bar, or add the harsh bar to `verify` as a stricter level. Confirm with the scan sheet on phones first.
 

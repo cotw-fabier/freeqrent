@@ -5,8 +5,8 @@ mod common;
 
 use common::{PAYLOADS, assert_scans_at};
 use freeqrent::{
-    EXTRACT_CONTRAST, Ecc, INVERTED_CONTRAST, ModuleShape, Palette, PaletteOpts, QrCode,
-    Rgba8Image, Style, Token, Warning,
+    EXTRACT_CONTRAST, Ecc, FRAME_FLOOR, INVERTED_CONTRAST, ModuleShape, Palette, PaletteOpts,
+    QrCode, Rgba8Image, Style, Token, Warning,
 };
 
 /// Builds a `w × h` image from a function of the pixel position.
@@ -294,13 +294,19 @@ fn inverted_palettes_pass_and_scan() {
         } else {
             EXTRACT_CONTRAST
         };
-        for token in [Token::Fg, Token::FinderEye, Token::LogoFrame] {
+        for token in [Token::Fg, Token::FinderEye] {
             let c = palette.contrast(token);
             assert!(
                 c.inverted == inverted && c.delta_l >= floor,
                 "{name} {token}: {c:?}"
             );
         }
+        // The logo's frame isn't read: its own floor, the same side of bg.
+        let c = palette.contrast(Token::LogoFrame);
+        assert!(
+            c.inverted == inverted && c.delta_l >= FRAME_FLOOR,
+            "{name} logo.frame: {c:?}"
+        );
         let style = Style::new().palette(palette).allow_inverted(true);
         let check = style.check(&qr);
         assert!(

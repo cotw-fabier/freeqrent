@@ -49,6 +49,10 @@ const ACCENT_CHROMA: f32 = 0.06;
 /// A brand blue or teal darkened to pass lands about 0.09 from a
 /// near-black ink and still reads as its hue.
 const ACCENT_DISTANCE: f32 = 0.06;
+/// The OKLab lightness difference `logo.frame` keeps from `bg` when it's
+/// extracted (SPEC §6.4). The frame sits on the logo's plate and is never
+/// read; see [`FRAME_FLOOR`](crate::FRAME_FLOOR) for what was measured.
+const FRAME_CONTRAST: f32 = 0.30;
 
 /// Options for [`Palette::from_image`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -57,7 +61,11 @@ pub struct PaletteOpts {
     seed: u64,
     min_contrast: f32,
     allow_inverted: bool,
+    logo: [Option<Color>; LOGO_COLORS],
 }
+
+/// How many of a logo's colors [`PaletteOpts::logo_colors`] keeps.
+const LOGO_COLORS: usize = 4;
 
 impl Default for PaletteOpts {
     fn default() -> PaletteOpts {
@@ -66,6 +74,7 @@ impl Default for PaletteOpts {
             seed: 0,
             min_contrast: EXTRACT_CONTRAST,
             allow_inverted: false,
+            logo: [None; LOGO_COLORS],
         }
     }
 }
@@ -107,6 +116,22 @@ impl PaletteOpts {
     /// Off by default, since some older scanners can't read inverted codes.
     pub fn allow_inverted(mut self, allow: bool) -> PaletteOpts {
         self.allow_inverted = allow;
+        self
+    }
+
+    /// The colors of the logo the palette will frame ([`Logo::colors`]):
+    /// `logo.frame` is chosen at least as far from them as from `fg` and
+    /// the eyes, so the frame doesn't take the logo's own color, and is
+    /// left unset when nothing qualifies. The first four chromatic ones
+    /// count; grays never compete with an accent.
+    ///
+    /// [`Logo::colors`]: crate::Logo::colors
+    pub fn logo_colors(mut self, colors: &[Color]) -> PaletteOpts {
+        self.logo = [None; LOGO_COLORS];
+        let chromatic = colors.iter().filter(|&&c| chroma(c) >= ACCENT_CHROMA);
+        for (slot, &color) in self.logo.iter_mut().zip(chromatic) {
+            *slot = Some(color);
+        }
         self
     }
 
@@ -550,7 +575,7 @@ pub(crate) fn assign(
         .filter(|&i| Some(i) != bg_index && (common(i) || marked(i)))
         .collect();
     let passes = |i: usize| contrast(bg, swatches[i].color, inverted) >= min;
-    let settle = |i: usize| {
+    let settle_at = |i: usize, min: f32| {
         let color = swatches[i].color;
         let delta_l = contrast(bg, color, inverted);
         if delta_l >= min {
@@ -567,6 +592,7 @@ pub(crate) fn assign(
             )
         }
     };
+    let settle = |i: usize| settle_at(i, min);
 
     // fg: the text color the source names, else the darkest swatch
     // (lightest, inverted); if neither passes, the named text color or the
@@ -609,21 +635,30 @@ pub(crate) fn assign(
     let accent = accent_index.map(settle);
 
     // logo.frame: an off color for the logo's border, the second most
-    // prominent hue when the source has one apart from fg and the eyes,
-    // else the eyes' accent.
+    // prominent hue when the source has one apart from fg, the eyes and the
+    // logo, else the eyes' accent if it's apart from the logo. The frame
+    // is never read, so it only darkens (lightens) to FRAME_CONTRAST.
+    let framing = |i: usize| settle_at(i, FRAME_CONTRAST.min(min));
+    let off_logo = |c: Color| {
+        opts.logo
+            .iter()
+            .flatten()
+            .all(|&l| distance(c, l) >= ACCENT_DISTANCE)
+    };
     let second = best(
         candidates().filter(|&i| {
             Some(i) != accent_index && {
-                let c = settle(i).0;
+                let c = framing(i).0;
                 distance(c, fg) >= ACCENT_DISTANCE
                     && accent.is_none_or(|(eye, _)| distance(c, eye) >= ACCENT_DISTANCE)
+                    && off_logo(c)
             }
         }),
         |i| roles[i].accent + swatches[i].share * hue(i),
     )
     .filter(|_| accent.is_some())
-    .map(settle);
-    let frame = second.or(accent);
+    .map(framing);
+    let frame = second.or_else(|| accent_index.map(framing).filter(|&(c, _)| off_logo(c)));
 
     let mut palette = Palette::new();
     let mut choices = Vec::new();
@@ -696,8 +731,11 @@ mod tests {
         };
         let orange = report.swatches[2].color;
         assert!((hue(eye.color) - hue(orange)).abs() < 0.05);
-        // One accent: the logo's frame takes it too.
-        assert_eq!(token(&report, Token::LogoFrame).unwrap().color, eye.color);
+        // One accent: the logo's frame takes it too, at its own lightness,
+        // since the frame only needs FRAME_CONTRAST.
+        let frame = token(&report, Token::LogoFrame).unwrap();
+        assert!(matches!(frame.origin, Origin::Swatch(2)), "{frame:?}");
+        assert_eq!(frame.color, orange);
     }
 
     #[test]
@@ -718,7 +756,33 @@ mod tests {
             Origin::Swatch(3) | Origin::Darkened { swatch: 3, .. }
         ));
         let c = palette.contrast(Token::LogoFrame);
-        assert!(!c.inverted && c.delta_l >= EXTRACT_CONTRAST, "{c:?}");
+        assert!(!c.inverted && c.delta_l >= FRAME_CONTRAST, "{c:?}");
+    }
+
+    #[test]
+    fn frames_keep_apart_from_the_logo() {
+        // Orange and teal accents: the orange takes the eyes and the teal
+        // the frame; with a teal logo the frame falls back to the orange,
+        // and with an orange and teal logo it's left to follow fg.
+        let img = stripes(&[
+            ([250, 248, 244, 255], 60),
+            ([20, 30, 80, 255], 24),
+            ([230, 90, 20, 255], 12),
+            ([20, 150, 140, 255], 8),
+        ]);
+        let frame = |logo: &[Color]| {
+            let opts = PaletteOpts::new().logo_colors(logo);
+            let (_, report) = Palette::from_image(&img, opts).unwrap();
+            token(&report, Token::LogoFrame).map(|c| c.origin)
+        };
+        let teal = Color::parse("rgb(20 150 140)").unwrap();
+        let orange = Color::parse("rgb(230 90 20)").unwrap();
+        let white = Color::parse("white").unwrap();
+        assert!(matches!(frame(&[]), Some(Origin::Swatch(3))));
+        // A gray logo color doesn't compete with an accent.
+        assert!(matches!(frame(&[white]), Some(Origin::Swatch(3))));
+        assert!(matches!(frame(&[teal]), Some(Origin::Swatch(2))));
+        assert_eq!(frame(&[white, teal, orange]), None);
     }
 
     #[test]
@@ -760,10 +824,12 @@ mod tests {
         assert!(matches!(fg.origin, Origin::Swatch(1)), "{report:?}");
         let eye = token(&report, Token::FinderEye).unwrap();
         assert!(matches!(eye.origin, Origin::Lightened { swatch: 2, .. }));
-        for t in [Token::Fg, Token::FinderEye, Token::LogoFrame] {
+        for t in [Token::Fg, Token::FinderEye] {
             let c = palette.contrast(t);
             assert!(c.inverted && c.delta_l >= INVERTED_CONTRAST, "{t}: {c:?}");
         }
+        let c = palette.contrast(Token::LogoFrame);
+        assert!(c.inverted && c.delta_l >= FRAME_CONTRAST, "{c:?}");
         // Without the option, the same image is dark on light.
         let (palette, _) = Palette::from_image(&img, PaletteOpts::new()).unwrap();
         assert!(palette.background().to_oklab()[0] > 0.85);
