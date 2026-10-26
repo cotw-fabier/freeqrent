@@ -10,9 +10,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Corner, Ecc, Emphasis, EyeShape, FinderStyle, FrameRing, Logo,
-    LogoShape, ModuleShape, Palette, QrBuilder, QrCode, QrMatrix, RasterFormat, RingShape,
-    ScanReport, Style, TargetSize, TimingStyle, Version,
+    AlignmentShape, AlignmentStyle, Corner, Ease, Ecc, Emphasis, EyeShape, FinderStyle, FrameRing,
+    Intro, Logo, LogoShape, ModuleShape, Palette, Preset, QrBuilder, QrCode, QrMatrix,
+    RasterFormat, RingShape, ScanReport, StaggerOrder, Style, TargetSize, TimingStyle, Trigger,
+    Version,
 };
 
 const HELP: &str = "\
@@ -48,6 +49,12 @@ Style:
   --logo-padding N         modules between logo and code (default 0.5)
   --no-logo-backdrop       no plate behind the logo
   --keep-modules           draw the modules under the logo
+  --intro PRESET           settle
+  --intro-ms N             whole intro length (default 1200)
+  --stagger ORDER          radial, linear, diagonal, random[:seed], polar
+  --ease EASE              quart, quint, expo, or x1,y1,x2,y2
+  --groups N               stagger groups, 2-16 (default 12)
+  --trigger TRIGGER        load, hover, class:NAME
   --allow-inverted         permit light modules on a dark background
   --target-px N            displayed size in device pixels (warns when too small)
   --target-mm N            printed size in millimeters (warns when too small)
@@ -57,6 +64,8 @@ Output:
   --pretty                 one element per line
   --title TEXT             add a <title>
   --label TEXT             aria-label (default: TEXT when it's a URL, else \"QR code\")
+  --frame-at MS            write the intro stopped at MS as a still SVG
+  --plan                   write the animation plan as JSON instead
   --check                  print the scan report instead of the SVG
   --verify                 rasterize and decode the result before writing it
   --gallery FILE           write an HTML page of style families for TEXT
@@ -103,6 +112,12 @@ pub struct StyleArgs {
     logo_padding: Option<f32>,
     no_logo_backdrop: bool,
     keep_modules: bool,
+    intro: Option<Preset>,
+    intro_ms: Option<u32>,
+    stagger: Option<StaggerOrder>,
+    ease: Option<Ease>,
+    groups: Option<u8>,
+    trigger: Option<Trigger>,
 }
 
 /// The mark `--logo sample` uses.
@@ -177,6 +192,24 @@ impl StyleArgs {
             "logo-scale" => self.logo_scale = Some(options::number(flag, value)?),
             "logo-shape" => self.logo_shape = Some(options::logo_shape(value)?),
             "logo-padding" => self.logo_padding = Some(options::number(flag, value)?),
+            "intro" => self.intro = Some(options::preset(value)?),
+            "intro-ms" => {
+                self.intro_ms = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("{value:?} isn't a whole number of ms"))?,
+                )
+            }
+            "stagger" => self.stagger = Some(options::stagger(value)?),
+            "ease" => self.ease = Some(options::ease(value)?),
+            "groups" => {
+                self.groups = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("{value:?} isn't a number 2-16"))?,
+                )
+            }
+            "trigger" => self.trigger = Some(options::trigger(value)?),
             "title" => self.title = Some(value.to_string()),
             "label" => self.label = Some(value.to_string()),
             _ => return Ok(false),
@@ -229,6 +262,30 @@ impl StyleArgs {
             }
             style = style.logo(logo);
         }
+        let animated = self.intro_ms.is_some()
+            || self.stagger.is_some()
+            || self.ease.is_some()
+            || self.groups.is_some()
+            || self.trigger.is_some();
+        if self.intro.is_some() || animated {
+            let mut intro = Intro::new(self.intro.unwrap_or(Preset::Settle));
+            if let Some(ms) = self.intro_ms {
+                intro = intro.duration_ms(ms);
+            }
+            if let Some(order) = self.stagger {
+                intro = intro.stagger(order);
+            }
+            if let Some(ease) = self.ease {
+                intro = intro.ease(ease);
+            }
+            if let Some(groups) = self.groups {
+                intro = intro.groups(groups);
+            }
+            if let Some(trigger) = &self.trigger {
+                intro = intro.trigger(trigger.clone());
+            }
+            style = style.intro(intro);
+        }
         if let Some(title) = &self.title {
             style = style.title(title.clone());
         }
@@ -253,6 +310,8 @@ struct Args {
     gallery: Option<PathBuf>,
     check: bool,
     verify: bool,
+    frame_at: Option<u32>,
+    plan: bool,
 }
 
 fn parse_args() -> Result<Option<Args>, Failure> {
@@ -264,6 +323,7 @@ fn parse_args() -> Result<Option<Args>, Failure> {
     let mut version = None;
     let mut style = StyleArgs::default();
     let (mut output, mut gallery, mut check, mut verify) = (None, None, false, false);
+    let (mut frame_at, mut plan) = (None, false);
     while let Some(arg) = parser.next()? {
         match arg {
             Short('h') | Long("help") => {
@@ -274,6 +334,13 @@ fn parse_args() -> Result<Option<Args>, Failure> {
             Long("gallery") => gallery = Some(PathBuf::from(parser.value()?)),
             Long("check") => check = true,
             Long("verify") => verify = true,
+            Long("plan") => plan = true,
+            Long("frame-at") => {
+                let v = parser.value()?.string()?;
+                frame_at = Some(v.parse().map_err(|_| {
+                    Failure::Usage(format!("--frame-at: {v:?} isn't a whole number of ms"))
+                })?);
+            }
             Long("pretty") => style.pretty = true,
             Long("allow-inverted") => style.allow_inverted = true,
             Long("no-logo-backdrop") => style.no_logo_backdrop = true,
@@ -317,6 +384,8 @@ fn parse_args() -> Result<Option<Args>, Failure> {
         gallery,
         check,
         verify,
+        frame_at,
+        plan,
     }))
 }
 
@@ -350,11 +419,18 @@ fn verify(style: &Style, qr: &QrMatrix, text: &str) -> Result<String, String> {
     let report = style.check(qr);
     let bar = freeqrent_verify::Bar::for_report(&report);
     freeqrent_verify::verify_style(style, qr, text).map_err(|e| e.to_string())?;
-    Ok(if bar.rqrr {
+    let mut verdict = if bar.rqrr {
         "decodes with ZXing and rqrr".to_string()
     } else {
         "decodes with ZXing".to_string()
-    })
+    };
+    if style.intro_options().is_some() {
+        let total = style.plan(qr).map_err(|e| e.to_string())?.total_ms;
+        let at =
+            freeqrent_verify::scannable_after(style, qr, text, 50).map_err(|e| e.to_string())?;
+        verdict.push_str(&format!("; scannable from {at} ms of the {total} ms intro"));
+    }
+    Ok(verdict)
 }
 
 #[cfg(not(feature = "verify"))]
@@ -386,9 +462,12 @@ fn run() -> Result<(), Failure> {
             Err(Failure::Failed("the code would be refused".to_string()))
         };
     }
-    let svg = style
-        .render(&qr)
-        .map_err(|e| Failure::Failed(e.to_string()))?;
+    let svg = match (args.plan, args.frame_at) {
+        (true, _) => style.plan(&qr).map(|p| p.to_json()),
+        (false, Some(t)) => style.render_frame(&qr, t),
+        (false, None) => style.render(&qr),
+    }
+    .map_err(|e| Failure::Failed(e.to_string()))?;
     for w in &report.warnings {
         eprintln!("warning: {w}");
     }

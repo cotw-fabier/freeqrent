@@ -278,3 +278,42 @@ fn add_noise(image: &mut Gray, seed: u64) {
         *p = (*p as i32 + delta).clamp(0, 255) as u8;
     }
 }
+
+/// When an animated code becomes scannable for good (SPEC §8.1): the
+/// earliest multiple of `step_ms` from which every frame up to the end of
+/// the plan decodes to `expected` with ZXing at 6 px per module. Frames
+/// come from [`Style::render_frame`].
+pub fn scannable_after(
+    style: &Style,
+    qr: &QrMatrix,
+    expected: &str,
+    step_ms: u32,
+) -> Result<u32, VerifyError> {
+    let plan = style
+        .plan(qr)
+        .map_err(|e| VerifyError::Render(e.to_string()))?;
+    let render = Render {
+        px_per_module: 6,
+        blur: false,
+        noise: false,
+    };
+    let step = step_ms.max(1);
+    let last = plan.total_ms.div_ceil(step) * step;
+    let mut t = last;
+    loop {
+        let svg = style
+            .render_frame(qr, t)
+            .map_err(|e| VerifyError::Render(e.to_string()))?;
+        let result = verify_one(&svg, expected, render, false);
+        if let Err(e) = result {
+            if t == last {
+                return Err(e);
+            }
+            return Ok(t + step);
+        }
+        if t == 0 {
+            return Ok(0);
+        }
+        t -= step;
+    }
+}

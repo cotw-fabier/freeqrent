@@ -160,7 +160,24 @@ pub enum Warning {
     /// corners to find perspective, like quirc and rqrr, lose it: in the
     /// verify suite even a 0.25-module radius made rqrr miss renders.
     RoundedFinder,
+    /// The intro runs longer than [`LONG_INTRO_MS`]; people may try to
+    /// scan before it ends.
+    LongIntro {
+        /// Its length.
+        ms: u32,
+    },
+    /// More elements animate than [`ANIMATED_ELEMENTS`], which slows
+    /// browsers. Use fewer stagger groups.
+    ManyAnimatedElements {
+        /// How many.
+        count: usize,
+    },
 }
+
+/// Intros longer than this raise [`Warning::LongIntro`] (SPEC §8.1).
+pub const LONG_INTRO_MS: u32 = 2000;
+/// The animated element budget (SPEC §8.4).
+pub const ANIMATED_ELEMENTS: usize = 64;
 
 impl fmt::Display for Warning {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -197,6 +214,14 @@ impl fmt::Display for Warning {
             ),
             Warning::RoundedFinder => f.write_str(
                 "rounded scan-box rings need a ZXing-family scanner; quirc-style decoders can't locate them",
+            ),
+            Warning::LongIntro { ms } => write!(
+                f,
+                "the intro runs {ms} ms; {LONG_INTRO_MS} ms or less lets people scan sooner"
+            ),
+            Warning::ManyAnimatedElements { count } => write!(
+                f,
+                "{count} elements animate; {ANIMATED_ELEMENTS} or fewer keeps browsers smooth"
             ),
             Warning::TranslucentBackground => f.write_str(
                 "bg is translucent; contrast was judged over white and depends on the page",
@@ -295,6 +320,8 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         }
     }
 
+    #[cfg(feature = "animate")]
+    check_intro(style, qr, &mut errors, &mut warnings);
     check_scan_boxes(style, &mut errors, &mut warnings);
     check_target(style, qr, &mut errors, &mut warnings);
     let ecc_budget_used = budget(style, qr, &mut errors);
@@ -338,6 +365,48 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         warnings,
         min_contrast,
         ecc_budget_used,
+    }
+}
+
+#[cfg(feature = "animate")]
+fn check_intro(
+    style: &Style,
+    qr: &QrMatrix,
+    errors: &mut Vec<RenderError>,
+    warnings: &mut Vec<Warning>,
+) {
+    let Some(intro) = &style.intro else {
+        return;
+    };
+    in_range(
+        errors,
+        "Intro.duration_ms",
+        intro.duration_ms as f32,
+        100.0,
+        10_000.0,
+    );
+    in_range(
+        errors,
+        "Intro.delay_ms",
+        intro.delay_ms as f32,
+        0.0,
+        10_000.0,
+    );
+    in_range(errors, "Intro.groups", intro.groups as f32, 2.0, 16.0);
+    if let crate::Ease::Custom(c) = intro.ease {
+        in_range(errors, "CubicBezier.x1", c.x1, 0.0, 1.0);
+        in_range(errors, "CubicBezier.x2", c.x2, 0.0, 1.0);
+        in_range(errors, "CubicBezier.y1", c.y1, -10.0, 10.0);
+        in_range(errors, "CubicBezier.y2", c.y2, -10.0, 10.0);
+    }
+    if intro.duration_ms > LONG_INTRO_MS {
+        warnings.push(Warning::LongIntro {
+            ms: intro.duration_ms,
+        });
+    }
+    let count = crate::animate::element_count(style, qr);
+    if count > ANIMATED_ELEMENTS {
+        warnings.push(Warning::ManyAnimatedElements { count });
     }
 }
 

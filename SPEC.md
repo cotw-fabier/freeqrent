@@ -143,7 +143,7 @@ payload ─▶ encode ─▶ QrMatrix ─▶ Layout ─▶ Geometry ─▶ Paint
 ## 5. Public API Sketch
 
 ```rust
-use freeqrent::{QrCode, Ecc, Style, ModuleShape, FinderStyle, RingShape, EyeShape, Frame, FrameRing, Palette, Logo, Intro};
+use freeqrent::{QrCode, Ecc, Style, ModuleShape, FinderStyle, RingShape, EyeShape, Frame, FrameRing, Palette, Logo, Intro, Preset};
 
 let style = Style::new()
     .modules(ModuleShape::Liquid { smoothness: 0.8 })
@@ -155,7 +155,7 @@ let style = Style::new()
         ("finder.eye", "oklch(62% 0.19 35)"),
     ])?)
     .logo(Logo::svg(include_str!("logo.svg"))?.scale(0.22).backdrop(true))
-    .intro(Intro::Ripple.duration_ms(900));
+    .intro(Intro::new(Preset::Settle).duration_ms(900));
 
 // The smallest code that can afford the logo (ECC raised, then version):
 let qr = QrCode::builder().ecc(Ecc::Q).encode_text_for("https://example.com", &style)?;
@@ -170,7 +170,7 @@ let report = style.check(&qr);   // ScanReport { errors, warnings, min_contrast,
 
 - `RenderError` is returned for **hard failures**, such as a logo too large for the ECC budget (`LogoTooLarge { max_scale }`), contrast below the floor, or no quiet zone.
 - `ScanReport.warnings` covers **soft risks**, such as inverted colors, low-contrast gradients, rounded finder rings, or very small module size at the target print size.
-- `Style` implements `Clone` and (with feature `serde`, optional dep) `Serialize`/`Deserialize`, so presets can be stored as JSON.
+- `Style` implements `Clone`. Storing styles as JSON comes with the Phase 2 bindings, outside the core, which stays free of serde *(rev. W20261025233019)*.
 - **Presets:** `Style::preset("ink")`, `"candy"`, `"terminal"`, … (a curated set that ships with the crate).
 
 ---
@@ -401,7 +401,7 @@ The **un-animated document state is the finished, scannable code.** Keyframes an
 
 - Renderers that ignore CSS animation (resvg, print, many email clients, thumbnailers) show the complete code.
 - No SMIL `<animate>` elements that set initial hidden states.
-- Snapshot tests assert that stripping `<style>` produces the same visual as the final frame.
+- Tests (`freeqrent-verify/tests/intros.rs`) assert that the animated document, as resvg draws it with no CSS animation, is pixel-identical to the same style without an intro and to the plan's last frame, and that it scans. *(rev. W20261025233019)*
 
 ### 8.3 Preset intros (brainstorm)
 
@@ -442,11 +442,14 @@ All presets take `.duration_ms()`, `.delay_ms()`, `.ease(Ease::Quart|Quint|Expo|
 
 ### 8.4 Implementation strategy
 
-- **Group, don't atomize.** A v40 code has ~31,000 modules, and one animated element per module would bloat file size and stall browsers. The geometry stage buckets modules into *K* stagger groups (default 12) according to the stagger order. Each group is **one `<path>`** with one keyframe delay. Liquid's connected regions are split along group boundaries.
-- Element budget: ≤ 64 animated elements per code by default.
-- Keyframes are emitted once and shared through classes. The only per-group variation is `animation-delay` (inline `style`).
-- `transform-box: fill-box; transform-origin: center` for per-group scaling.
-- **The animation is data first, CSS second.** The animate stage produces an `AnimationPlan` (§8.5), and the SVG writer serializes that plan to CSS. Other players (the Flutter widget in Phase 2) consume the same plan.
+- **Group, don't atomize.** A v40 code has ~31,000 modules, and one animated element per module would bloat file size and stall browsers. Each layer is cut into **pieces** that are never split: 4-connected regions for shapes whose modules touch (Square with no gap, Rounded, Liquid, Bars), single modules for Dots and gapped squares, and one piece per finder, alignment pattern and frame ring. Pieces are binned into *K* stagger groups (default 12, range 2–16) by the stagger key of their center. Each (layer, group) is **one `<path>`**, and finders are one element per corner. Every shape's geometry depends only on 4-neighbors in its own layer, so a group has exactly the outline its pieces have in the static drawing. As a result, the static state of an animated code is **pixel-identical** to the same style without an intro (verified for 61 shape × frame × order × version combinations), and no two touching edges sit in different elements, so there are no anti-aliasing seams. The largest region measured was 1,366 modules at v40 and about 15% of a v10 code. It appears at its center's group time, which is invisible next to 600 ms fades staggered about 50 ms apart. *(rev. W20261025233019: Liquid regions are no longer split along group boundaries.)*
+- Element budget: more than 64 animated elements raises `Warning::ManyAnimatedElements`.
+- Keyframes are written once and shared. Elements whose tracks differ only in delay share one `animation` rule, and each element's own rule sets only `animation-delay` and `transform-origin`. All of it is inside the stylesheet's `@supports` block, never in inline styles, so renderers that skip the block show the finished code.
+- Keyframe lists never contain their end (`100%`/`to`), so every animation ends on the element's own computed value, which keeps re-theming through custom properties working. Intro tracks use `animation-fill-mode: backwards`. Idle loops use none.
+- Transform origins are explicit points in viewBox units (`transform-box: view-box; transform-origin: Xpx Ypx`), so CSS and other players agree.
+- When a style animates, the root `<svg>` gets the id prefix as a second class. Reduced motion is scoped to it: `@media (prefers-reduced-motion:reduce){.{prefix} *{animation:none!important;transition:none!important}}`. The intro is part of the prefix hash, so two animations of one code can share a page.
+- **Triggers.** `Load` writes the animation rules directly. `Hover` scopes them under `.{prefix}:hover`. `Class(name)` starts them paused and runs them under `.{name} .{prefix}-eN`. The name is written as an escaped CSS identifier. A page that never adds the class leaves the code in its intro state; reduced motion still shows it.
+- **The animation is data first, CSS second.** The animate stage produces an `AnimationPlan` (§8.5), and the SVG writer serializes that plan to CSS. `Style::render_frame(&qr, t_ms)` evaluates the same plan at time *t* into a still SVG with no animation CSS (CSS semantics: easing between neighboring keyframes, backwards fill, later tracks win). `freeqrent_verify::scannable_after` uses these frames to measure when a code becomes readable for good.
 - **CSS keyframes over SMIL.** They work for inline SVG and in `<img src="x.svg">` in all evergreen browsers, respect `prefers-reduced-motion`, and allow class triggers. A `smil` fallback option may be added if a target environment needs it.
 
 ### 8.5 `AnimationPlan` (exportable)
@@ -454,24 +457,37 @@ All presets take `.duration_ms()`, `.delay_ms()`, `.ease(Ease::Quart|Quint|Expo|
 ```rust
 pub struct AnimationPlan {
     pub view_box: (f32, f32),
-    pub layers: Vec<Layer>,          // static geometry: path data + paint token per group
-    pub tracks: Vec<Track>,          // one per animated group
-    pub total_ms: u32,
-    pub reduced_motion: Fallback,    // what to show when motion is off (always: final state)
+    pub palette: Palette,            // what the layers' tokens resolve through
+    pub layers: Vec<PlanLayer>,      // paint order: background, split layers, logo
+    pub tracks: Vec<Track>,
+    pub total_ms: u32,               // end of the last finite track
+    pub trigger: Trigger,
+    pub reduced_motion: Fallback,    // always FinalState
+}
+
+pub struct PlanLayer {
+    pub role: LayerRole,             // Background, Ring, Filler, Data, Timing, Alignment, FinderOuter, FinderEye, Logo
+    pub token: Token,
+    pub path: String,                // SVG path data in modules; the logo's plate for Logo
+    pub evenodd: bool,
+    pub group: Option<u8>,
+    pub corner: Option<Corner>,
+    pub origin: (f32, f32),          // scale origin
 }
 
 pub struct Track {
     pub layer: usize,
     pub delay_ms: u32,
     pub duration_ms: u32,
-    pub ease: CubicBezier,           // (x1, y1, x2, y2)
-    pub keys: Vec<Keyframe>,         // offset 0..1, property, value
+    pub ease: CubicBezier,           // applied between neighboring keyframes, as in CSS
+    pub iterations: Option<u32>,     // None = endless (idle loops)
+    pub keys: Vec<Keyframe>,         // offset 0..1, property, value; offsets 0 and 1 left out take the natural value
 }
 
-pub enum Property { Opacity, Scale, TranslateX, TranslateY, Fill(TokenId), ClipRadius, ClipSweep, DashOffset }
+pub enum Property { Opacity, Scale, TranslateX, TranslateY, Fill }
 ```
 
-`style.plan(&qr) -> AnimationPlan` is public in Phase 1 and serializable with the optional `serde` feature. It is the contract the Flutter widget (and any future native player, such as Lottie export) is built on. Only properties every player can reproduce are allowed in a plan.
+`style.plan(&qr) -> Result<AnimationPlan, RenderError>` is public in Phase 1. A style without an intro gives its static layers and no tracks. `plan.to_json()` serializes it deterministically: hand-written, with no serde, so the core stays dependency-free *(rev. W20261025233019, by decision of 2026-10-25)*. It is the contract the Flutter widget (and any future native player, such as Lottie export) is built on. Only properties every player can reproduce are allowed in a plan.
 
 ---
 

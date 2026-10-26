@@ -12,7 +12,9 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-default = ["std"]
+default = ["std", "animate"]
+# Intro animations as CSS keyframes, `AnimationPlan` and frame renders.
+animate = []
 # `std::error::Error` impls (and later the `std::io::Write` sink).
 std = []
 # Kanji mode for JIS X 0208 text (adds a ~27 KB table).

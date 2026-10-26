@@ -19,87 +19,98 @@ use crate::matrix::{Corner, QrMatrix};
 use crate::num::write_scaled;
 use crate::palette::{Gradient, GradientKind, Paint, Palette, Token};
 use crate::scanbox::{self, AlignmentShape};
-use crate::scene::{self, Canvas, Part, Round};
+use crate::scene::{self, Canvas, LayerRole, Part, Round};
 use crate::style::{Frame, Style};
 
 /// The paths to draw, one per (token, fill rule), in paint order.
-fn build_paths(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<(Token, bool, Path)> {
-    let origin = canvas.origin * UNIT;
-    let mut paths: Vec<(Token, bool, Path)> = Vec::new();
+fn build_paths(
+    style: &Style,
+    qr: &QrMatrix,
+    canvas: &Canvas,
+) -> Vec<(LayerRole, Token, bool, Path)> {
+    let mut paths: Vec<(LayerRole, Token, bool, Path)> = Vec::new();
     for layer in scene::layers(style, qr) {
-        let evenodd = matches!(
-            layer.part,
-            Part::FinderOuter(_) | Part::Alignment(_) | Part::Ring
-        );
+        let evenodd = layer.part.evenodd();
         let i = match paths
             .iter()
-            .position(|(t, e, _)| *t == layer.token && *e == evenodd)
+            .position(|(_, t, e, _)| *t == layer.token && *e == evenodd)
         {
             Some(i) => i,
             None => {
-                paths.push((layer.token, evenodd, Path::new()));
+                paths.push((layer.role(), layer.token, evenodd, Path::new()));
                 paths.len() - 1
             }
         };
-        let path = &mut paths[i].2;
-        // Center of a pattern whose top-left module is `(x, y)` and side `n`.
-        let center = |(x, y): (i64, i64), n: i64| {
-            (
-                origin + x * UNIT + n * UNIT / 2,
-                origin + y * UNIT + n * UNIT / 2,
-            )
-        };
-        match &layer.part {
-            Part::Ring => {
-                if let Some(round) = &canvas.round {
-                    draw_ring(path, round, canvas.side * UNIT / 2);
-                }
+        draw_part(style, qr, canvas, &layer.part, &mut paths[i].3);
+    }
+    paths.retain(|(_, _, _, p)| !p.is_empty());
+    paths
+}
+
+/// Appends one layer part's geometry to `path`.
+pub(crate) fn draw_part(
+    style: &Style,
+    qr: &QrMatrix,
+    canvas: &Canvas,
+    part: &Part,
+    path: &mut Path,
+) {
+    let origin = canvas.origin * UNIT;
+    // Center of a pattern whose top-left module is `(x, y)` and side `n`.
+    let center = |(x, y): (i64, i64), n: i64| {
+        (
+            origin + x * UNIT + n * UNIT / 2,
+            origin + y * UNIT + n * UNIT / 2,
+        )
+    };
+    match part {
+        Part::Ring => {
+            if let Some(round) = &canvas.round {
+                draw_ring(path, round, canvas.side * UNIT / 2);
             }
-            Part::Filler(grid) => geometry::draw_modules(&style.modules, grid, 0, path),
-            Part::Modules(grid) => geometry::draw_modules(&style.modules, grid, origin, path),
-            Part::Timing(grid) => {
-                for (x, y, _, _) in qr.modules() {
-                    if grid.get(x as i64, y as i64) {
-                        let (px, py) = (origin + x as i64 * UNIT, origin + y as i64 * UNIT);
-                        scanbox::draw_timing_module(path, style.timing, px, py, y == 6);
-                    }
-                }
-            }
-            Part::FinderOuter(corners) => {
-                for &c in corners {
-                    let at = center(scene::finder_origin(c, qr.size()), 7);
-                    let (ring, _) = style.finders.at(c);
-                    let toward = scene::finder_toward(c);
-                    scanbox::draw_ring(path, ring, scanbox::FINDER, false, at, toward);
-                }
-            }
-            Part::FinderEye(corners) => {
-                for &c in corners {
-                    let at = center(scene::finder_origin(c, qr.size()), 7);
-                    let (_, eye) = style.finders.at(c);
-                    let toward = scene::finder_toward(c);
-                    scanbox::draw_eye(path, eye, scanbox::FINDER, false, at, toward);
-                }
-            }
-            Part::Alignment(centers) => {
-                let (ring, eye, scaled) = match style.alignment.shape {
-                    AlignmentShape::Match => {
-                        let (ring, eye) = style.finders.at(Corner::TopLeft);
-                        (ring, eye, true)
-                    }
-                    AlignmentShape::Own { outer, eye } => (outer, eye, false),
-                };
-                for &(cx, cy) in centers {
-                    let at = center((cx as i64 - 2, cy as i64 - 2), 5);
-                    let toward = scene::alignment_toward((cx, cy), qr.size());
-                    scanbox::draw_ring(path, ring, scanbox::ALIGNMENT, scaled, at, toward);
-                    scanbox::draw_eye(path, eye, scanbox::ALIGNMENT, scaled, at, toward);
+        }
+        Part::Filler(grid) => geometry::draw_modules(&style.modules, grid, 0, path),
+        Part::Modules(grid) => geometry::draw_modules(&style.modules, grid, origin, path),
+        Part::Timing(grid) => {
+            for (x, y, _, _) in qr.modules() {
+                if grid.get(x as i64, y as i64) {
+                    let (px, py) = (origin + x as i64 * UNIT, origin + y as i64 * UNIT);
+                    scanbox::draw_timing_module(path, style.timing, px, py, y == 6);
                 }
             }
         }
+        Part::FinderOuter(corners) => {
+            for &c in corners {
+                let at = center(scene::finder_origin(c, qr.size()), 7);
+                let (ring, _) = style.finders.at(c);
+                let toward = scene::finder_toward(c);
+                scanbox::draw_ring(path, ring, scanbox::FINDER, false, at, toward);
+            }
+        }
+        Part::FinderEye(corners) => {
+            for &c in corners {
+                let at = center(scene::finder_origin(c, qr.size()), 7);
+                let (_, eye) = style.finders.at(c);
+                let toward = scene::finder_toward(c);
+                scanbox::draw_eye(path, eye, scanbox::FINDER, false, at, toward);
+            }
+        }
+        Part::Alignment(centers) => {
+            let (ring, eye, scaled) = match style.alignment.shape {
+                AlignmentShape::Match => {
+                    let (ring, eye) = style.finders.at(Corner::TopLeft);
+                    (ring, eye, true)
+                }
+                AlignmentShape::Own { outer, eye } => (outer, eye, false),
+            };
+            for &(cx, cy) in centers {
+                let at = center((cx as i64 - 2, cy as i64 - 2), 5);
+                let toward = scene::alignment_toward((cx, cy), qr.size());
+                scanbox::draw_ring(path, ring, scanbox::ALIGNMENT, scaled, at, toward);
+                scanbox::draw_eye(path, eye, scanbox::ALIGNMENT, scaled, at, toward);
+            }
+        }
     }
-    paths.retain(|(_, _, p)| !p.is_empty());
-    paths
 }
 
 /// A round frame's ring, centered at `c` path units: an annulus, or
@@ -134,26 +145,174 @@ fn draw_ring(path: &mut Path, round: &Round, c: i64) {
     }
 }
 
-pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) -> fmt::Result {
+/// One element of the document, in paint order.
+#[derive(Clone, Debug)]
+pub(crate) struct Element {
+    pub(crate) role: LayerRole,
+    pub(crate) token: Token,
+    pub(crate) evenodd: bool,
+    pub(crate) path: Path,
+    /// The stagger group, for split layers.
+    #[cfg_attr(not(feature = "animate"), allow(dead_code))]
+    pub(crate) group: Option<u8>,
+    /// The finder corner, for finders drawn one corner at a time.
+    #[cfg_attr(not(feature = "animate"), allow(dead_code))]
+    pub(crate) corner: Option<Corner>,
+    /// The transform origin: the center of the element's box, in modules.
+    pub(crate) origin: (f64, f64),
+    /// The `{prefix}-e{n}` class carrying its animation.
+    pub(crate) anim: Option<usize>,
+    /// Its state at a fixed time, for a frame render.
+    pub(crate) pose: Option<Pose>,
+}
+
+impl Element {
+    pub(crate) fn new(role: LayerRole, token: Token, evenodd: bool, path: Path) -> Element {
+        Element {
+            role,
+            token,
+            evenodd,
+            path,
+            group: None,
+            corner: None,
+            origin: (0.0, 0.0),
+            anim: None,
+            pose: None,
+        }
+    }
+}
+
+/// An element's animated properties at one moment.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Pose {
+    pub(crate) opacity: f64,
+    pub(crate) scale: f64,
+    pub(crate) translate: (f64, f64),
+    /// A fill that replaces the token's paint.
+    pub(crate) fill: Option<Color>,
+}
+
+impl Pose {
+    #[cfg_attr(not(feature = "animate"), allow(dead_code))]
+    pub(crate) const NATURAL: Pose = Pose {
+        opacity: 1.0,
+        scale: 1.0,
+        translate: (0.0, 0.0),
+        fill: None,
+    };
+}
+
+/// Whether the background is drawn.
+pub(crate) fn draws_background(style: &Style) -> bool {
+    style.palette.background().alpha() > 0.0 && style.frame != Frame::None
+}
+
+/// The background's outline as a path (the document writes it as a
+/// `<rect>` or `<circle>`).
+pub(crate) fn background_path(style: &Style, canvas: &Canvas) -> Path {
+    let mut path = Path::new();
+    let n = canvas.side * UNIT;
+    match (&canvas.round, style.frame) {
+        (Some(round), _) => {
+            path.circle(n / 2, n / 2, math::round(round.radius * UNIT as f64) as i64)
+        }
+        (None, Frame::RoundedSquare(r)) => path.rounded_rect(0, 0, n, n, [geometry::units(r); 4]),
+        _ => path.rect(0, 0, n, n),
+    }
+    path
+}
+
+/// The logo's plate and its center, in modules.
+pub(crate) fn logo_plate(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<(Path, f64)> {
+    let logo = style.logo.as_ref()?;
+    let p = logo::placement(logo, qr, logo.scale);
+    let o = canvas.origin as f64;
+    let u = |v: f64| math::round(v * UNIT as f64) as i64;
+    let mut plate = Path::new();
+    let (at, side) = (u(o + p.center - p.half), u(2.0 * p.half));
+    plate.rounded_rect(at, at, side, side, [u(p.radius); 4]);
+    Some((plate, o + p.center))
+}
+
+/// The elements of a code that doesn't animate: one path per (token,
+/// fill rule), between the background and the logo.
+pub(crate) fn static_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
+    let mut elements = Vec::new();
+    let mid = canvas.side as f64 / 2.0;
+    if draws_background(style) {
+        elements.push(Element::new(
+            LayerRole::Background,
+            Token::Bg,
+            false,
+            background_path(style, canvas),
+        ));
+    }
+    for (role, token, evenodd, path) in build_paths(style, qr, canvas) {
+        elements.push(Element::new(role, token, evenodd, path));
+    }
+    if let Some((plate, center)) = logo_plate(style, qr, canvas) {
+        let mut logo = Element::new(LayerRole::Logo, Token::LogoBackdrop, false, plate);
+        logo.origin = (center, center);
+        elements.push(logo);
+    }
+    for e in &mut elements {
+        if e.role != LayerRole::Logo {
+            e.origin = (mid, mid);
+        }
+    }
+    elements
+}
+
+#[cfg(feature = "animate")]
+type Motion = crate::animate::Motion;
+/// Without the `animate` feature nothing moves.
+#[cfg(not(feature = "animate"))]
+enum Motion {}
+
+/// The elements to write, and their animation if the style has one. With
+/// `at`, the animation is evaluated at that time instead (a frame).
+fn layout(
+    style: &Style,
+    qr: &QrMatrix,
+    canvas: &Canvas,
+    at: Option<u32>,
+) -> (Vec<Element>, Option<Motion>) {
+    #[cfg(feature = "animate")]
+    if let Some((elements, motion)) = crate::animate::build(style, qr, canvas, at) {
+        // A frame is a still: poses, no CSS.
+        return (elements, at.is_none().then_some(motion));
+    }
+    let _ = at;
+    (static_elements(style, qr, canvas), None)
+}
+
+pub(crate) fn write<W: Write + ?Sized>(
+    style: &Style,
+    qr: &QrMatrix,
+    at: Option<u32>,
+    w: &mut W,
+) -> fmt::Result {
     let palette = &style.palette;
     let canvas = scene::canvas(style, qr);
-    let paths = build_paths(style, qr, &canvas);
+    let (elements, motion) = layout(style, qr, &canvas, at);
     let n = canvas.side;
     let prefix = id_prefix(style, qr);
-    let draw_bg = palette.background().alpha() > 0.0 && style.frame != Frame::None;
+    let backdrop = style.logo.as_ref().is_some_and(|l| l.backdrop);
 
     // Solid tokens that get a class, and the gradients to define.
     let mut solids: Vec<Token> = Vec::new();
     let mut gradients: Vec<Token> = Vec::new();
-    let backdrop = style.logo.as_ref().is_some_and(|l| l.backdrop);
-    let painted = draw_bg
-        .then_some(Token::Bg)
-        .into_iter()
-        .chain(paths.iter().map(|(t, _, _)| *t))
-        .chain(backdrop.then_some(Token::LogoBackdrop));
+    let painted = elements
+        .iter()
+        .filter(|e| e.role != LayerRole::Logo || backdrop)
+        .map(|e| e.token);
     for token in painted {
         match palette.resolve(token) {
-            Paint::Solid(_) => solids.push(token),
+            Paint::Solid(_) => {
+                if !solids.contains(&token) {
+                    solids.push(token);
+                }
+            }
             Paint::Gradient(_) => {
                 let source = paint_source(palette, token);
                 if !gradients.contains(&source) {
@@ -169,7 +328,11 @@ pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) 
     };
     out.w
         .write_str("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ")?;
-    write!(out.w, "{n} {n}\" class=\"qr\" role=\"img\" aria-label=\"")?;
+    write!(out.w, "{n} {n}\" class=\"qr")?;
+    if motion.is_some() {
+        write!(out.w, " {prefix}")?;
+    }
+    out.w.write_str("\" role=\"img\" aria-label=\"")?;
     escape(out.w, style.label.as_deref().unwrap_or("QR code"))?;
     out.w.write_str("\">")?;
     if let Some(title) = &style.title {
@@ -186,7 +349,14 @@ pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) 
     }
 
     out.line()?;
-    write_style(out.w, palette, &prefix, &solids, &gradients)?;
+    write_style(
+        out.w,
+        palette,
+        &prefix,
+        &solids,
+        &gradients,
+        motion.as_ref(),
+    )?;
 
     if !gradients.is_empty() {
         out.line()?;
@@ -202,38 +372,43 @@ pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) 
         out.w.write_str("</defs>")?;
     }
 
-    if draw_bg {
+    for e in &elements {
         out.line()?;
-        match (&canvas.round, style.frame) {
-            (Some(round), _) => {
-                out.w.write_str("<circle cx=\"")?;
-                write_scaled(out.w, n * UNIT / 2, 3)?;
-                out.w.write_str("\" cy=\"")?;
-                write_scaled(out.w, n * UNIT / 2, 3)?;
-                out.w.write_str("\" r=\"")?;
-                write_scaled(out.w, math::round(round.radius * UNIT as f64) as i64, 3)?;
-                out.w.write_char('"')?;
+        match e.role {
+            LayerRole::Background => {
+                match (&canvas.round, style.frame) {
+                    (Some(round), _) => {
+                        out.w.write_str("<circle cx=\"")?;
+                        write_scaled(out.w, n * UNIT / 2, 3)?;
+                        out.w.write_str("\" cy=\"")?;
+                        write_scaled(out.w, n * UNIT / 2, 3)?;
+                        out.w.write_str("\" r=\"")?;
+                        write_scaled(out.w, math::round(round.radius * UNIT as f64) as i64, 3)?;
+                        out.w.write_char('"')?;
+                    }
+                    (None, Frame::RoundedSquare(r)) if geometry::units(r) > 0 => {
+                        write!(out.w, "<rect width=\"{n}\" height=\"{n}\" rx=\"")?;
+                        write_scaled(out.w, geometry::units(r), 3)?;
+                        out.w.write_char('"')?;
+                    }
+                    _ => write!(out.w, "<rect width=\"{n}\" height=\"{n}\"")?,
+                }
+                write_element_paint(out.w, palette, e, &prefix)?;
+                write_pose(out.w, e)?;
+                out.w.write_str("/>")?;
             }
-            (None, Frame::RoundedSquare(r)) if geometry::units(r) > 0 => {
-                write!(out.w, "<rect width=\"{n}\" height=\"{n}\" rx=\"")?;
-                write_scaled(out.w, geometry::units(r), 3)?;
-                out.w.write_char('"')?;
+            LayerRole::Logo => write_logo(&mut out, style, qr, &canvas, &prefix, e)?,
+            _ => {
+                out.w.write_str("<path")?;
+                write_element_paint(out.w, palette, e, &prefix)?;
+                if e.evenodd {
+                    out.w.write_str(" fill-rule=\"evenodd\"")?;
+                }
+                write_pose(out.w, e)?;
+                write!(out.w, " d=\"{}\"/>", e.path.data())?;
             }
-            _ => write!(out.w, "<rect width=\"{n}\" height=\"{n}\"")?,
         }
-        write_paint(out.w, palette, Token::Bg, &prefix)?;
-        out.w.write_str("/>")?;
     }
-    for (token, evenodd, path) in &paths {
-        out.line()?;
-        out.w.write_str("<path")?;
-        write_paint(out.w, palette, *token, &prefix)?;
-        if *evenodd {
-            out.w.write_str(" fill-rule=\"evenodd\"")?;
-        }
-        write!(out.w, " d=\"{}\"/>", path.data())?;
-    }
-    write_logo(&mut out, style, qr, &canvas, &prefix)?;
     if out.pretty {
         out.w.write_char('\n')?;
     }
@@ -244,15 +419,64 @@ pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) 
     Ok(())
 }
 
+/// The paint of an element: its token's, or a frame's fixed fill.
+fn write_element_paint<W: Write + ?Sized>(
+    w: &mut W,
+    palette: &Palette,
+    e: &Element,
+    prefix: &str,
+) -> fmt::Result {
+    if let Some(color) = e.pose.and_then(|p| p.fill) {
+        w.write_str(" fill=\"")?;
+        write_hex(w, color)?;
+        w.write_char('"')?;
+        return write_opacity(w, "fill-opacity", color);
+    }
+    write_paint(w, palette, e.token, prefix, e.anim)
+}
+
+/// A frame's opacity and transform, when they aren't the natural state.
+fn write_pose<W: Write + ?Sized>(w: &mut W, e: &Element) -> fmt::Result {
+    let Some(pose) = e.pose else {
+        return Ok(());
+    };
+    let k = |v: f64| math::round(v * 1000.0) as i64;
+    if k(pose.opacity) < 1000 {
+        w.write_str(" opacity=\"")?;
+        write_scaled(w, k(pose.opacity.max(0.0)), 3)?;
+        w.write_char('"')?;
+    }
+    let (s, (tx, ty)) = (pose.scale, pose.translate);
+    if k(s) != 1000 || k(tx) != 0 || k(ty) != 0 {
+        // Scale about the origin, then translate: the CSS
+        // `translate(..) scale(..)` with that transform origin.
+        let (ox, oy) = e.origin;
+        w.write_str(" transform=\"matrix(")?;
+        for (i, v) in [s, 0.0, 0.0, s, ox * (1.0 - s) + tx, oy * (1.0 - s) + ty]
+            .into_iter()
+            .enumerate()
+        {
+            if i > 0 {
+                w.write_char(' ')?;
+            }
+            write_scaled(w, k(v), 3)?;
+        }
+        w.write_str(")\"")?;
+    }
+    Ok(())
+}
+
 /// The logo (SPEC §7.3): a clip path for round plates, the plate, then
 /// the content fitted into its box and clipped to the plate, so nothing
-/// paints outside the modules the budget counted.
+/// paints outside the modules the budget counted. An animated logo is
+/// wrapped in a group that carries its motion.
 fn write_logo<W: Write + ?Sized>(
     out: &mut Out<'_, W>,
     style: &Style,
     qr: &QrMatrix,
     canvas: &Canvas,
     prefix: &str,
+    e: &Element,
 ) -> fmt::Result {
     let Some(logo) = &style.logo else {
         return Ok(());
@@ -260,25 +484,36 @@ fn write_logo<W: Write + ?Sized>(
     let p = logo::placement(logo, qr, logo.scale);
     let o = canvas.origin as f64;
     let u = |v: f64| math::round(v * UNIT as f64) as i64;
-    let mut plate = Path::new();
-    let (at, side) = (u(o + p.center - p.half), u(2.0 * p.half));
-    plate.rounded_rect(at, at, side, side, [u(p.radius); 4]);
+    let plate = &e.path;
+    let group = e.anim.is_some() || e.pose.is_some();
+    if group {
+        out.w.write_str("<g")?;
+        if let Some(n) = e.anim {
+            write!(out.w, " class=\"{prefix}-e{n}\"")?;
+        }
+        write_pose(out.w, e)?;
+        out.w.write_char('>')?;
+        out.line()?;
+    }
     let clip = p.radius > 0.0;
     if clip {
-        out.line()?;
         write!(
             out.w,
             "<clipPath id=\"{prefix}-logo-clip\"><path d=\"{}\"/></clipPath>",
             plate.data()
         )?;
+        out.line()?;
     }
     if logo.backdrop {
-        out.line()?;
         out.w.write_str("<path")?;
-        write_paint(out.w, &style.palette, Token::LogoBackdrop, prefix)?;
+        let plain = Element {
+            anim: None,
+            ..e.clone()
+        };
+        write_element_paint(out.w, &style.palette, &plain, prefix)?;
         write!(out.w, " d=\"{}\"/>", plate.data())?;
+        out.line()?;
     }
-    out.line()?;
     if clip {
         write!(out.w, "<g clip-path=\"url(#{prefix}-logo-clip)\">")?;
     }
@@ -310,6 +545,9 @@ fn write_logo<W: Write + ?Sized>(
         }
     }
     if clip {
+        out.w.write_str("</g>")?;
+    }
+    if group {
         out.w.write_str("</g>")?;
     }
     Ok(())
@@ -357,6 +595,7 @@ fn write_style<W: Write + ?Sized>(
     prefix: &str,
     solids: &[Token],
     gradients: &[Token],
+    motion: Option<&Motion>,
 ) -> fmt::Result {
     let wide = |c: Color| c.opaque_srgb() != c.opaque();
     let mut needs_oklch = solids
@@ -395,6 +634,14 @@ fn write_style<W: Write + ?Sized>(
             w.write_char('}')?;
         }
     }
+    // Animation lives in the same block, so renderers that skip it show
+    // the finished code (SPEC §8.2).
+    if let Some(motion) = motion {
+        #[cfg(feature = "animate")]
+        motion.write_css(w, prefix)?;
+        #[cfg(not(feature = "animate"))]
+        match *motion {}
+    }
     w.write_str("}</style>")
 }
 
@@ -405,17 +652,24 @@ fn write_paint<W: Write + ?Sized>(
     palette: &Palette,
     token: Token,
     prefix: &str,
+    anim: Option<usize>,
 ) -> fmt::Result {
     match palette.resolve(token) {
         Paint::Solid(color) => {
             write!(w, " class=\"{prefix}-")?;
             write_dashed(w, token.name())?;
+            if let Some(n) = anim {
+                write!(w, " {prefix}-e{n}")?;
+            }
             w.write_str("\" fill=\"")?;
             write_hex(w, color)?;
             w.write_char('"')?;
             write_opacity(w, "fill-opacity", color)
         }
         Paint::Gradient(_) => {
+            if let Some(n) = anim {
+                write!(w, " class=\"{prefix}-e{n}\"")?;
+            }
             write!(w, " fill=\"url(#{prefix}-")?;
             write_dashed(w, paint_source(palette, token).name())?;
             w.write_str(")\"")
@@ -566,6 +820,14 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
             Content::Svg(doc) => doc.to_document().bytes().for_each(&mut eat),
             Content::Raster { data, .. } => data.iter().copied().for_each(&mut eat),
         }
+    }
+    // An intro adds classes and keyframes, so two animations of one code
+    // on a page must not share a prefix either.
+    #[cfg(feature = "animate")]
+    if let Some(intro) = &style.intro {
+        let mut text = String::new();
+        let _ = write!(text, "{intro:?}");
+        text.bytes().for_each(&mut eat);
     }
     let mut text = String::new();
     for (token, paint) in style.palette.tokens() {

@@ -4,8 +4,8 @@
 
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Corner, Ecc, Emphasis, EyeShape, FinderStyle, Frame,
-    FrameRing, Logo, LogoShape, ModuleShape, Palette, QrCode, QrMatrix, RingShape, Style,
-    TimingStyle, Version,
+    FrameRing, Intro, Logo, LogoShape, ModuleShape, Palette, Preset, QrCode, QrMatrix, RingShape,
+    Style, TimingStyle, Version,
 };
 
 fn code(version: u8) -> QrMatrix {
@@ -129,4 +129,12 @@ fn circle_logo_on_liquid() {
         .encode_text("HELLO")
         .unwrap();
     insta::assert_snapshot!(style.minify(false).render(&qr).unwrap());
+}
+
+#[test]
+fn settle_intro_on_dots() {
+    let style = Style::new()
+        .modules(ModuleShape::Dots { size: 0.85 })
+        .intro(Intro::new(Preset::Settle).groups(4));
+    insta::assert_snapshot!(render(style, 1));
 }

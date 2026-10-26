@@ -142,6 +142,30 @@ pub(crate) fn filler(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Grid {
     grid
 }
 
+/// What a drawn layer is, in an [`AnimationPlan`](crate::AnimationPlan).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum LayerRole {
+    /// The background: a square, rounded square or disc.
+    Background,
+    /// The ring of a round frame.
+    Ring,
+    /// Decorative filler of a round frame.
+    Filler,
+    /// Data and error-correction modules.
+    Data,
+    /// Timing patterns.
+    Timing,
+    /// Alignment patterns.
+    Alignment,
+    /// Finder outer rings.
+    FinderOuter,
+    /// Finder eyes.
+    FinderEye,
+    /// The logo; its path is the plate.
+    Logo,
+}
+
 /// What a layer draws.
 #[derive(Clone, Debug)]
 pub(crate) enum Part {
@@ -163,10 +187,33 @@ pub(crate) enum Part {
     Alignment(Vec<(u16, u16)>),
 }
 
+impl Part {
+    /// Whether the part's geometry needs the even-odd fill rule (rings
+    /// drawn as an outer and an inner outline).
+    pub(crate) fn evenodd(&self) -> bool {
+        matches!(self, Part::FinderOuter(_) | Part::Alignment(_) | Part::Ring)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Layer {
     pub(crate) token: Token,
     pub(crate) part: Part,
+}
+
+impl Layer {
+    pub(crate) fn role(&self) -> LayerRole {
+        match self.part {
+            Part::Ring => LayerRole::Ring,
+            Part::Filler(_) => LayerRole::Filler,
+            Part::Modules(_) if self.token == Token::Timing => LayerRole::Timing,
+            Part::Modules(_) => LayerRole::Data,
+            Part::Timing(_) => LayerRole::Timing,
+            Part::FinderOuter(_) => LayerRole::FinderOuter,
+            Part::FinderEye(_) => LayerRole::FinderEye,
+            Part::Alignment(_) => LayerRole::Alignment,
+        }
+    }
 }
 
 /// The top-left module of a finder.

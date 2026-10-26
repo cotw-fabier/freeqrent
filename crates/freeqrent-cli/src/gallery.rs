@@ -83,6 +83,14 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "Settle intro",
+        &[
+            ("intro", "settle"),
+            ("shape", "dots:0.85"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
+    (
         "Mixed corners",
         &[
             ("corner", "top-right=leaf/circle"),
@@ -230,6 +238,15 @@ code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, mon
 </header>
 <main>
 {cards}</main>
+<script>
+// Click an animated code to replay its intro.
+for (const box of document.querySelectorAll(".code")) {{
+  if (!box.querySelector("svg.qr[class~='qr'] style")?.textContent.includes("@keyframes")) continue;
+  box.title = "Click to replay";
+  box.style.cursor = "pointer";
+  box.addEventListener("click", () => {{ box.innerHTML = box.innerHTML; }});
+}}
+</script>
 </body>
 </html>
 "#,

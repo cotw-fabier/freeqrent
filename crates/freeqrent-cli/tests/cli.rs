@@ -78,9 +78,9 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 15);
+    assert_eq!(html.matches("<figure>").count(), 16);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 15);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 16);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

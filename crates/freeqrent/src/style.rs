@@ -5,6 +5,8 @@
 use alloc::string::String;
 use core::fmt;
 
+#[cfg(feature = "animate")]
+use crate::animate::Intro;
 use crate::check::{self, RenderError, ScanReport};
 use crate::logo::Logo;
 use crate::matrix::QrMatrix;
@@ -135,6 +137,8 @@ pub struct Style {
     pub(crate) frame: Frame,
     pub(crate) seed: Option<u64>,
     pub(crate) logo: Option<Logo>,
+    #[cfg(feature = "animate")]
+    pub(crate) intro: Option<Intro>,
 }
 
 impl Default for Style {
@@ -156,6 +160,8 @@ impl Default for Style {
             frame: Frame::Square,
             seed: None,
             logo: None,
+            #[cfg(feature = "animate")]
+            intro: None,
         }
     }
 }
@@ -275,6 +281,20 @@ impl Style {
         self
     }
 
+    /// Plays an intro when the code appears (SPEC §8). The document
+    /// without its animation is still the finished code.
+    #[cfg(feature = "animate")]
+    pub fn intro(mut self, intro: impl Into<Intro>) -> Style {
+        self.intro = Some(intro.into());
+        self
+    }
+
+    /// The intro, if any.
+    #[cfg(feature = "animate")]
+    pub fn intro_options(&self) -> Option<&Intro> {
+        self.intro.as_ref()
+    }
+
     /// The logo, if any.
     pub fn logo_options(&self) -> Option<&Logo> {
         self.logo.as_ref()
@@ -339,7 +359,33 @@ impl Style {
         if let Some(error) = report.errors.into_iter().next() {
             return Err(error);
         }
-        svg::write(self, qr, out).map_err(|_| RenderError::Write)
+        svg::write(self, qr, None, out).map_err(|_| RenderError::Write)
+    }
+
+    /// The animation as data (SPEC §8.5): layers and tracks, for players
+    /// other than CSS. Fails like [`render`](Style::render).
+    #[cfg(feature = "animate")]
+    pub fn plan(&self, qr: &QrMatrix) -> Result<crate::AnimationPlan, RenderError> {
+        let report = self.check(qr);
+        if let Some(error) = report.errors.into_iter().next() {
+            return Err(error);
+        }
+        Ok(crate::animate::plan(self, qr))
+    }
+
+    /// Renders the animation stopped at `t_ms` from its trigger, as a
+    /// static SVG with no animation CSS: for thumbnails, video frames and
+    /// testing when a code becomes scannable. From the plan's `total_ms`
+    /// on it looks like the finished code.
+    #[cfg(feature = "animate")]
+    pub fn render_frame(&self, qr: &QrMatrix, t_ms: u32) -> Result<String, RenderError> {
+        let report = self.check(qr);
+        if let Some(error) = report.errors.into_iter().next() {
+            return Err(error);
+        }
+        let mut out = String::new();
+        svg::write(self, qr, Some(t_ms), &mut out).map_err(|_| RenderError::Write)?;
+        Ok(out)
     }
 
     /// Renders into a [`std::io::Write`] sink.

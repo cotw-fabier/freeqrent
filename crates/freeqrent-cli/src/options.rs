@@ -2,8 +2,8 @@
 //! text after the flag, e.g. `dots:0.8` for `--shape`.
 
 use freeqrent::{
-    AlignmentShape, Axis, Corner, Ecc, Emphasis, EyeShape, Frame, FrameRing, LogoShape,
-    ModuleShape, RingShape, TimingStyle,
+    AlignmentShape, Axis, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape, Frame, FrameRing,
+    LogoShape, ModuleShape, Preset, RingShape, StaggerOrder, TimingStyle, Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -227,6 +227,76 @@ pub fn logo_shape(value: &str) -> Result<LogoShape, String> {
     }
 }
 
+/// An intro preset name.
+pub fn preset(value: &str) -> Result<Preset, String> {
+    match value {
+        "settle" => Ok(Preset::Settle),
+        _ => Err(format!("unknown intro {value:?}: try settle")),
+    }
+}
+
+/// `radial`, `linear`, `diagonal`, `random[:seed]`, `polar`.
+pub fn stagger(value: &str) -> Result<StaggerOrder, String> {
+    let (name, seed) = match value.split_once(':') {
+        Some((name, seed)) => (
+            name,
+            Some(
+                seed.parse::<u64>()
+                    .map_err(|_| format!("seed {seed:?} isn't a whole number"))?,
+            ),
+        ),
+        None => (value, None),
+    };
+    let order = match name {
+        "radial" => StaggerOrder::Radial,
+        "linear" => StaggerOrder::Linear,
+        "diagonal" => StaggerOrder::Diagonal,
+        "polar" => StaggerOrder::Polar,
+        "random" => return Ok(StaggerOrder::Random(seed.unwrap_or(0))),
+        _ => {
+            return Err(format!(
+                "unknown stagger {name:?}: try radial, linear, diagonal, random[:seed] or polar"
+            ));
+        }
+    };
+    match seed {
+        None => Ok(order),
+        Some(_) => Err(format!("{name} takes no seed")),
+    }
+}
+
+/// `quart`, `quint`, `expo`, or `x1,y1,x2,y2`.
+pub fn ease(value: &str) -> Result<Ease, String> {
+    match value {
+        "quart" => Ok(Ease::Quart),
+        "quint" => Ok(Ease::Quint),
+        "expo" => Ok(Ease::Expo),
+        _ => {
+            let parts: Vec<f32> = value
+                .split(',')
+                .map(|p| p.trim().parse::<f32>())
+                .collect::<Result<_, _>>()
+                .map_err(|_| format!("ease {value:?}: try quart, quint, expo or x1,y1,x2,y2"))?;
+            match parts[..] {
+                [x1, y1, x2, y2] => Ok(Ease::Custom(CubicBezier::new(x1, y1, x2, y2))),
+                _ => Err(format!("ease {value:?} needs four numbers")),
+            }
+        }
+    }
+}
+
+/// `load`, `hover`, `class:NAME`.
+pub fn trigger(value: &str) -> Result<Trigger, String> {
+    match value.split_once(':') {
+        None if value == "load" => Ok(Trigger::Load),
+        None if value == "hover" => Ok(Trigger::Hover),
+        Some(("class", name)) if !name.is_empty() => Ok(Trigger::Class(name.to_string())),
+        _ => Err(format!(
+            "unknown trigger {value:?}: try load, hover or class:NAME"
+        )),
+    }
+}
+
 /// A number for `--flag`.
 pub fn number(flag: &str, value: &str) -> Result<f32, String> {
     value
@@ -326,6 +396,14 @@ mod tests {
         assert!(frame_ring("dotted").is_err());
         assert_eq!(logo_shape("rounded:2").unwrap(), LogoShape::Rounded(2.0));
         assert!(logo_shape("circle:1").is_err());
+        assert_eq!(stagger("random:7").unwrap(), StaggerOrder::Random(7));
+        assert!(stagger("radial:1").is_err());
+        assert_eq!(
+            ease("0.2,1,0.4,1").unwrap(),
+            Ease::Custom(CubicBezier::new(0.2, 1.0, 0.4, 1.0))
+        );
+        assert_eq!(trigger("class:in").unwrap(), Trigger::Class("in".into()));
+        assert!(trigger("class:").is_err());
         assert_eq!(
             token("fg=oklch(32% .08 265)").unwrap(),
             ("fg".to_string(), "oklch(32% .08 265)".to_string())

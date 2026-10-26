@@ -24,6 +24,8 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+#[cfg(feature = "animate")]
+mod animate;
 mod bits;
 mod check;
 mod code;
@@ -49,8 +51,14 @@ mod svg;
 mod tables;
 mod version;
 
+#[cfg(feature = "animate")]
+pub use animate::{
+    AnimationPlan, CubicBezier, Ease, Fallback, Intro, Keyframe, PlanLayer, Preset, Property,
+    StaggerOrder, Track, Trigger, Value,
+};
 pub use check::{
-    CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, RenderError, ScanReport, Warning,
+    ANIMATED_ELEMENTS, CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, LONG_INTRO_MS, RenderError,
+    ScanReport, Warning,
 };
 pub use code::{QrBuilder, QrCode};
 pub use color::{Color, ColorError};
@@ -63,6 +71,7 @@ pub use palette::{
 pub use scanbox::{
     AlignmentShape, AlignmentStyle, Emphasis, EyeShape, FinderStyle, RingShape, TimingStyle,
 };
+pub use scene::LayerRole;
 pub use segment::{ECI_UTF8, EciPolicy, Mode, Segment};
 pub use style::{Axis, Frame, FrameRing, ModuleShape, Style, TargetSize};
 pub use version::{Ecc, Version};

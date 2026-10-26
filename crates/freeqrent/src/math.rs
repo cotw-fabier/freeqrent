@@ -130,6 +130,59 @@ pub(crate) fn sin_cos(x: f64) -> (f64, f64) {
     }
 }
 
+/// Square root of `x ≥ 0`.
+#[cfg_attr(not(feature = "animate"), allow(dead_code))]
+pub(crate) fn sqrt(x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    let mut r = exp(ln(x) / 2.0);
+    r = (r + x / r) / 2.0;
+    r
+}
+
+/// `atan(y / x)` in the right quadrant, in `(−π, π]`.
+#[cfg_attr(not(feature = "animate"), allow(dead_code))]
+pub(crate) fn atan2(y: f64, x: f64) -> f64 {
+    if x == 0.0 && y == 0.0 {
+        return 0.0;
+    }
+    // atan of |y/x| or its reciprocal, so the argument is at most 1.
+    let (a, b) = (y.abs(), x.abs());
+    let swap = a > b;
+    let t = if swap { b / a } else { a / b };
+    let mut r = atan_unit(t);
+    if swap {
+        r = FRAC_PI_2 - r;
+    }
+    if x < 0.0 {
+        r = PI - r;
+    }
+    if y < 0.0 { -r } else { r }
+}
+
+/// `atan t` for `0 ≤ t ≤ 1`: shifted by π/6 below tan(π/12), then a
+/// short series.
+#[cfg_attr(not(feature = "animate"), allow(dead_code))]
+fn atan_unit(t: f64) -> f64 {
+    const TAN_PI_12: f64 = 0.267_949_192_431_122_7;
+    const SQRT_3: f64 = 1.732_050_807_568_877_2;
+    let (base, t) = if t > TAN_PI_12 {
+        (PI / 6.0, (t * SQRT_3 - 1.0) / (t + SQRT_3))
+    } else {
+        (0.0, t)
+    };
+    let t2 = t * t;
+    let (mut sum, mut term) = (0.0, t);
+    let mut n = 1.0;
+    while n < 40.0 {
+        sum += term / n;
+        term *= -t2;
+        n += 2.0;
+    }
+    base + sum
+}
+
 /// Degrees to radians.
 pub(crate) fn radians(degrees: f64) -> f64 {
     degrees * (PI / 180.0)
@@ -155,6 +208,9 @@ mod tests {
             let a = x * 7.0 - 50.0;
             let (s, c) = sin_cos(a);
             assert!(close(s, a.sin()) && close(c, a.cos()), "sin_cos {a}");
+            assert!(close(sqrt(x), x.sqrt()), "sqrt {x}");
+            let (y, z) = (x * 3.0 - 20.0, 13.0 - x * 2.0);
+            assert!((atan2(y, z) - y.atan2(z)).abs() < 1e-14, "atan2 {y} {z}");
             assert_eq!(floor(a), a.floor());
             assert_eq!(round(a), a.round());
         }
