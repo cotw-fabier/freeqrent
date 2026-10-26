@@ -2,6 +2,11 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026171229 · M5 · WeChat and ZXing app scans pending
+
+- Decision: the scan matrix's WeChat and ZXing app columns are skipped for now (no device with those apps) and tracked as a pending item in the ROADMAP's Scannability section; SPEC §9 and §12 and the README say so.
+- Checks: docs only.
+
 ## 20261026170720 · M5 · Art mode's scan speed, documented; the contrast floor stays
 
 - Decision: art mode keeps its defaults (standard grid, clarity 0), which draw the most picture. SPEC §7.8, `Style::art`, `TrackingGrid`, `--art`'s help and the README say they scan slowly on phones, and that the sparse grid scans fast and clarity 0.5–0.6 helps on larger grids (bench-measured; not yet on phones).
