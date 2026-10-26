@@ -11,7 +11,7 @@ use crate::StyleArgs;
 use crate::gallery::{DARK_FAMILIES, FAMILIES, LOGO_FAMILIES, escape, shell_quote};
 
 /// The devices the matrix asks about.
-const DEVICES: [&str; 4] = ["iPhone Camera", "Google Lens", "WeChat", "ZXing app"];
+const DEVICES: [&str; 4] = ["iOS Camera", "Google Lens", "WeChat", "ZXing app"];
 
 /// One code on the sheet.
 struct Entry {

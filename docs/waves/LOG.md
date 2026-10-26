@@ -2,6 +2,11 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026165905 · M5 · The scan sheet says iOS Camera
+
+- Landed: the sheet's first device column is "iOS Camera" (was "iPhone Camera"), matching SPEC §9 and the iPad mini the first results came from. Verdicts are saved by column index, so recorded results keep their place.
+- Checks: fmt, clippy, CLI tests.
+
 ## 20261026164853 · M5 · Device results for S01–S69
 
 - Scanned: S01–S46 with a Pixel 10 Pro XL (Google Lens) and an iPad mini (iOS Camera, the sheet's "iPhone Camera" column). Both read 45 of 46; S32 (art mode, standard grid, `color:6`, v14 M) failed on iOS and was slow on Lens.
