@@ -53,3 +53,5 @@ jobs:
           cargo fuzz run encode_text -- -max_total_time=60 -max_len=600
           cargo fuzz run encode_segments -- -max_total_time=60 -max_len=600
           cargo fuzz run color_parse -- -max_total_time=60 -max_len=200
+          mkdir -p corpus/logo_svg
+          cargo fuzz run logo_svg corpus/logo_svg seeds/logo_svg -- -max_total_time=60 -max_len=2000

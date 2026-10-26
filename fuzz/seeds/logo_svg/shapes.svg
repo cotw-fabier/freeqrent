@@ -1,0 +1,1 @@
+<svg viewBox="0 0 10 10"><defs><linearGradient id="g"><stop offset="0" stop-color="red"/></linearGradient><clipPath id="c"><circle r="4"/></clipPath></defs><g clip-path="url(#c)"><rect fill="url(#g)" width="5" height="5" style="stroke:#00f"/><use href="#g"/></g><text x="1">a &amp; b</text></svg>

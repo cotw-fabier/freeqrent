@@ -6,6 +6,7 @@ use alloc::string::String;
 use core::fmt;
 
 use crate::check::{self, RenderError, ScanReport};
+use crate::logo::Logo;
 use crate::matrix::QrMatrix;
 use crate::palette::Palette;
 use crate::scanbox::{AlignmentStyle, FinderStyle, TimingStyle};
@@ -133,6 +134,7 @@ pub struct Style {
     pub(crate) target: Option<TargetSize>,
     pub(crate) frame: Frame,
     pub(crate) seed: Option<u64>,
+    pub(crate) logo: Option<Logo>,
 }
 
 impl Default for Style {
@@ -153,6 +155,7 @@ impl Default for Style {
             target: None,
             frame: Frame::Square,
             seed: None,
+            logo: None,
         }
     }
 }
@@ -261,6 +264,20 @@ impl Style {
     pub fn seed(mut self, seed: u64) -> Style {
         self.seed = Some(seed);
         self
+    }
+
+    /// Puts a logo in the middle (SPEC §7.3). The modules it covers are
+    /// counted against the error-correction budget; encode with
+    /// [`QrBuilder::encode_text_for`](crate::QrBuilder::encode_text_for)
+    /// to get a code big enough for it.
+    pub fn logo(mut self, logo: Logo) -> Style {
+        self.logo = Some(logo);
+        self
+    }
+
+    /// The logo, if any.
+    pub fn logo_options(&self) -> Option<&Logo> {
+        self.logo.as_ref()
     }
 
     /// The frame.

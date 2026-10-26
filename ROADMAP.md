@@ -29,6 +29,9 @@ Each item says where it came from, so we remember why it's here.
 - **`ModuleShape::Custom`:** a per-module path callback (SPEC §7.1). Deferred 2026-10-25: callbacks aren't plain data and can't cross the binding boundary; a data form (e.g. a path template per neighborhood class) could replace it.
 - **Smaller dot/rounded output:** v40 `Dots` is ~700 KB. Implicit command repetition or a `<use>`-based dot could cut it a lot. Measured 2026-10-25 (W20261025212852).
 - **Re-themable gradient stops** through custom properties (SPEC §6.2).
+- **Richer logo CSS:** the sanitizer folds only `.class` rules into attributes; element and descendant selectors, and `pattern` fills, are dropped (W20261025223145).
+- **`encode_segments_for` / `encode_bytes_for`:** style-fitting for explicit segments and raw bytes, like `encode_text_for` (W20261025223145).
+- **Steering logo-covered modules:** like art mode's free bits (SPEC §7.8), choose data so modules under the plate are light, which would let a backdrop-plated logo count only dark-covered codewords and grow larger (W20261025223145).
 - **`Morph` transition:** cross-fade between two shape styles of the same code (SPEC §8.3).
 
 ## Bindings

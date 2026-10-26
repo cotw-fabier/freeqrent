@@ -4,6 +4,8 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::geometry::Grid;
+use crate::logo::{self, LogoShape};
 use crate::matrix::{QrMatrix, misdecode_protection};
 use crate::palette::Token;
 use crate::scanbox::{AlignmentShape, EyeShape, RingShape};
@@ -65,6 +67,14 @@ pub enum RenderError {
         /// What that block may lose within the budget.
         allowed: u16,
     },
+    /// The logo covers more codewords than [`DAMAGE_BUDGET`] allows, or
+    /// reaches a finder, timing, format or version module or the
+    /// bottom-right alignment pattern. Raise the ECC level or the version
+    /// (`QrBuilder::encode_text_for` does both), or shrink the logo.
+    LogoTooLarge {
+        /// The largest scale, in hundredths, that fits this code.
+        max_scale: f32,
+    },
     /// The output sink returned an error.
     Write,
 }
@@ -92,6 +102,10 @@ impl fmt::Display for RenderError {
             RenderError::EccBudgetExceeded { damaged, allowed } => write!(
                 f,
                 "cleared modules damage {damaged} codewords of one block; the budget allows {allowed}"
+            ),
+            RenderError::LogoTooLarge { max_scale } => write!(
+                f,
+                "the logo is too large for this code; at most scale {max_scale:.2} fits"
             ),
             RenderError::Write => f.write_str("the output sink failed"),
         }
@@ -273,10 +287,17 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         ),
         Frame::Square | Frame::None => {}
     }
+    if let Some(logo) = &style.logo {
+        in_range(&mut errors, "Logo.scale", logo.scale, 0.0, 0.5);
+        in_range(&mut errors, "Logo.padding", logo.padding, 0.0, 4.0);
+        if let LogoShape::Rounded(r) = logo.shape {
+            in_range(&mut errors, "LogoShape::Rounded radius", r, 0.0, f32::MAX);
+        }
+    }
 
     check_scan_boxes(style, &mut errors, &mut warnings);
     check_target(style, qr, &mut errors, &mut warnings);
-    let ecc_budget_used = damage(style, qr, &mut errors);
+    let ecc_budget_used = budget(style, qr, &mut errors);
 
     let palette = &style.palette;
     if palette.background().is_translucent() {
@@ -381,36 +402,96 @@ fn check_scan_boxes(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut
     }
 }
 
-/// Counts the codewords that cleared modules damage, per Reed–Solomon
-/// block. A codeword is damaged when one of its cleared modules was dark:
-/// a cleared module reads as light. Returns the worst block's share of its
-/// correctable codewords.
-fn damage(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
+/// What each Reed–Solomon block of a code may lose.
+struct Budget {
+    /// Correctable codewords per block (after misdecode protection).
+    correctable: u16,
+    /// Of those, what [`DAMAGE_BUDGET`] lets cleared modules take.
+    allowed: u16,
+    /// For each module, its codeword and block.
+    map: Vec<Option<(u16, u16)>>,
+    blocks: usize,
+    codewords: usize,
+}
+
+impl Budget {
+    fn new(qr: &QrMatrix) -> Budget {
+        let layout = BlockLayout::new(qr.version(), qr.ecc());
+        let correctable =
+            ((layout.ecc_per_block - misdecode_protection(qr.version(), qr.ecc())) / 2) as u16;
+        Budget {
+            correctable,
+            allowed: (correctable as f32 * DAMAGE_BUDGET) as u16,
+            map: qr.codeword_map(),
+            blocks: layout.num_blocks,
+            codewords: layout.total_codewords,
+        }
+    }
+
+    /// The worst block's damaged codewords. A codeword is damaged when one
+    /// of its `cleared` modules was dark (a cleared module reads light),
+    /// or when any of its modules is `covered` (a logo may read either way).
+    fn worst(&self, qr: &QrMatrix, cleared: &Grid, covered: Option<&Grid>) -> u16 {
+        let mut hit = alloc::vec![false; self.codewords];
+        let mut per_block = alloc::vec![0u16; self.blocks];
+        for (x, y, dark, _) in qr.modules() {
+            let (xi, yi) = (x as i64, y as i64);
+            let damaged = (dark && cleared.get(xi, yi)) || covered.is_some_and(|c| c.get(xi, yi));
+            if !damaged {
+                continue;
+            }
+            if let Some((codeword, block)) = self.map[y as usize * qr.size() as usize + x as usize]
+                && !core::mem::replace(&mut hit[codeword as usize], true)
+            {
+                per_block[block as usize] += 1;
+            }
+        }
+        per_block.iter().copied().max().unwrap_or(0)
+    }
+}
+
+/// Spends the error-correction budget (SPEC §7.2 Outline, §7.3 logo) and
+/// returns the worst block's share of its correctable codewords.
+fn budget(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
     let cleared = scene::cleared(style, qr);
-    if cleared.is_empty() {
+    if cleared.is_empty() && style.logo.is_none() {
         return 0.0;
     }
-    let layout = BlockLayout::new(qr.version(), qr.ecc());
-    let correctable = (layout.ecc_per_block - misdecode_protection(qr.version(), qr.ecc())) / 2;
-    let allowed = (correctable as f32 * DAMAGE_BUDGET) as u16;
-    let map = qr.codeword_map();
-    let mut hit = alloc::vec![false; layout.total_codewords];
-    let mut per_block = alloc::vec![0u16; layout.num_blocks];
-    for (x, y, dark, _) in qr.modules() {
-        if !dark || !cleared.get(x as i64, y as i64) {
-            continue;
-        }
-        if let Some((codeword, block)) = map[y as usize * qr.size() as usize + x as usize]
-            && !core::mem::replace(&mut hit[codeword as usize], true)
-        {
-            per_block[block as usize] += 1;
-        }
+    let budget = Budget::new(qr);
+    let share = |damaged: u16| damaged as f32 / budget.correctable as f32;
+    let outline = budget.worst(qr, &cleared, None);
+    if outline > budget.allowed {
+        errors.push(RenderError::EccBudgetExceeded {
+            damaged: outline,
+            allowed: budget.allowed,
+        });
+        return share(outline);
     }
-    let damaged = per_block.iter().copied().max().unwrap_or(0);
-    if damaged > allowed {
-        errors.push(RenderError::EccBudgetExceeded { damaged, allowed });
+    let Some(logo) = &style.logo else {
+        return share(outline);
+    };
+    let fits = |scale: f32| {
+        let cover = logo::cover(logo, qr, scale);
+        let worst = budget.worst(qr, &cleared, Some(&cover.modules));
+        (cover.valid && worst <= budget.allowed, worst)
+    };
+    let (ok, worst) = fits(logo.scale);
+    if !ok {
+        // Coverage grows with scale, so search the hundredths below it.
+        let (mut lo, mut hi) = (0u32, (logo.scale * 100.0) as u32);
+        while lo < hi {
+            let mid = (lo + hi).div_ceil(2);
+            if fits(mid as f32 / 100.0).0 {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        errors.push(RenderError::LogoTooLarge {
+            max_scale: lo as f32 / 100.0,
+        });
     }
-    damaged as f32 / correctable as f32
+    share(worst)
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@ use core::fmt::{self, Write};
 
 use crate::color::Color;
 use crate::geometry::{self, Path, UNIT};
+use crate::logo::{self, Content};
 use crate::math;
 use crate::matrix::{Corner, QrMatrix};
 use crate::num::write_scaled;
@@ -144,10 +145,12 @@ pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) 
     // Solid tokens that get a class, and the gradients to define.
     let mut solids: Vec<Token> = Vec::new();
     let mut gradients: Vec<Token> = Vec::new();
+    let backdrop = style.logo.as_ref().is_some_and(|l| l.backdrop);
     let painted = draw_bg
         .then_some(Token::Bg)
         .into_iter()
-        .chain(paths.iter().map(|(t, _, _)| *t));
+        .chain(paths.iter().map(|(t, _, _)| *t))
+        .chain(backdrop.then_some(Token::LogoBackdrop));
     for token in painted {
         match palette.resolve(token) {
             Paint::Solid(_) => solids.push(token),
@@ -230,12 +233,84 @@ pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) 
         }
         write!(out.w, " d=\"{}\"/>", path.data())?;
     }
+    write_logo(&mut out, style, qr, &canvas, &prefix)?;
     if out.pretty {
         out.w.write_char('\n')?;
     }
     out.w.write_str("</svg>")?;
     if out.pretty {
         out.w.write_char('\n')?;
+    }
+    Ok(())
+}
+
+/// The logo (SPEC §7.3): a clip path for round plates, the plate, then
+/// the content fitted into its box and clipped to the plate, so nothing
+/// paints outside the modules the budget counted.
+fn write_logo<W: Write + ?Sized>(
+    out: &mut Out<'_, W>,
+    style: &Style,
+    qr: &QrMatrix,
+    canvas: &Canvas,
+    prefix: &str,
+) -> fmt::Result {
+    let Some(logo) = &style.logo else {
+        return Ok(());
+    };
+    let p = logo::placement(logo, qr, logo.scale);
+    let o = canvas.origin as f64;
+    let u = |v: f64| math::round(v * UNIT as f64) as i64;
+    let mut plate = Path::new();
+    let (at, side) = (u(o + p.center - p.half), u(2.0 * p.half));
+    plate.rounded_rect(at, at, side, side, [u(p.radius); 4]);
+    let clip = p.radius > 0.0;
+    if clip {
+        out.line()?;
+        write!(
+            out.w,
+            "<clipPath id=\"{prefix}-logo-clip\"><path d=\"{}\"/></clipPath>",
+            plate.data()
+        )?;
+    }
+    if logo.backdrop {
+        out.line()?;
+        out.w.write_str("<path")?;
+        write_paint(out.w, &style.palette, Token::LogoBackdrop, prefix)?;
+        write!(out.w, " d=\"{}\"/>", plate.data())?;
+    }
+    out.line()?;
+    if clip {
+        write!(out.w, "<g clip-path=\"url(#{prefix}-logo-clip)\">")?;
+    }
+    let box_attrs = |w: &mut W| -> fmt::Result {
+        let (at, side) = (u(o + p.center - p.content_half), u(2.0 * p.content_half));
+        for (name, v) in [("x", at), ("y", at), ("width", side), ("height", side)] {
+            write!(w, " {name}=\"")?;
+            write_scaled(w, v, 3)?;
+            w.write_char('"')?;
+        }
+        w.write_str(" preserveAspectRatio=\"xMidYMid meet\"")
+    };
+    match &logo.content {
+        Content::Svg(doc) => {
+            out.w.write_str("<svg")?;
+            box_attrs(out.w)?;
+            out.w.write_str(" viewBox=\"")?;
+            doc.write_view_box(out.w)?;
+            out.w.write_str("\">")?;
+            doc.write_body(out.w, Some(prefix))?;
+            out.w.write_str("</svg>")?;
+        }
+        Content::Raster { format, data } => {
+            out.w.write_str("<image")?;
+            box_attrs(out.w)?;
+            write!(out.w, " href=\"data:{};base64,", format.mime())?;
+            logo::base64(out.w, data)?;
+            out.w.write_str("\"/>")?;
+        }
+    }
+    if clip {
+        out.w.write_str("</g>")?;
     }
     Ok(())
 }
@@ -477,6 +552,21 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
     for (_, _, dark, _) in qr.modules() {
         eat(dark as u8);
     }
+    // A logo brings its own IDs, so two codes with different logos must
+    // not share a prefix.
+    if let Some(logo) = &style.logo {
+        let mut text = String::new();
+        let _ = write!(
+            text,
+            "{:?}{:?}{}{}{}",
+            logo.shape, logo.scale, logo.padding, logo.backdrop, logo.clear_modules
+        );
+        text.bytes().for_each(&mut eat);
+        match &logo.content {
+            Content::Svg(doc) => doc.to_document().bytes().for_each(&mut eat),
+            Content::Raster { data, .. } => data.iter().copied().for_each(&mut eat),
+        }
+    }
     let mut text = String::new();
     for (token, paint) in style.palette.tokens() {
         let _ = write!(text, "{token}={paint};");
@@ -664,6 +754,38 @@ mod tests {
             prefix_of(&svg(Frame::Square)),
             prefix_of(&Style::new().render(&qr()).unwrap())
         );
+    }
+
+    #[test]
+    fn logos_are_clipped_prefixed_and_change_the_prefix() {
+        use crate::{Logo, LogoShape, Version};
+        let qr = QrCode::builder()
+            .ecc(Ecc::H)
+            .version(Version::new(5).unwrap())
+            .encode_text("HELLO")
+            .unwrap();
+        let logo = Logo::svg(r##"<svg viewBox="0 0 2 2"><clipPath id="c"><rect width="1" height="1"/></clipPath><rect clip-path="url(#c)" width="2" height="2"/></svg>"##)
+            .unwrap()
+            .scale(0.2);
+        let square = Style::new().logo(logo.clone()).render(&qr).unwrap();
+        let p = prefix_of(&square);
+        assert!(square.contains(&alloc::format!("<clipPath id=\"{p}-logo-c\">")));
+        assert!(square.contains(&alloc::format!("clip-path=\"url(#{p}-logo-c)\"")));
+        assert!(!square.contains("-logo-clip"));
+        assert!(square.contains(&alloc::format!(
+            "<path class=\"{p}-logo-backdrop\" fill=\"#fefcf8\""
+        )));
+        let round = Style::new()
+            .logo(logo.clone().shape(LogoShape::Circle).backdrop(false))
+            .render(&qr)
+            .unwrap();
+        let q = prefix_of(&round);
+        assert_ne!(p, q);
+        assert!(round.contains(&alloc::format!(
+            "<g clip-path=\"url(#{q}-logo-clip)\"><svg "
+        )));
+        assert!(!round.contains("logo-backdrop\" fill"));
+        assert_ne!(p, prefix_of(&Style::new().render(&qr).unwrap()));
     }
 
     #[test]

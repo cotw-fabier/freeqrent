@@ -2,6 +2,16 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261025223145 · M2 · Logos with an error-correction budget
+
+- Landed: `Logo::svg` (allowlist re-serializing sanitizer: tokenize, keep allowlisted elements/attributes as parsed values, fold `.class` rules and `style` into attributes, `url(#id)`/`#id` references only, prefixed IDs, bounded `use`) and `Logo::raster` (signature-checked, base64 `data:` URI). Options `scale`, `shape` (Square/Rounded/Circle), `backdrop`, `padding`, `clear_modules`. Whole-module excavation; finders, timing, format/version and the bottom-right alignment pattern are off limits, other alignment patterns under the plate are dropped whole. `RenderError::LogoTooLarge { max_scale }`; `QrBuilder::encode_text_for` grows ECC then version until the style fits. Fuzz target `logo_svg` with committed seeds. CLI `--logo FILE|sample` and five logo options; the CLI and each gallery family encode for their style.
+- Decisions: a logo-covered codeword counts as damaged whatever its value (a logo can read either way), sharing the M1 per-block 60% budget with Outline; validation when a `Logo` is built, so `Style` stays infallible. Measured: the largest affordable logo, dark with no plate included, scanned at the full bar for L/M/Q/H × v2–v40 × three shapes.
+- Checks: 9 sanitizer + 5 logo + 1 writer unit tests; `tests/logos.rs` (4 ECC × 4 versions × 3 shapes × plate on/off at `max_scale`, fitting, PNG logo, logo with Liquid/dots/round frame/kept modules); new snapshot `circle_logo_on_liquid`; 2.07M fuzz runs clean after fixing one idempotence bug it found (text of XML-forbidden characters became an empty node). Gallery: 15 families, all decode (Outline now fits at v3/Q, the logo at v5/H).
+
+## M2 complete · 2026-10-25
+
+Liquid, round frames and logos done: contour-traced Liquid with filled inner corners, `Frame` (square, rounded, circle with seeded filler and ring, none) on a shared canvas layout, logos (sanitized SVG or raster) excavated within the per-block ECC budget, and `encode_text_for` to grow a code until its style fits. Waves 20261025221811, 20261025222326, 20261025223145.
+
 ## 20261025222326 · M2 · Frames and round codes
 
 - Landed: `Frame::{Square, RoundedSquare(r), Circle { filler_density, ring }, None}`, `FrameRing::{None, Solid, Dashed}`, `Style::seed` with SplitMix64 (default seed: FNV-1a of the modules). A canvas layout every stage reads from. Round codes: the quiet-zone square inscribed in a circle, seeded filler in the cells between (whole cells only, 2-module halo beyond the finders' quiet zones), a filled annulus or dashed ring, a background disc. CLI `--frame`, `--frame-ring`, `--seed`; gallery "Round".

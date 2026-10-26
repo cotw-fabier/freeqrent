@@ -33,12 +33,14 @@ mod geometry;
 mod gf;
 #[cfg(feature = "kanji")]
 mod kanji_table;
+mod logo;
 mod math;
 mod matrix;
 mod num;
 mod optimize;
 mod palette;
 mod rng;
+mod sanitize;
 mod scanbox;
 mod scene;
 mod segment;
@@ -53,6 +55,7 @@ pub use check::{
 pub use code::{QrBuilder, QrCode};
 pub use color::{Color, ColorError};
 pub use error::EncodeError;
+pub use logo::{Logo, LogoError, LogoShape, RasterFormat};
 pub use matrix::{CapacityReport, Corner, FinderRing, Mask, ModuleRole, QrMatrix};
 pub use palette::{
     Contrast, Gradient, GradientKind, GradientStop, Paint, Palette, PaletteError, Token,

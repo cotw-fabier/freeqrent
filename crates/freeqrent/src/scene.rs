@@ -233,6 +233,32 @@ pub(crate) fn cleared(style: &Style, qr: &QrMatrix) -> Grid {
     grid
 }
 
+/// Every module left out of the drawing: [`cleared`] plus, when the logo
+/// clears modules, the ones under its plate (alignment patterns there are
+/// dropped separately, see [`alignment_centers_drawn`]).
+pub(crate) fn removed(style: &Style, qr: &QrMatrix) -> Grid {
+    let mut grid = cleared(style, qr);
+    if let Some(logo) = style.logo.as_ref().filter(|l| l.clear_modules) {
+        let cover = crate::logo::cover(logo, qr, logo.scale);
+        for (x, y, _, _) in qr.modules() {
+            if cover.modules.get(x as i64, y as i64) {
+                grid.set(x as usize, y as usize);
+            }
+        }
+    }
+    grid
+}
+
+/// Alignment centers that are drawn: all but those under a clearing logo.
+pub(crate) fn alignment_centers_drawn(style: &Style, qr: &QrMatrix) -> Vec<(u16, u16)> {
+    let mut centers = alignment_centers(qr);
+    if let Some(logo) = style.logo.as_ref().filter(|l| l.clear_modules) {
+        let cover = crate::logo::cover(logo, qr, logo.scale);
+        centers.retain(|c| !cover.alignment.contains(c));
+    }
+    centers
+}
+
 /// The layers in paint order: frame ring, filler, data, timing,
 /// alignment, finder rings, eyes. Empty layers are left out.
 pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
@@ -252,7 +278,7 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
             part: Part::Filler(filler),
         });
     }
-    let cleared = cleared(style, qr);
+    let cleared = removed(style, qr);
     let mut data = Grid::new(size);
     let mut timing = Grid::new(size);
     for (x, y, dark, role) in qr.modules() {
@@ -282,7 +308,7 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
             },
         });
     }
-    let centers = alignment_centers(qr);
+    let centers = alignment_centers_drawn(style, qr);
     if !centers.is_empty() {
         layers.push(Layer {
             token: match style.alignment.emphasis {

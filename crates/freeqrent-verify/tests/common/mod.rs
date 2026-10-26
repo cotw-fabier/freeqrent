@@ -1,5 +1,8 @@
 //! Shared round-trip helpers.
 
+// Each test binary uses its own subset.
+#![allow(dead_code)]
+
 use freeqrent::{Ecc, QrCode, Style, Version};
 
 /// Payloads pinned to versions with 0, 1, 6 and 22 alignment patterns.

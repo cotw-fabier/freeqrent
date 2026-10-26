@@ -1,10 +1,12 @@
 use alloc::vec::Vec;
 
 use crate::bits::BitBuffer;
+use crate::check::RenderError;
 use crate::error::EncodeError;
 use crate::gf;
 use crate::matrix::{Mask, QrMatrix};
 use crate::segment::{self, ECI_UTF8, EciPolicy, Segment};
+use crate::style::Style;
 use crate::version::{BlockLayout, Ecc, Version};
 
 /// Entry point for encoding.
@@ -117,6 +119,38 @@ impl QrBuilder {
             segments
         });
         self.encode_with(|v| &plans[v.count_band()])
+    }
+
+    /// Encodes text for `style`: the smallest code whose error-correction
+    /// budget can afford what the style covers or clears (a logo, outlined
+    /// alignment patterns). Each version is tried at the highest ECC level
+    /// the text fits (when `boost_ecc` is on, the default), then the next
+    /// version, up to `max_version` (SPEC §7.3). When nothing in range
+    /// fits, returns the code [`encode_text`](Self::encode_text) would, and
+    /// rendering it reports why.
+    pub fn encode_text_for(&self, text: &str, style: &Style) -> Result<QrMatrix, EncodeError> {
+        let affordable = |qr: &QrMatrix| {
+            !style.check(qr).errors.iter().any(|e| {
+                matches!(
+                    e,
+                    RenderError::LogoTooLarge { .. } | RenderError::EccBudgetExceeded { .. }
+                )
+            })
+        };
+        let first = self.encode_text(text)?;
+        if affordable(&first) {
+            return Ok(first);
+        }
+        let mut version = first.version();
+        while let Some(next) = Version::new(version.number() + 1).filter(|&v| v <= self.max_version)
+        {
+            let qr = self.min_version(next).encode_text(text)?;
+            if affordable(&qr) {
+                return Ok(qr);
+            }
+            version = qr.version();
+        }
+        Ok(first)
     }
 
     /// Encodes raw bytes in byte mode, without an ECI header.

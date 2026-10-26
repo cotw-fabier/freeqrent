@@ -10,9 +10,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Corner, Ecc, Emphasis, EyeShape, FinderStyle, FrameRing,
-    ModuleShape, Palette, QrBuilder, QrCode, QrMatrix, RingShape, ScanReport, Style, TargetSize,
-    TimingStyle, Version,
+    AlignmentShape, AlignmentStyle, Corner, Ecc, Emphasis, EyeShape, FinderStyle, FrameRing, Logo,
+    LogoShape, ModuleShape, Palette, QrBuilder, QrCode, QrMatrix, RasterFormat, RingShape,
+    ScanReport, Style, TargetSize, TimingStyle, Version,
 };
 
 const HELP: &str = "\
@@ -41,6 +41,13 @@ Style:
   --frame FRAME            square, rounded[:r], circle[:filler density], none
   --frame-ring RING        none, solid, dashed (circle frames)
   --seed N                 seed for decorative choices (default: from the code)
+  --logo FILE              SVG, PNG, JPEG, GIF or WebP for the middle; `sample`
+                           for a built-in mark. The code grows until it fits.
+  --logo-scale F           logo width as a fraction of the code's (default 0.2)
+  --logo-shape SHAPE       square, rounded[:r], circle
+  --logo-padding N         modules between logo and code (default 0.5)
+  --no-logo-backdrop       no plate behind the logo
+  --keep-modules           draw the modules under the logo
   --allow-inverted         permit light modules on a dark background
   --target-px N            displayed size in device pixels (warns when too small)
   --target-mm N            printed size in millimeters (warns when too small)
@@ -90,6 +97,35 @@ pub struct StyleArgs {
     frame: Option<String>,
     frame_ring: Option<FrameRing>,
     seed: Option<u64>,
+    logo: Option<String>,
+    logo_scale: Option<f32>,
+    logo_shape: Option<LogoShape>,
+    logo_padding: Option<f32>,
+    no_logo_backdrop: bool,
+    keep_modules: bool,
+}
+
+/// The mark `--logo sample` uses.
+const SAMPLE_LOGO: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="6" fill="#c2410c"/><path d="M7 6h10v4h-6v2h5v4h-5v3H7z" fill="#fff7ed"/></svg>"##;
+
+/// Reads a logo file: SVG by extension or content, otherwise a raster
+/// format recognized by its signature.
+fn load_logo(source: &str) -> Result<Logo, String> {
+    if source == "sample" {
+        return Logo::svg(SAMPLE_LOGO).map_err(|e| e.to_string());
+    }
+    let bytes = fs::read(source).map_err(|e| format!("--logo {source}: {e}"))?;
+    let looks_svg =
+        source.to_ascii_lowercase().ends_with(".svg") || bytes.trim_ascii_start().starts_with(b"<");
+    let logo = if looks_svg {
+        let text = String::from_utf8(bytes).map_err(|_| format!("--logo {source}: not UTF-8"))?;
+        Logo::svg(&text)
+    } else {
+        let format = RasterFormat::sniff(&bytes)
+            .ok_or_else(|| format!("--logo {source}: not an SVG, PNG, JPEG, GIF or WebP file"))?;
+        Logo::raster(bytes, format)
+    };
+    logo.map_err(|e| format!("--logo {source}: {e}"))
 }
 
 impl StyleArgs {
@@ -137,6 +173,10 @@ impl StyleArgs {
                         .map_err(|_| format!("seed {value:?} isn't a whole number"))?,
                 )
             }
+            "logo" => self.logo = Some(value.to_string()),
+            "logo-scale" => self.logo_scale = Some(options::number(flag, value)?),
+            "logo-shape" => self.logo_shape = Some(options::logo_shape(value)?),
+            "logo-padding" => self.logo_padding = Some(options::number(flag, value)?),
             "title" => self.title = Some(value.to_string()),
             "label" => self.label = Some(value.to_string()),
             _ => return Ok(false),
@@ -173,6 +213,21 @@ impl StyleArgs {
         }
         if let Some(seed) = self.seed {
             style = style.seed(seed);
+        }
+        if let Some(source) = &self.logo {
+            let mut logo = load_logo(source)?
+                .backdrop(!self.no_logo_backdrop)
+                .clear_modules(!self.keep_modules);
+            if let Some(scale) = self.logo_scale {
+                logo = logo.scale(scale);
+            }
+            if let Some(shape) = self.logo_shape {
+                logo = logo.shape(shape);
+            }
+            if let Some(padding) = self.logo_padding {
+                logo = logo.padding(padding);
+            }
+            style = style.logo(logo);
         }
         if let Some(title) = &self.title {
             style = style.title(title.clone());
@@ -221,6 +276,8 @@ fn parse_args() -> Result<Option<Args>, Failure> {
             Long("verify") => verify = true,
             Long("pretty") => style.pretty = true,
             Long("allow-inverted") => style.allow_inverted = true,
+            Long("no-logo-backdrop") => style.no_logo_backdrop = true,
+            Long("keep-modules") => style.keep_modules = true,
             Long("ecc") => {
                 ecc = options::ecc(&parser.value()?.string()?).map_err(Failure::Usage)?
             }
@@ -309,18 +366,17 @@ fn run() -> Result<(), Failure> {
     let Some(args) = parse_args()? else {
         return Ok(());
     };
-    let qr = args
-        .builder
-        .encode_text(&args.text)
-        .map_err(|e| Failure::Failed(e.to_string()))?;
-
     if let Some(path) = &args.gallery {
-        let page = gallery::page(&args.text, &qr, &args.style);
+        let page = gallery::page(&args.text, &args.builder, &args.style);
         return fs::write(path, page)
             .map_err(|e| Failure::Failed(format!("{}: {e}", path.display())));
     }
 
     let style = args.style.build(&args.text).map_err(Failure::Usage)?;
+    let qr = args
+        .builder
+        .encode_text_for(&args.text, &style)
+        .map_err(|e| Failure::Failed(e.to_string()))?;
     let report = style.check(&qr);
     if args.check {
         print_report(&mut io::stdout(), &report).map_err(|e| Failure::Failed(e.to_string()))?;

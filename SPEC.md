@@ -145,9 +145,7 @@ payload ─▶ encode ─▶ QrMatrix ─▶ Layout ─▶ Geometry ─▶ Paint
 ```rust
 use freeqrent::{QrCode, Ecc, Style, ModuleShape, FinderStyle, RingShape, EyeShape, Frame, FrameRing, Palette, Logo, Intro};
 
-let qr = QrCode::encode("https://example.com", Ecc::Q)?;
-
-let svg: String = Style::new()
+let style = Style::new()
     .modules(ModuleShape::Liquid { smoothness: 0.8 })
     .finders(FinderStyle::new(RingShape::Squircle, EyeShape::Circle))
     .frame(Frame::Circle { filler_density: 0.5, ring: FrameRing::None })
@@ -156,9 +154,12 @@ let svg: String = Style::new()
         ("fg", "oklch(32% 0.08 265)"),
         ("finder.eye", "oklch(62% 0.19 35)"),
     ])?)
-    .logo(Logo::svg(include_str!("logo.svg")).scale(0.22).backdrop(true))
-    .intro(Intro::Ripple.duration_ms(900))
-    .render(&qr)?;           // -> Result<String, RenderError>
+    .logo(Logo::svg(include_str!("logo.svg"))?.scale(0.22).backdrop(true))
+    .intro(Intro::Ripple.duration_ms(900));
+
+// The smallest code that can afford the logo (ECC raised, then version):
+let qr = QrCode::builder().ecc(Ecc::Q).encode_text_for("https://example.com", &style)?;
+let svg: String = style.render(&qr)?;   // -> Result<String, RenderError>
 
 // Streaming, no intermediate String:
 style.render_to(&qr, &mut writer)?;
@@ -167,7 +168,7 @@ style.render_to(&qr, &mut writer)?;
 let report = style.check(&qr);   // ScanReport { errors, warnings, min_contrast, … }; report.ok()
 ```
 
-- `RenderError` is returned for **hard failures**, such as a logo too large for the ECC budget, contrast below the floor, or no quiet zone.
+- `RenderError` is returned for **hard failures**, such as a logo too large for the ECC budget (`LogoTooLarge { max_scale }`), contrast below the floor, or no quiet zone.
 - `ScanReport.warnings` covers **soft risks**, such as inverted colors, low-contrast gradients, rounded finder rings, or very small module size at the target print size.
 - `Style` implements `Clone` and (with feature `serde`, optional dep) `Serialize`/`Deserialize`, so presets can be stored as JSON.
 - **Presets:** `Style::preset("ink")`, `"candy"`, `"terminal"`, … (a curated set that ships with the crate).
@@ -288,10 +289,16 @@ Timing styles (`TimingStyle`): `Plain` (data module shape), `Dotted` (0.8 circle
 
 ### 7.3 Logo in the middle (feature 1)
 
-- `Logo::svg(&str)` (inlined as a nested `<svg>` after sanitizing out scripts, external refs, and event attributes) or `Logo::raster(bytes, mime)` (inlined as a base64 `data:` URI using an in-house base64 encoder).
-- Options: `scale` (fraction of the QR width), `shape` (`Square` / `Circle` / `Rounded`), `backdrop` (a plate in `logo.backdrop` color with `padding`), and `clear_modules` (excavate the modules underneath, default on).
-- **ECC budget:** covered *data/ECC* modules are counted against the code's recoverable codewords. The budget defaults to ≤ 60% of the theoretical correction capacity, leaving margin for print and camera damage. If the logo exceeds the budget, then (a) `boost_ecc` is tried, (b) the version is bumped, or (c) the render fails with `LogoTooLarge { max_scale }`.
-- Excavation snaps to whole modules, and a ring of modules is never left partially cut.
+- `Logo::svg(&str)` or `Logo::raster(bytes, RasterFormat)`, both `Result<Logo, LogoError>`: content is validated when the logo is built, so `Style` stays infallible plain data.
+  - **SVG** is sanitized by an allowlist re-serializer, never by filtering the input text: the document is tokenized, only allowlisted elements (shapes, `g`, `defs`, `symbol`, `use`, gradients, `stop`, `clipPath`, `mask`, `text`/`tspan`, `image` with a base64 raster data URI) and attributes are kept as parsed values, entities are decoded, and everything is re-escaped on output. Dropped: scripts, event handlers, `foreignObject`, animation, links, `pattern`, DOCTYPEs and custom entities, `class`, namespaced attributes, characters XML can't carry. `url()` survives only as `url(#id)` and `href` only as `#id`. Simple `.class { … }` rules from `<style>` and the `style` attribute are folded into presentation attributes (attribute < class rule < `style`); everything else in CSS is dropped. A `use` may only point at an element without a `use` in it, at most 256 of them, so references can't expand exponentially. IDs and references get the code's prefix (`{prefix}-logo-…`) so an inline logo can't collide with the page. The root's viewBox (or width and height) sizes the content. `Logo::sanitized_svg` returns the clean document; sanitizing it again changes nothing (fuzzed: `logo_svg`).
+  - **Raster** bytes must start with the format's signature (PNG, JPEG, GIF, WebP); they are inlined as a base64 `data:` URI (in-house encoder) without being decoded.
+- Options: `scale` (the logo's width as a fraction of the code's, default 0.2, at most 0.5), `shape` (`Square` / `Rounded(r)` / `Circle`, the outline of the plate and the excavation), `backdrop` (a plate in `logo.backdrop`, default on), `padding` (modules between logo and code, default 0.5), `clear_modules` (leave out the modules under the plate, default on).
+- **Placement:** the plate is the shape, `scale · N + 2 · padding` wide, centered on the code. The content is fitted (`meet`) into the inner `scale · N` box and, for round shapes, clipped to the plate, so nothing paints outside the modules the budget counts.
+- **Covered modules** are the modules whose cell overlaps the plate; excavation is always whole modules. Covering a finder, separator, timing, format or version module, the dark module, or the bottom-right alignment pattern (the one scanners use) is not allowed. Other alignment patterns under the plate are left out whole.
+- **ECC budget:** every codeword with a covered module counts as damaged, whatever the module's value, because a logo pixel may read either way (Outline only counts dark modules it clears, since those read light). Damage is counted per Reed–Solomon block against `DAMAGE_BUDGET` = 60% of each block's correctable codewords, together with any Outline clearing. A logo over budget, or one that reaches a forbidden module, fails with `RenderError::LogoTooLarge { max_scale }`: the largest scale, in hundredths, that fits this matrix. Measured: the largest affordable logo scans at the full bar (rqrr and the degraded render) for every ECC level at v2–v40, as a dark logo with no plate too; affordable scales are about 0.1–0.25 of the width at L/M and 0.16–0.37 at Q/H. Version 1 holds almost nothing: its format information sits in row and column 8 and 13.
+- **Fitting:** `QrBuilder::encode_text_for(text, &style)` walks versions up from the smallest that holds the text, each at the highest ECC level it fits (with `boost_ecc`, the default), and returns the first code whose budget affords the style: "boost ECC, then bump the version". When nothing in range fits, it returns the plain code, and rendering reports `LogoTooLarge`.
+
+*(rev. W20261025223145)*
 
 ### 7.4 Round QR codes (feature 3)
 
@@ -528,7 +535,7 @@ Errors cross the boundary as a structured `{ code, message, detail }` value and 
 
 `freeqrent "https://x.y" --shape dots:0.8 --finder squircle/circle --fg "oklch(32% .08 265)" --verify -o code.svg`
 
-Built in M1 (crate `freeqrent-cli`, binary `freeqrent`, arguments via `lexopt`). Style flags mirror `Style`: `--shape`, `--finder RING[/EYE]`, `--corner CORNER=RING[/EYE]`, `--alignment`, `--emphasis`, `--timing`, `--token NAME=PAINT` (plus `--fg`/`--bg`), `--quiet-zone`, `--allow-inverted`, `--target-px`/`--target-mm`; encoding with `--ecc` and `--version`; output with `-o`, `--pretty`, `--title`, `--label` (defaults to the payload when it's an http(s) URL). `--check` prints the `ScanReport`; `--verify` decodes the render against the style's own bar (feature `verify`, on by default, uses `freeqrent-verify`); `--gallery FILE` writes an HTML page of style families for the payload (fourteen as of M2), each with the command that reproduces it and its verdict. Exit codes: 0 ok, 1 refused or failed verification, 2 bad arguments. `--frame square|rounded[:r]|circle[:density]|none`, `--frame-ring none|solid|dashed` and `--seed N` came with M2 frames. Later milestones add `--logo`, `--palette-from-image` and `--intro`. *(rev. W20261025215711, W20261025222326)*
+Built in M1 (crate `freeqrent-cli`, binary `freeqrent`, arguments via `lexopt`). Style flags mirror `Style`: `--shape`, `--finder RING[/EYE]`, `--corner CORNER=RING[/EYE]`, `--alignment`, `--emphasis`, `--timing`, `--token NAME=PAINT` (plus `--fg`/`--bg`), `--quiet-zone`, `--allow-inverted`, `--target-px`/`--target-mm`; encoding with `--ecc` and `--version`; output with `-o`, `--pretty`, `--title`, `--label` (defaults to the payload when it's an http(s) URL). `--check` prints the `ScanReport`; `--verify` decodes the render against the style's own bar (feature `verify`, on by default, uses `freeqrent-verify`); `--gallery FILE` writes an HTML page of style families for the payload (fifteen as of M2), each with the command that reproduces it and its verdict. Exit codes: 0 ok, 1 refused or failed verification, 2 bad arguments. M2 added `--shape liquid[:s]`; `--frame square|rounded[:r]|circle[:density]|none`, `--frame-ring none|solid|dashed`, `--seed N`; `--logo FILE|sample` (SVG by extension or content, rasters by signature) with `--logo-scale`, `--logo-shape square|rounded[:r]|circle`, `--logo-padding`, `--no-logo-backdrop` and `--keep-modules`. The CLI always encodes with `encode_text_for`, so a logo or Outline grows the code instead of being refused, and each gallery family gets its own fitted code. Later milestones add `--palette-from-image` and `--intro`. *(rev. W20261025215711, W20261025222326, W20261025223145)*
 
 Phase 1: `cargo install` and GitHub releases. Phase 2: also an npm `bin` (WASM, so it works anywhere Node runs).
 
@@ -561,7 +568,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 |---|---|
 | **M0: Encoder** | Versions 1–40, all ECC, auto segmentation, masks, `QrMatrix` + roles, version pinning. Verified against `rqrr`, the ISO 18004 worked examples, and module-for-module against `qrcodegen`. Fuzzing (`cargo fuzz`) on inputs. **Done 2026-10-25.** |
 | **M1: Static styles** | SVG writer, Square/Rounded/Dots/Bars, finder/alignment/timing styles, tokens + contrast checks, quiet zone, `Style::check`, CLI for previewing. Verified with resvg + ZXing (`rxing`) + rqrr. **Done 2026-10-25.** |
-| **M2: Liquid + logo + round** | Contour-traced Liquid, logo excavation with ECC budget, circle frame with filler. |
+| **M2: Liquid + logo + round** | Contour-traced Liquid, logo excavation with ECC budget, circle frame with filler. **Done 2026-10-25.** |
 | **M3: Animation** | `AnimationPlan`, grouping engine, core intro presets, reduced motion, static-fallback tests, palette transitions. |
 | **M4: Palettes** | OKLab k-means extraction, CSS/HTML parsing, `freeqrent-image`. |
 | **M5: Halftone + art mode** | Free-bit solver, module steering, 3×3 halftone, clarity map, tracking grids, `Develop` intro, real-device scan matrix. |
@@ -581,7 +588,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 
 - Unit tests per stage. **Snapshot tests** (`insta`, dev-dep; `crates/freeqrent/tests/snapshots.rs`) on whole pretty-printed documents; determinism makes these reliable. Review changes with `cargo insta review`. The CLI has end-to-end tests that run the binary. *(rev. W20261025215711)*
 - Round-trip scan tests (§9) in CI.
-- `cargo fuzz` targets: encoder (`encode_text`, `encode_segments`), CSS color/gradient parser (`color_parse`: no panics, canonical output re-parses to the same value), CSS/HTML palette parser, logo SVG sanitizer.
+- `cargo fuzz` targets: encoder (`encode_text`, `encode_segments`), CSS color/gradient parser (`color_parse`: no panics, canonical output re-parses to the same value), logo SVG sanitizer (`logo_svg`: no panics, the clean document sanitizes to itself, rendered codes carry no dropped markup; seeds in `fuzz/seeds/logo_svg`), CSS/HTML palette parser (M4).
 - Benchmarks: target < 1 ms to render a v10 styled static code, and < 5 ms with Liquid + animation, on a modern laptop.
 - WASM size check in CI (§2).
 - `cargo deny` for licenses, advisories and sources; `scripts/check-core-deps.sh` keeps the core's dependency tree empty.

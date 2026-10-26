@@ -78,8 +78,33 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 14);
-    // All but Outline, which version 2 can't afford.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 13);
+    assert_eq!(html.matches("<figure>").count(), 15);
+    // Each family gets a code that can afford it, so all of them decode.
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 15);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn logos_grow_the_code_until_they_fit() {
+    let out = freeqrent(&[
+        "https://example.com",
+        "--logo",
+        "sample",
+        "--logo-scale",
+        "0.3",
+        "--check",
+    ]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    assert!(stdout(&out).contains("error-correction budget used"));
+    let missing = freeqrent(&["HELLO", "--logo", "/nonexistent/logo.svg"]);
+    assert_eq!(missing.status.code(), Some(2));
+    assert!(stderr(&missing).contains("--logo /nonexistent/logo.svg"));
+    // Pinned too small, the logo is refused with the scale that would fit.
+    let pinned = freeqrent(&["HELLO", "--logo", "sample", "--version", "2", "--check"]);
+    assert_eq!(pinned.status.code(), Some(1));
+    assert!(
+        stdout(&pinned).contains("at most scale"),
+        "{}",
+        stdout(&pinned)
+    );
 }

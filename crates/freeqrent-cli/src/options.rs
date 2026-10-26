@@ -2,8 +2,8 @@
 //! text after the flag, e.g. `dots:0.8` for `--shape`.
 
 use freeqrent::{
-    AlignmentShape, Axis, Corner, Ecc, Emphasis, EyeShape, Frame, FrameRing, ModuleShape,
-    RingShape, TimingStyle,
+    AlignmentShape, Axis, Corner, Ecc, Emphasis, EyeShape, Frame, FrameRing, LogoShape,
+    ModuleShape, RingShape, TimingStyle,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -214,6 +214,26 @@ pub fn frame_ring(value: &str) -> Result<FrameRing, String> {
     }
 }
 
+/// `square`, `rounded[:radius]`, `circle`.
+pub fn logo_shape(value: &str) -> Result<LogoShape, String> {
+    let (name, param) = named(value)?;
+    match name {
+        "square" => no_param(name, param).map(|()| LogoShape::Square),
+        "rounded" => Ok(LogoShape::Rounded(param.unwrap_or(1.0))),
+        "circle" => no_param(name, param).map(|()| LogoShape::Circle),
+        _ => Err(format!(
+            "unknown logo shape {name:?}: try square, rounded or circle"
+        )),
+    }
+}
+
+/// A number for `--flag`.
+pub fn number(flag: &str, value: &str) -> Result<f32, String> {
+    value
+        .parse()
+        .map_err(|_| format!("--{flag}: {value:?} isn't a number"))
+}
+
 /// `L`, `M`, `Q`, `H` (either case).
 pub fn ecc(value: &str) -> Result<Ecc, String> {
     match value.to_ascii_uppercase().as_str() {
@@ -304,6 +324,8 @@ mod tests {
         );
         assert!(frame("none:1", FrameRing::None).is_err());
         assert!(frame_ring("dotted").is_err());
+        assert_eq!(logo_shape("rounded:2").unwrap(), LogoShape::Rounded(2.0));
+        assert!(logo_shape("circle:1").is_err());
         assert_eq!(
             token("fg=oklch(32% .08 265)").unwrap(),
             ("fg".to_string(), "oklch(32% .08 265)".to_string())

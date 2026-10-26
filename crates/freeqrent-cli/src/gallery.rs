@@ -3,7 +3,7 @@
 
 use std::fmt::Write;
 
-use freeqrent::QrMatrix;
+use freeqrent::QrBuilder;
 
 use crate::StyleArgs;
 
@@ -73,6 +73,16 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
         &[("emphasis", "outline"), ("token", "alignment=#1f4e79")],
     ),
     (
+        "Logo",
+        &[
+            ("logo", "sample"),
+            ("logo-shape", "rounded:1.5"),
+            ("logo-scale", "0.22"),
+            ("shape", "rounded:0.5"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
         "Mixed corners",
         &[
             ("corner", "top-right=leaf/circle"),
@@ -100,7 +110,7 @@ fn shell_quote(value: &str) -> String {
     }
 }
 
-pub fn page(text: &str, qr: &QrMatrix, base: &StyleArgs) -> String {
+pub fn page(text: &str, builder: &QrBuilder, base: &StyleArgs) -> String {
     let mut cards = String::new();
     for (name, flags) in FAMILIES {
         let mut args = base.clone();
@@ -115,7 +125,13 @@ pub fn page(text: &str, qr: &QrMatrix, base: &StyleArgs) -> String {
         let rendered = problem.map_or_else(
             || {
                 let style = args.build(text)?;
+                // Each family gets the smallest code its style can afford.
+                let qr = builder
+                    .encode_text_for(text, &style)
+                    .map_err(|e| e.to_string())?;
+                let qr = &qr;
                 let svg = style.render(qr).map_err(|e| e.to_string())?;
+                let size = format!("version {}, ECC {:?}", qr.version().number(), qr.ecc());
                 let verdict = match crate::verify(&style, qr, text) {
                     Ok(v) => v,
                     Err(e) if cfg!(feature = "verify") => format!("does not decode: {e}"),
@@ -127,7 +143,7 @@ pub fn page(text: &str, qr: &QrMatrix, base: &StyleArgs) -> String {
                     .iter()
                     .map(|w| w.to_string())
                     .collect();
-                Ok((svg, verdict, warnings))
+                Ok((svg, format!("{verdict} · {size}"), warnings))
             },
             Err,
         );
@@ -210,7 +226,7 @@ code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, mon
 <body>
 <header>
 <h1>Style families</h1>
-<p>{payload} &middot; version {version}, ECC {ecc:?}</p>
+<p>{payload}</p>
 </header>
 <main>
 {cards}</main>
@@ -218,7 +234,5 @@ code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, mon
 </html>
 "#,
         payload = escape(text),
-        version = qr.version().number(),
-        ecc = qr.ecc(),
     )
 }

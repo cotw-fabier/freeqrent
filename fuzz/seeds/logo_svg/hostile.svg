@@ -1,0 +1,1 @@
+<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY e "x">]><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24px" height="24"><style><![CDATA[.a{fill:#123}]]></style><script>alert(1)</script><path class="a" d="M0 0h1" onclick="x"/><image xlink:href="data:image/png;base64,iVBORw0KGgo="/><a href="javascript:x"><rect/></a></svg>

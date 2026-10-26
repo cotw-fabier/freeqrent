@@ -4,7 +4,8 @@
 
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Corner, Ecc, Emphasis, EyeShape, FinderStyle, Frame,
-    FrameRing, ModuleShape, Palette, QrCode, QrMatrix, RingShape, Style, TimingStyle, Version,
+    FrameRing, Logo, LogoShape, ModuleShape, Palette, QrCode, QrMatrix, RingShape, Style,
+    TimingStyle, Version,
 };
 
 fn code(version: u8) -> QrMatrix {
@@ -109,4 +110,23 @@ fn round_frame_with_dashed_ring() {
             ring: FrameRing::Dashed,
         });
     insta::assert_snapshot!(render(style, 1));
+}
+
+#[test]
+fn circle_logo_on_liquid() {
+    let logo = Logo::svg(
+        r##"<svg viewBox="0 0 10 10"><defs><linearGradient id="g"><stop offset="0" stop-color="#c2410c"/><stop offset="1" stop-color="#7c2d12"/></linearGradient></defs><circle cx="5" cy="5" r="5" fill="url(#g)"/><script>alert(1)</script></svg>"##,
+    )
+    .unwrap()
+    .scale(0.25)
+    .shape(LogoShape::Circle);
+    let style = Style::new()
+        .modules(ModuleShape::Liquid { smoothness: 1.0 })
+        .logo(logo);
+    let qr = QrCode::builder()
+        .ecc(Ecc::H)
+        .version(Version::new(5).unwrap())
+        .encode_text("HELLO")
+        .unwrap();
+    insta::assert_snapshot!(style.minify(false).render(&qr).unwrap());
 }
