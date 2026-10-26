@@ -18,6 +18,10 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
     ),
     ("Bars", &[("shape", "bars-v:0.5"), ("finder", "rounded:1")]),
     (
+        "Liquid",
+        &[("shape", "liquid:0.8"), ("finder", "rounded:2/rounded:1")],
+    ),
+    (
         "Squircle",
         &[
             ("shape", "dots:0.9"),

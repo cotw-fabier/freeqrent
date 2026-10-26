@@ -90,3 +90,11 @@ fn gapped_squares_translucent_on_transparent() {
         .quiet_zone(2);
     insta::assert_snapshot!(render(style, 1));
 }
+
+#[test]
+fn liquid_with_rounded_finders() {
+    let style = Style::new()
+        .modules(ModuleShape::Liquid { smoothness: 0.8 })
+        .finders(FinderStyle::new(RingShape::Rounded(2.0), EyeShape::Circle));
+    insta::assert_snapshot!(render(style, 1));
+}

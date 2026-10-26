@@ -249,7 +249,7 @@ Paint is written at two levels, because renderers disagree about CSS:
 | `Square` ("box") | Classic squares, optional `gap` (0–0.25; at 0.3 rqrr lost codes at 6 px/module) | Merge horizontal runs into rects, then one path |
 | `Rounded { radius }` | Squares with corners rounded only where they don't touch a neighbor | Per-corner neighbor test (4-neighborhood) |
 | `Dots { size }` | Circles, size 0.6–1.0 | Arc path per module; `size < 0.75` raises a warning |
-| `Liquid { smoothness }` | Neighboring modules flow into one blob, with concave inner corners filled ("gooey") | Contour tracing on the dark-region boundary, then corners rounded with quadratic Béziers. Inner fillets are added at L-junctions. One path per connected region. |
+| `Liquid { smoothness }` | Neighboring modules flow into one blob, with concave inner corners filled ("gooey"). Smoothness 0–1 | Contour tracing on the module lattice: boundary edges keep dark on the right (outer contours clockwise, holes counter-clockwise, nonzero fill), and where two modules touch only diagonally the walk turns right so they stay apart. Every corner is cut with one quadratic Bézier whose control point is the vertex, reaching `smoothness / 2` along each edge: convex corners round off, concave ones get the fillet. One subpath per contour. *(rev. W20261025221811)* |
 | `Bars { axis, radius }` | Vertical or horizontal pills that merge runs along an axis | Run-length per row/column → rounded rects |
 | `Diamond`, `Star`, `Plus`, … | Fun extras (v1.x) | Per-module glyph |
 | `Custom(fn)` | *Deferred (ROADMAP):* a user callback breaks "options are plain data" and can't cross the binding boundary | — |

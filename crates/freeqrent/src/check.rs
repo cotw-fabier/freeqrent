@@ -240,6 +240,9 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
                 warnings.push(Warning::SmallDots { size });
             }
         }
+        ModuleShape::Liquid { smoothness } => {
+            in_range(&mut errors, "Liquid.smoothness", smoothness, 0.0, 1.0)
+        }
         ModuleShape::Bars { radius, .. } => in_range(&mut errors, "Bars.radius", radius, 0.0, 0.5),
     }
 

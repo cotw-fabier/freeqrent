@@ -112,6 +112,16 @@ impl Path {
         self.at = end;
     }
 
+    /// A quadratic Bézier through control point `c` to `end`.
+    pub(crate) fn quad_to(&mut self, c: (i64, i64), end: (i64, i64)) {
+        self.cmd('q');
+        for (x, y) in [c, end] {
+            self.num(x - self.at.0);
+            self.num(y - self.at.1);
+        }
+        self.at = end;
+    }
+
     pub(crate) fn close(&mut self) {
         self.cmd('z');
         self.at = self.start;
@@ -231,6 +241,9 @@ pub(crate) fn draw_modules(shape: &ModuleShape, grid: &Grid, origin: i64, path: 
                 }
             }
         }
+        ModuleShape::Liquid { smoothness } => {
+            draw_liquid(grid, origin, units(smoothness) / 2, path);
+        }
         ModuleShape::Bars { axis, radius } => {
             let r = units(radius);
             for_runs(grid, axis, |line, a, b| {
@@ -242,6 +255,126 @@ pub(crate) fn draw_modules(shape: &ModuleShape, grid: &Grid, origin: i64, path: 
             });
         }
     }
+}
+
+/// Directions on the module lattice, clockwise on screen (y grows down).
+const RIGHT: usize = 0;
+const DOWN: usize = 1;
+const LEFT: usize = 2;
+const UP: usize = 3;
+const STEP: [(i64, i64); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
+/// Liquid (SPEC §7.1): traces the boundary of each dark region and rounds
+/// every corner of it with radius `r` path units.
+///
+/// The boundary is the set of cell edges with dark on one side and light
+/// on the other, directed so dark is on the right: outer contours run
+/// clockwise and holes counter-clockwise, so the nonzero fill rule is
+/// enough. At a vertex where two dark cells touch only diagonally the walk
+/// turns right, which keeps them in separate blobs.
+///
+/// Each corner leaves the incoming edge `r` before the vertex and joins
+/// the outgoing edge `r` after it, with a quadratic Bézier whose control
+/// point is the vertex. On a convex corner that rounds the blob; on a
+/// concave one the curve runs through the light cell, filling the inner
+/// corner. Edges are at least one module long and `r` at most half of
+/// one, so neighboring corners never overlap.
+fn draw_liquid(grid: &Grid, origin: i64, r: i64, path: &mut Path) {
+    let n = grid.size();
+    let side = (n + 1) as usize;
+    let dark = |x: i64, y: i64| grid.get(x, y);
+    // Outgoing boundary edges at each lattice vertex, one bit per direction.
+    let mut out = vec![0u8; side * side];
+    for y in 0..=n {
+        for x in 0..=n {
+            let mut bits = 0;
+            if dark(x, y) && !dark(x, y - 1) {
+                bits |= 1 << RIGHT;
+            }
+            if dark(x - 1, y) && !dark(x, y) {
+                bits |= 1 << DOWN;
+            }
+            if dark(x - 1, y - 1) && !dark(x - 1, y) {
+                bits |= 1 << LEFT;
+            }
+            if dark(x, y - 1) && !dark(x - 1, y - 1) {
+                bits |= 1 << UP;
+            }
+            out[y as usize * side + x as usize] = bits;
+        }
+    }
+    let index = |(x, y): (i64, i64)| y as usize * side + x as usize;
+    let mut dirs: Vec<usize> = Vec::new();
+    let mut corners: Vec<((i64, i64), usize, usize)> = Vec::new();
+    for start in 0..out.len() {
+        while out[start] != 0 {
+            let first_v = ((start % side) as i64, (start / side) as i64);
+            let first = out[start].trailing_zeros() as usize;
+            let (mut v, mut dir) = (first_v, first);
+            dirs.clear();
+            // Each edge has exactly one successor (at a diagonal touch the
+            // two right turns pair the four edges), so the walk is a cycle
+            // back to the first edge.
+            loop {
+                out[index(v)] &= !(1 << dir);
+                dirs.push(dir);
+                v = (v.0 + STEP[dir].0, v.1 + STEP[dir].1);
+                let here = out[index(v)];
+                let next = [(dir + 1) % 4, dir, (dir + 3) % 4]
+                    .into_iter()
+                    .find(|&d| here & (1 << d) != 0);
+                match next {
+                    Some(next) => dir = next,
+                    // The only edge left is the first one, already taken.
+                    None => break,
+                }
+            }
+            // Corners: the vertex after step i, where the direction changes.
+            corners.clear();
+            let mut p = first_v;
+            for (i, &d) in dirs.iter().enumerate() {
+                p = (p.0 + STEP[d].0, p.1 + STEP[d].1);
+                let next = dirs[(i + 1) % dirs.len()];
+                if next != d {
+                    corners.push((p, d, next));
+                }
+            }
+            // Start at the loop's top-left vertex, where the walk began.
+            corners.rotate_right(1);
+            draw_corners(&corners, origin, r, path);
+        }
+    }
+}
+
+/// Draws one closed contour through `corners` (vertex, incoming and
+/// outgoing direction), cutting each corner with a quadratic of reach `r`.
+fn draw_corners(corners: &[((i64, i64), usize, usize)], origin: i64, r: i64, path: &mut Path) {
+    let point = |(x, y): (i64, i64)| (origin + x * UNIT, origin + y * UNIT);
+    let offset = |(x, y): (i64, i64), d: usize, by: i64| (x + STEP[d].0 * by, y + STEP[d].1 * by);
+    let Some(&(p0, _, out0)) = corners.first() else {
+        return;
+    };
+    let start = offset(point(p0), out0, r);
+    path.move_to(start.0, start.1);
+    for (i, (p, d_in, d_out)) in corners
+        .iter()
+        .copied()
+        .enumerate()
+        .skip(1)
+        .chain([(0, corners[0])])
+    {
+        // With square corners, closing the path draws the last edge.
+        if i == 0 && r == 0 {
+            break;
+        }
+        let p = point(p);
+        let before = offset(p, d_in, -r);
+        path.line_to(before.0, before.1);
+        if r > 0 {
+            path.quad_to(p, offset(p, d_out, r));
+        }
+    }
+    path.close();
 }
 
 /// Calls `f(line, start, end)` for every maximal run of set cells along
@@ -336,6 +469,43 @@ mod tests {
     fn dots_are_circles() {
         let d = draw(ModuleShape::Dots { size: 0.8 }, &["#"]);
         assert_eq!(d, "m.1.5a.4.4 0 0 1 .8 0a.4.4 0 0 1-.8 0z");
+    }
+
+    fn liquid(smoothness: f32, rows: &[&str]) -> String {
+        draw(ModuleShape::Liquid { smoothness }, rows)
+    }
+
+    #[test]
+    fn liquid_traces_region_outlines() {
+        // Square corners: the outline of each region, runs merged.
+        assert_eq!(liquid(0.0, &["#"]), "m0 0h1v1h-1z");
+        assert_eq!(liquid(0.0, &["##", "#."]), "m0 0h2v1h-1v1h-1z");
+        // Rounded: each corner is a quadratic with the vertex as control.
+        assert_eq!(
+            liquid(1.0, &["#"]),
+            "m.5 0q.5 0 .5.5q0 .5-.5.5q-.5 0-.5-.5q0-.5.5-.5z"
+        );
+    }
+
+    #[test]
+    fn liquid_fills_inner_corners() {
+        // The concave corner at (1, 1) bends into the light cell.
+        let d = liquid(0.5, &["##", "#."]);
+        assert_eq!(d.matches('q').count(), 6);
+        assert!(d.contains("h-.5q-.25 0-.25.25v.5"), "{d}");
+    }
+
+    #[test]
+    fn liquid_keeps_diagonal_neighbors_apart() {
+        let d = liquid(0.0, &["#.", ".#"]);
+        assert_eq!(d, "m0 0h1v1h-1zm1 1h1v1h-1z");
+    }
+
+    #[test]
+    fn liquid_holes_wind_the_other_way() {
+        let d = liquid(0.0, &["###", "#.#", "###"]);
+        // Outer contour clockwise, the hole counter-clockwise.
+        assert_eq!(d, "m0 0h3v3h-3zm1 1v1h1v-1z");
     }
 
     #[test]

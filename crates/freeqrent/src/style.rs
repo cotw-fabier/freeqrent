@@ -40,6 +40,14 @@ pub enum ModuleShape {
         /// Diameter.
         size: f32,
     },
+    /// Neighboring modules flow into one blob per connected region, with
+    /// every corner rounded and concave inner corners filled ("gooey").
+    /// `smoothness` is 0–1: 0 gives the square outline, 1 rounds each
+    /// corner across half a module.
+    Liquid {
+        /// How far each corner's curve reaches, in half-modules.
+        smoothness: f32,
+    },
     /// Runs along `axis` merged into rounded bars. `radius` is 0–0.5.
     Bars {
         /// Which way runs merge.

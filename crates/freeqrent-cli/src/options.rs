@@ -25,8 +25,8 @@ fn no_param(name: &str, param: Option<f32>) -> Result<(), String> {
     }
 }
 
-/// `square[:gap]`, `rounded[:radius]`, `dots[:size]`, `bars-v[:radius]`,
-/// `bars-h[:radius]`.
+/// `square[:gap]`, `rounded[:radius]`, `dots[:size]`, `liquid[:smoothness]`,
+/// `bars-v[:radius]`, `bars-h[:radius]`.
 pub fn shape(value: &str) -> Result<ModuleShape, String> {
     let (name, param) = named(value)?;
     Ok(match name {
@@ -39,6 +39,9 @@ pub fn shape(value: &str) -> Result<ModuleShape, String> {
         "dots" => ModuleShape::Dots {
             size: param.unwrap_or(0.85),
         },
+        "liquid" => ModuleShape::Liquid {
+            smoothness: param.unwrap_or(0.8),
+        },
         "bars-v" | "bars-h" => ModuleShape::Bars {
             axis: if name == "bars-v" {
                 Axis::Vertical
@@ -49,7 +52,7 @@ pub fn shape(value: &str) -> Result<ModuleShape, String> {
         },
         _ => {
             return Err(format!(
-                "unknown shape {name:?}: try square, rounded, dots, bars-v or bars-h"
+                "unknown shape {name:?}: try square, rounded, dots, liquid, bars-v or bars-h"
             ));
         }
     })
@@ -213,6 +216,10 @@ mod tests {
                 axis: Axis::Vertical,
                 radius: 0.5
             }
+        );
+        assert_eq!(
+            shape("liquid").unwrap(),
+            ModuleShape::Liquid { smoothness: 0.8 }
         );
         assert!(shape("dots:big").is_err());
         assert!(shape("hex").is_err());

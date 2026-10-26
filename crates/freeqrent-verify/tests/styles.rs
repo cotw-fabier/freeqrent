@@ -26,6 +26,9 @@ fn shapes() -> Vec<ModuleShape> {
             axis: Axis::Horizontal,
             radius: 0.2,
         },
+        ModuleShape::Liquid { smoothness: 0.0 },
+        ModuleShape::Liquid { smoothness: 0.5 },
+        ModuleShape::Liquid { smoothness: 1.0 },
     ]
 }
 
@@ -67,7 +70,11 @@ fn palettes_scan() {
     ];
     for tokens in palettes {
         let palette = Palette::from_tokens(tokens.iter().copied()).unwrap();
-        for shape in [ModuleShape::SQUARE, ModuleShape::Dots { size: 0.85 }] {
+        for shape in [
+            ModuleShape::SQUARE,
+            ModuleShape::Dots { size: 0.85 },
+            ModuleShape::Liquid { smoothness: 1.0 },
+        ] {
             assert_scans(
                 &Style::new().palette(palette.clone()).modules(shape),
                 &format!("{tokens:?} {shape:?}"),

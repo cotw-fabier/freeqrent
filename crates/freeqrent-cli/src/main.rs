@@ -25,7 +25,8 @@ Encoding:
   --version N              pin the symbol version (1-40)
 
 Style:
-  --shape SHAPE            square[:gap] rounded[:r] dots[:size] bars-v[:r] bars-h[:r]
+  --shape SHAPE            square[:gap] rounded[:r] dots[:size] liquid[:smoothness]
+                           bars-v[:r] bars-h[:r]
   --finder RING[/EYE]      rings: square rounded[:r] squircle leaf
                            eyes:  square rounded[:r] circle squircle leaf
   --corner CORNER=RING[/EYE]

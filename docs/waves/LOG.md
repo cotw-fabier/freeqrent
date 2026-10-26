@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261025221811 · M2 · Liquid modules
+
+- Landed: `ModuleShape::Liquid { smoothness }` (0–1): contour tracing on the module lattice (dark on the right, so holes wind backwards and nonzero fill suffices; diagonal touches turn right and stay separate blobs), each corner cut by a quadratic with the vertex as control, which rounds convex corners and fills concave ones. `Path::quad_to`. CLI `--shape liquid[:s]` (default 0.8) and a gallery family.
+- Decision: one corner rule for convex and concave corners instead of separate fillet geometry; reach is `smoothness / 2`, so a unit edge's two corners never overlap.
+- Checks: 4 geometry unit tests (outline, fillet, diagonal split, hole winding); Liquid 0/0.5/1 in the shape and palette round trips; a probe of 168 codes (v1–40 step 3, ECC L and H, smoothness 0.5 and 1) passed the full bar, rqrr and the degraded render included. New snapshot `liquid_with_rounded_finders`; gallery now 13 families, 12 decoding. Release render v10 0.29 ms, v40 2.1 ms (352 KB).
+
 ## 20261025214510 · M1 · Scan boxes: finder, alignment and timing styles
 
 - Landed: `FinderStyle` (rings Square/Rounded/Squircle/Leaf, eyes Square/Rounded/Circle/Squircle/Leaf, per-corner overrides), `AlignmentStyle` (Match/Own × None/Accent/Outline), `TimingStyle` (Plain/Dotted/Dashed). `QrMatrix::codeword_map` (verified by rebuilding every RS block from the modules) and a per-block damage budget for cleared modules (`DAMAGE_BUDGET` 60%, `ScanReport.ecc_budget_used`). `freeqrent_verify::{Bar, verify_style}` hold each style to the bar its own report implies.
