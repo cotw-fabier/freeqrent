@@ -49,6 +49,52 @@ fn halftone_codes_scan() {
 }
 
 #[test]
+fn dark_halftones_scan() {
+    // Light ink on a dark twin: the picture is traced from its light
+    // parts, and the code reads at the full bar, inverted. Clarity 0.5 and
+    // a logo too, as the gallery's picture cards use them.
+    let dark = Palette::new().dark_twin();
+    let logo =
+        Logo::svg(r##"<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="5" fill="#c33"/></svg>"##)
+            .unwrap();
+    for kind in PICTURES {
+        let image = picture(kind, 200);
+        for ink in [Ink::Mono, Ink::Color { colors: 6 }] {
+            for clarity in [0.0, 0.5] {
+                for version in [5u8, 14, 27] {
+                    for ecc in [Ecc::L, Ecc::M, Ecc::Q] {
+                        let picture = Halftone::new(image.clone())
+                            .ink(ink)
+                            .clarity(Clarity::Uniform(clarity));
+                        let mut style = Style::new()
+                            .halftone(picture)
+                            .palette(dark.clone())
+                            .allow_inverted(true);
+                        if version == 14 {
+                            style = style.logo(logo.clone().scale(0.12));
+                        }
+                        let qr = fitted(&style, version, ecc);
+                        let label = format!("{kind} {ink:?} {clarity} {ecc:?}");
+                        let report = style.check(&qr);
+                        assert!(report.ok(), "{label}: {report:?}");
+                        assert!(
+                            report
+                                .warnings
+                                .iter()
+                                .all(|w| matches!(w, Warning::Inverted { .. })),
+                            "{label}: {report:?}"
+                        );
+                        if let Err(e) = verify_style(&style, &qr, TEXT) {
+                            panic!("{label} v{}: {e}", qr.version().number());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn logos_on_pictures_scan_at_every_size() {
     // rqrr samples one pixel through a perspective fitted to a single
     // alignment pattern, so it lands off-center: the reason for the 0.6

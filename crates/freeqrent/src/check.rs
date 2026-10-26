@@ -431,7 +431,12 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
 fn steering(style: &Style, qr: &QrMatrix) -> Option<Steering> {
     let halftone = style.halftone.as_ref()?;
     let n = qr.size() as usize;
-    let targets = halftone::module_targets(halftone, n, style.palette.background());
+    let targets = halftone::module_targets(
+        halftone,
+        n,
+        style.palette.background(),
+        style.inverted_ink(),
+    );
     let (mut code, mut matched) = (0, 0);
     for (x, y, dark, role) in qr.modules() {
         if !role.is_function() && role != crate::ModuleRole::Remainder {

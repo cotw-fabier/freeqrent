@@ -72,3 +72,52 @@ fn grids_pick_the_smallest_version_that_affords_the_style() {
         assert_eq!(qr.version(), grid.versions().0, "{grid:?}");
     }
 }
+
+#[test]
+fn dark_art_scans_on_every_grid() {
+    // On a dark twin the ink is light, so the picture is traced from its
+    // light parts: same bar, read inverted, and steering matches as well.
+    let dark = freeqrent::Palette::new().dark_twin();
+    for text in [
+        "https://example.com",
+        "https://example.com/menu/order?table=12&ref=freeqrent-art",
+    ] {
+        for grid in [
+            TrackingGrid::Sparse,
+            TrackingGrid::Standard,
+            TrackingGrid::Dense,
+        ] {
+            for ecc in [Ecc::L, Ecc::M, Ecc::Q] {
+                for kind in ["disc", "photo"] {
+                    for ink in [Ink::Mono, Ink::Color { colors: 6 }] {
+                        let picture = Halftone::new(picture(kind, 200)).ink(ink);
+                        let style = Style::art(picture)
+                            .palette(dark.clone())
+                            .allow_inverted(true);
+                        let qr = QrCode::builder()
+                            .ecc(ecc)
+                            .tracking_grid(grid)
+                            .encode_text_for(text, &style)
+                            .unwrap();
+                        let label = format!("{} {grid:?} {ecc:?} {kind} {ink:?}", text.len());
+                        let report = style.check(&qr);
+                        assert!(report.ok(), "{label}: {report:?}");
+                        assert!(
+                            report
+                                .warnings
+                                .iter()
+                                .all(|w| matches!(w, freeqrent::Warning::Inverted { .. })),
+                            "{label}: {report:?}"
+                        );
+                        let s = report.steering.unwrap();
+                        assert!(s.steerable_modules * 4 > s.code_modules, "{label}");
+                        assert!(s.matched_modules * 5 > s.code_modules * 3, "{label}");
+                        if let Err(e) = verify_style(&style, &qr, text) {
+                            panic!("{label} v{}: {e}", qr.version().number());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

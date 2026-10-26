@@ -67,6 +67,7 @@ pub(crate) fn halftone_cells(style: &Style, qr: &QrMatrix) -> Option<crate::half
         qr,
         &scene::removed(style, qr),
         style.palette.background(),
+        style.inverted_ink(),
     ))
 }
 

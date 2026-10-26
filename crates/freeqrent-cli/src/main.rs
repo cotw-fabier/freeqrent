@@ -107,8 +107,8 @@ Style:
   --no-steer               keep standard padding (no module steering)
   --allow-inverted         permit light modules on a dark background, and let
                            --palette-from-* keep a dark source's polarity
-  --dark                   the palette's dark twin: lightness mirrored, contrast
-                           kept (implies --allow-inverted; not for pictures)
+  --dark                   the palette's dark twin: luma mirrored, hue kept
+                           (implies --allow-inverted); pictures stay upright
   --target-px N            displayed size in device pixels (warns when too small)
   --target-mm N            printed size in millimeters (warns when too small)
 
@@ -495,12 +495,6 @@ impl StyleArgs {
         }
         let halftone = self.halftone();
         if self.dark {
-            if halftone.is_some() {
-                return Err(
-                    "--dark doesn't apply to pictures: inverted halftones aren't measured"
-                        .to_string(),
-                );
-            }
             palette = palette.dark_twin();
         }
         if halftone.is_none()

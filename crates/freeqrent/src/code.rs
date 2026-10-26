@@ -173,9 +173,11 @@ impl QrBuilder {
             return plain.encode_with(|v| &plans[v.count_band()], None);
         }
         let backdrop = style.palette.background();
+        let inverted = style.inverted_ink();
         let wants = |v: Version| {
             let roles = crate::matrix::skeleton(v);
-            let mut wants = halftone::wants(halftone, &roles, v.size() as usize, backdrop);
+            let mut wants =
+                halftone::wants(halftone, &roles, v.size() as usize, backdrop, inverted);
             for i in scene::cleared_in(style, v, &roles) {
                 wants[i] = Want {
                     dark: false,

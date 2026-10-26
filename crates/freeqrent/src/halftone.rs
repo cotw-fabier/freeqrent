@@ -393,17 +393,37 @@ pub(crate) fn dither(lightness: &[f64], n: usize) -> Vec<bool> {
     dark
 }
 
-/// The picture's lightness at module resolution, stretched.
-pub(crate) fn module_lightness(halftone: &Halftone, n: usize, backdrop: Color) -> Vec<f64> {
+/// The picture's lightness at module resolution, stretched. With
+/// `inverted` ink (lighter than the background, SPEC §7.7) it is turned
+/// over, so ink goes where the picture is light and the picture still
+/// shows the right way round.
+pub(crate) fn module_lightness(
+    halftone: &Halftone,
+    n: usize,
+    backdrop: Color,
+    inverted: bool,
+) -> Vec<f64> {
     let cells = sample(&halftone.image, halftone.fit, halftone.focal, n);
     let l = lightness(&cells, backdrop);
     let levels = Levels::of(&l);
-    l.into_iter().map(|v| levels.apply(v)).collect()
+    l.into_iter()
+        .map(|v| flip(levels.apply(v), inverted))
+        .collect()
 }
 
-/// The picture's light and dark at module resolution.
-pub(crate) fn module_targets(halftone: &Halftone, n: usize, backdrop: Color) -> Vec<bool> {
-    squeezed(&module_lightness(halftone, n, backdrop), n)
+/// `l`, turned over when the ink is lighter than the background.
+fn flip(l: f64, inverted: bool) -> f64 {
+    if inverted { 1.0 - l } else { l }
+}
+
+/// The picture's ink and paper at module resolution (`true` for ink).
+pub(crate) fn module_targets(
+    halftone: &Halftone,
+    n: usize,
+    backdrop: Color,
+    inverted: bool,
+) -> Vec<bool> {
+    squeezed(&module_lightness(halftone, n, backdrop, inverted), n)
 }
 
 fn squeezed(l: &[f64], n: usize) -> Vec<bool> {
@@ -434,8 +454,9 @@ pub(crate) fn wants(
     roles: &[ModuleRole],
     n: usize,
     backdrop: Color,
+    inverted: bool,
 ) -> Vec<Want> {
-    let l = module_lightness(halftone, n, backdrop);
+    let l = module_lightness(halftone, n, backdrop, inverted);
     let dark = squeezed(&l, n);
     let map = halftone.priority.as_ref().map(|p| {
         let cells = sample(p, halftone.fit, halftone.focal, n);
@@ -530,6 +551,7 @@ pub(crate) fn subcells(
     qr: &QrMatrix,
     removed: &Grid,
     backdrop: Color,
+    inverted: bool,
 ) -> Subcells {
     let n = qr.size() as usize;
     let side = n * 3;
@@ -582,7 +604,7 @@ pub(crate) fn subcells(
             } else {
                 1.0
             };
-            let l = CELL_SPAN + levels.apply(lab[i][0]) * (1.0 - 2.0 * CELL_SPAN);
+            let l = CELL_SPAN + flip(levels.apply(lab[i][0]), inverted) * (1.0 - 2.0 * CELL_SPAN);
             (1.0 - clarity[i]) * l + clarity[i] * target
         })
         .collect();
@@ -629,18 +651,26 @@ pub(crate) fn subcells(
             &dark,
             halftone.bands,
             colors.clamp(2, 16) as usize,
+            inverted,
         )),
     };
     Subcells { side, dark, colors }
 }
 
 /// Clamps each sub-cell's color into its band (dark at most `bands.0`,
-/// light at least `bands.1`), then reduces each band to `k` colors with
-/// k-means in OKLab, started from evenly spaced lightness quantiles so the
-/// result is deterministic.
-fn quantize(lab: &[[f64; 3]], dark: &[Option<bool>], bands: (f32, f32), k: usize) -> Quantized {
-    let clamp = |c: [f64; 3], d: bool| {
-        let l = if d {
+/// light at least `bands.1`; ink takes the light band when `inverted`),
+/// then reduces each band to `k` colors with k-means in OKLab, started
+/// from evenly spaced lightness quantiles so the result is deterministic.
+/// The palette's flag marks ink.
+fn quantize(
+    lab: &[[f64; 3]],
+    dark: &[Option<bool>],
+    bands: (f32, f32),
+    k: usize,
+    inverted: bool,
+) -> Quantized {
+    let clamp = |c: [f64; 3], ink: bool| {
+        let l = if ink != inverted {
             c[0].min(bands.0 as f64)
         } else {
             c[0].max(bands.1 as f64)
@@ -820,7 +850,7 @@ mod tests {
         // 5 × 5 window, so no area of the code is flat.
         let n = 45;
         let black = Halftone::new(Rgba8Image::filled(10, 10, [0, 0, 0, 255]).unwrap());
-        let t = module_targets(&black, n, Color::srgb(255, 255, 255));
+        let t = module_targets(&black, n, Color::srgb(255, 255, 255), false);
         for y in 0..n - 4 {
             for x in 0..n - 4 {
                 let light = (0..25).filter(|i| !t[(y + i / 5) * n + x + i % 5]).count();
@@ -847,7 +877,7 @@ mod tests {
             .encode_text_for("https://example.com", &style)
             .unwrap();
         let n = qr.size() as usize;
-        let targets = module_targets(&picture, n, style.palette.background());
+        let targets = module_targets(&picture, n, style.palette.background(), false);
         let half = |left: bool| {
             let (mut hit, mut all) = (0, 0);
             for (x, y, dark, role) in qr.modules() {
@@ -884,7 +914,7 @@ mod tests {
             .unwrap();
         let removed = crate::scene::removed(&style, &qr);
         let h = style.halftone.as_ref().unwrap();
-        let cells = subcells(h, &qr, &removed, style.palette.background());
+        let cells = subcells(h, &qr, &removed, style.palette.background(), false);
         (qr, style, cells)
     }
 

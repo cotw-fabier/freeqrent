@@ -52,7 +52,7 @@ Each item says where it came from, so we remember why it's here.
 - **`--palette-from-url`:** the CLI fetching a page itself, behind an opt-in feature with a small HTTP client. Dropped from M4 to keep TLS out of the CLI's tree; `curl -s URL | freeqrent … --palette-from-html -` does the same (W20261026074436).
 - **Linked style sheets:** `from_html` reads inline `<style>` only; a caller could pass `<link rel=stylesheet>` targets back in (W20261026074436).
 - **Dark-scheme palettes:** `from_css`/`from_html` skip `@media (prefers-color-scheme: dark)` rules even with `allow_inverted`; reading a light site's dark scheme would give it a dark palette of its own (W20261026141235).
-- **Inverted art and halftones:** pictures keep dark-on-light ink; `allow_inverted` on a halftone or art code isn't measured (W20261026141235).
+- **Framed logos on pictures at odd sizes:** with a bracket, ring or orbit frame on a 0.12 logo, light picture codes at ECC M miss rqrr at 7 px per module, and dark color-ink twins at 6–7 px (sometimes 12–13). The bar renders at 4, 6 and 10 px, so most pass it by luck of size. Measured W20261026145847 on the two wallpapers and the sample sunset. Without a frame, every size from 4 to 14 px reads. A wider damage margin for framed plates on pictures, or more render sizes in the bar, would close it.
 
 ## Scannability
 

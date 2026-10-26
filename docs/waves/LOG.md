@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026145847 · M5 · Dark pictures
+
+- Landed: light ink for pictures. With `fg` lighter than `bg`, halftones and art mode turn the picture's lightness over for steering and sub-cells, so ink lands where the picture is light and the picture stays upright on the dark background. In color, ink takes the light band, and colors still come from the picture. `--dark` now works on picture codes, and every gallery card, pictures included, has a dark twin (140 codes). Gallery cards may set `--ecc`.
+- Measured: dark art mode (3 grids × L/M/Q × 2 pictures × 2 inks × 2 payloads) and dark halftones (5 pictures × 2 inks × 2 clarities × 3 versions × L/M/Q, a logo at v14) pass the full bar read inverted, steering matches as on light codes. Probing 3–14 px per module: every dark picture code misses rqrr at 3 px, below the bar. Framed logos on pictures at ECC M miss rqrr at 7 px on light codes and at 6–7 px on dark color twins, so the gallery's "Halftone, logo spin" dark twin failed at 6 px. Light renders of the negative picture passed, so the gap is specific to dark color ink with a frame.
+- Decisions: mirroring the color bands about the dark background was tried and dropped, since it made no difference. "Halftone, logo spin" moves to ECC Q (both twins pass the bar), and the framed-logo gap goes to ROADMAP rather than being hidden.
+- Checks: `dark_art_scans_on_every_grid`, `dark_halftones_scan`; CLI test that `--dark --art` verifies read inverted; gallery: 70 light and 70 dark codes, all decode; headless Chrome screenshots of the dark picture cards.
+
 ## 20261026143324 · M5 · Dark twins and the gallery switch
 
 - Landed: `Palette::dark_twin()` (luma mirrored at constant OKLCH chroma and hue, `bg` at the luma of L 0.16; a dark palette is its own twin). CLI `--dark` (implies `--allow-inverted`; pictures exit 2). The gallery renders every non-picture card twice, and an Auto / Light / Dark switch in the header (remembered in localStorage) sets the page theme and shows the matching codes; picture cards stay light with a note; inverted warnings collapse into one line per card.

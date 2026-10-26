@@ -226,6 +226,13 @@ impl Style {
         self
     }
 
+    /// Whether the ink (`fg`) is lighter than the background: a picture
+    /// is then traced from its light parts (SPEC §7.7).
+    #[cfg(feature = "halftone")]
+    pub(crate) fn inverted_ink(&self) -> bool {
+        self.palette.contrast(crate::Token::Fg).inverted
+    }
+
     /// Allows light modules on a dark background (with a warning, since
     /// some older scanners can't read them).
     pub fn allow_inverted(mut self, allow: bool) -> Style {

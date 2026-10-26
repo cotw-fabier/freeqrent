@@ -622,6 +622,10 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
     (
         "Halftone, logo spin",
         &[
+            // At M, a bracket-framed logo on a picture misses rqrr at
+            // 6–7 px per module (W20261026145847); Q holds at the bar's
+            // sizes in both polarities.
+            ("ecc", "Q"),
             ("intro", "settle"),
             ("idle", "logo-spin"),
             ("halftone", "{b}"),
@@ -750,10 +754,19 @@ fn variant(
     let mut args = base.clone();
     let mut command = format!(" {}", shell_quote(text));
     let mut problem = None;
+    let mut builder = *builder;
     let dark_flag = [("dark", "")];
     let extra: &[(&str, &str)] = if dark { &dark_flag } else { &[] };
     for (flag, value) in flags.iter().chain(extra) {
         let value = &picture_value(value, pictures);
+        if *flag == "ecc" {
+            match crate::options::ecc(value) {
+                Ok(ecc) => builder = builder.ecc(ecc),
+                Err(e) => problem = Some(e),
+            }
+            let _ = write!(command, " --ecc {value}");
+            continue;
+        }
         if value.is_empty() && args.set_switch(flag) {
             let _ = write!(command, " --{flag}");
             continue;
@@ -768,7 +781,7 @@ fn variant(
             let style = args.build(text)?;
             // Each family gets the smallest code its style can afford.
             let qr = args
-                .encoder(*builder, pinned)
+                .encoder(builder, pinned)
                 .encode_text_for(text, &style)
                 .map_err(|e| e.to_string())?;
             let qr = &qr;
@@ -843,27 +856,16 @@ pub fn page(
         .chain(DARK_FAMILIES)
         .chain(PICTURE_FAMILIES);
     for (name, flags) in families {
-        // Every card also has its dark twin (`--dark`), except pictures,
-        // which stay light: inverted halftones aren't measured.
-        let picture = flags.iter().any(|(f, _)| matches!(*f, "halftone" | "art"));
-        cards.push_str("<figure>");
-        let light = if picture { " light only" } else { " light" };
-        let _ = write!(cards, "<div class=\"variant{light}\">");
+        // Every card also has its dark twin (`--dark`).
+        cards.push_str("<figure><div class=\"variant light\">");
         variant(
             &mut cards, name, flags, false, text, builder, pinned, base, pictures,
         );
-        if picture {
-            cards.push_str("<p class=\"note\">Pictures stay light: inverted halftones aren't measured yet.</p>");
-        }
-        cards.push_str("</div>");
-        if !picture {
-            cards.push_str("<div class=\"variant dark\">");
-            variant(
-                &mut cards, name, flags, true, text, builder, pinned, base, pictures,
-            );
-            cards.push_str("</div>");
-        }
-        cards.push_str("</figure>\n");
+        cards.push_str("</div><div class=\"variant dark\">");
+        variant(
+            &mut cards, name, flags, true, text, builder, pinned, base, pictures,
+        );
+        cards.push_str("</div></figure>\n");
     }
 
     format!(
@@ -962,16 +964,13 @@ code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, mon
 .verdict.failed {{ color: var(--bad); }}
 .verdict.failed::before {{ background: var(--bad); }}
 /* Each card holds its code and the code's dark twin; one shows. */
-.variant.dark, .note {{ display: none; }}
-:root[data-theme="dark"] .variant.dark,
-:root[data-theme="dark"] .note {{ display: block; }}
-:root[data-theme="dark"] .variant.light:not(.only) {{ display: none; }}
+.variant.dark {{ display: none; }}
+:root[data-theme="dark"] .variant.dark {{ display: block; }}
+:root[data-theme="dark"] .variant.light {{ display: none; }}
 @media (prefers-color-scheme: dark) {{
-  :root:not([data-theme="light"]) .variant.dark,
-  :root:not([data-theme="light"]) .note {{ display: block; }}
-  :root:not([data-theme="light"]) .variant.light:not(.only) {{ display: none; }}
+  :root:not([data-theme="light"]) .variant.dark {{ display: block; }}
+  :root:not([data-theme="light"]) .variant.light {{ display: none; }}
 }}
-.note {{ margin: 8px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); }}
 .top {{ display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
   gap: 16px 24px; }}
 .theme {{ display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px;
