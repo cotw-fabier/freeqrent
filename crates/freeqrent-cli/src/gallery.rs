@@ -772,7 +772,16 @@ pub fn page(
             escape(&command)
         );
         if let Ok((_, verdict, warnings)) = &rendered {
-            let _ = write!(cards, "<p class=\"verdict\">{}</p>", escape(verdict));
+            let failed = if verdict.starts_with("does not decode") {
+                " failed"
+            } else {
+                ""
+            };
+            let _ = write!(
+                cards,
+                "<p class=\"verdict{failed}\">{}</p>",
+                escape(verdict)
+            );
             for w in warnings {
                 let _ = write!(cards, "<p class=\"warning\">{}</p>", escape(w));
             }
@@ -789,58 +798,80 @@ pub fn page(
 <title>freeQRent styles</title>
 <style>
 :root {{
-  --page: oklch(97.5% .006 85);
-  --ink: oklch(24% .01 265);
-  --muted: oklch(48% .01 265);
-  --rule: oklch(88% .008 85);
-  --warn: oklch(48% .12 60);
-  --bad: oklch(48% .16 28);
+  --page: oklch(97.5% .012 125);
+  --ink: oklch(23% .025 140);
+  --muted: oklch(45% .025 140);
+  --rule: oklch(89% .03 125);
+  --fluor: oklch(92% .2 122);
+  --on-fluor: oklch(22% .04 135);
+  --pink: oklch(63% .24 356);
+  --ok: oklch(74% .21 130);
+  --warn: oklch(76% .16 75);
+  --bad: oklch(55% .2 25);
 }}
 @media (prefers-color-scheme: dark) {{
   :root {{
-    --page: oklch(20% .008 265);
-    --ink: oklch(93% .006 85);
-    --muted: oklch(70% .01 265);
-    --rule: oklch(32% .01 265);
-    --warn: oklch(78% .12 70);
-    --bad: oklch(72% .14 28);
+    --page: oklch(19% .014 140);
+    --ink: oklch(94% .012 125);
+    --muted: oklch(72% .02 130);
+    --rule: oklch(31% .02 140);
+    --fluor: oklch(89% .19 122);
+    --pink: oklch(70% .2 356);
+    --ok: oklch(86% .2 125);
+    --bad: oklch(70% .17 25);
   }}
 }}
 * {{ box-sizing: border-box; }}
 body {{
   margin: 0;
-  padding: clamp(16px, 4vw, 48px);
   background: var(--page);
   color: var(--ink);
   font: 15px/1.5 ui-sans-serif, system-ui, sans-serif;
 }}
-header {{ max-width: 70ch; margin-bottom: 40px; }}
-h1 {{ font-size: 1.9rem; line-height: 1.2; margin: 0 0 8px; font-weight: 650; }}
-header p {{ margin: 0; color: var(--muted); overflow-wrap: anywhere; }}
+header {{
+  background: var(--fluor);
+  color: var(--on-fluor);
+  padding: clamp(28px, 5vw, 56px) clamp(16px, 4vw, 48px) clamp(24px, 4vw, 40px);
+}}
+h1 {{ font-size: clamp(2rem, 5vw, 3rem); line-height: 1.05; margin: 0 0 12px;
+  font-weight: 750; letter-spacing: -.02em; }}
+header p {{ margin: 0; max-width: 70ch; overflow-wrap: anywhere;
+  font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }}
 main {{
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
-  gap: 40px 28px;
+  gap: 48px 28px;
+  padding: clamp(28px, 4vw, 48px) clamp(16px, 4vw, 48px) 64px;
 }}
 figure {{ margin: 0; }}
 .code {{ position: relative; }}
 .code svg {{ display: block; width: 100%; height: auto; border-radius: 6px; }}
 .refused {{ aspect-ratio: 1; margin: 0; display: grid; place-items: center; text-align: center;
-  padding: 16px; border: 1px dashed var(--rule); color: var(--bad); border-radius: 6px; }}
-figcaption {{ padding-top: 12px; border-top: 1px solid var(--rule); margin-top: 12px; }}
-h2 {{ font-size: 1rem; margin: 0 0 4px; font-weight: 600;
+  padding: 16px; border: 1px dashed var(--bad); color: var(--bad); border-radius: 6px; }}
+figcaption {{ padding-top: 12px; border-top: 1px solid var(--rule); margin-top: 14px; }}
+h2 {{ font-size: 1rem; line-height: 1.3; margin: 0 0 6px; font-weight: 650; min-height: 28px;
   display: flex; align-items: center; justify-content: space-between; gap: 8px; }}
 code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--muted); overflow-wrap: anywhere; }}
 .code.waiting svg * {{ animation-play-state: paused !important; }}
 .replay {{ flex: none; width: 28px; height: 28px; padding: 0;
   display: grid; place-items: center; border: 1px solid var(--rule); border-radius: 50%;
-  background: var(--page); color: var(--ink); cursor: pointer; opacity: .75; }}
-.replay:hover, .replay:focus-visible {{ opacity: 1; }}
+  background: var(--page); color: var(--ink); cursor: pointer;
+  transition: background-color .2s cubic-bezier(.25, 1, .5, 1), border-color .2s cubic-bezier(.25, 1, .5, 1); }}
+.replay:hover {{ background: var(--pink); border-color: var(--pink); color: var(--on-fluor); }}
+.replay:focus-visible {{ outline: 2px solid var(--pink); outline-offset: 2px; }}
 .replay svg {{ width: 14px; height: 14px; }}
 @media (prefers-reduced-motion: reduce) {{ .replay {{ display: none; }} }}
-.verdict, .warning {{ margin: 6px 0 0; font-size: 13px; }}
-.warning {{ color: var(--warn); }}
+/* Each verdict and warning leads with one module: lime when it decodes,
+   amber for a warning, red when it doesn't. */
+.verdict, .warning {{ margin: 8px 0 0; font-size: 13px; line-height: 1.4;
+  display: flex; gap: 8px; align-items: baseline; }}
+.verdict::before, .warning::before {{ content: ""; flex: none; width: 8px; height: 8px;
+  border-radius: 2px; background: var(--ok); }}
+.warning {{ color: var(--muted); }}
+.warning::before {{ background: var(--warn); }}
+.verdict.failed {{ color: var(--bad); }}
+.verdict.failed::before {{ background: var(--bad); }}
 </style>
 </head>
 <body>

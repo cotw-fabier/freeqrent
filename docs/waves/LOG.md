@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026134309 · M5 · Gallery colors
+
+- Landed: the gallery page's palette, through impeccable colorize. A fluorescent lime header band (the name reads as "fluorescent") with a bigger title and the payload in monospace; green-tinted neutrals in place of the grey-blue ones, light and dark; hot pink only for the replay button's hover and focus ring. Each verdict and warning leads with one small module: lime when it decodes, amber for a warning, red when it doesn't (`class="verdict failed"`). Warnings are muted text now instead of orange, since most cards carry one. Titles keep a 28 px height so cards with and without a replay button line up. `docs/PRODUCT.md` records the design context (users, personality, anti-references) for later design work.
+- Measured: headless Chrome screenshots in both schemes, with the two wallpapers: all 68 cards decode, as before.
+- Decisions: the page stays out of the codes' way: one loud color, at the top, away from any code. Every color is OKLCH, with no pure black or white. Card markup is unchanged apart from the failed class, so the commands still read as plain text.
+- Checks: existing gallery tests pass unchanged.
+
 ## 20261026130519 · M5 · Cut-loose logo frames and the Spin intro
 
 - Landed: `Intro::frame(LogoIntro)` and `Intro::frame_timing(LogoTiming)` cut the logo's frame loose from the logo's intro: the frame plays its own intro at its own timing, and the plate and logo play theirs as if they had no frame. The code's stagger makes room for both. `LogoIntro::Spin` (600 ms): a quarter turn in, from 90%, opaque by 40%; with a frame, the frame turns and the logo fades in inside it. CLI `--logo-intro spin`, `--logo-frame-intro`, `--logo-frame-timing`. Gallery: the Shrink card (scan sheet S63) now has its ring draw in after the Shrink, the picture-palette Ink card's stamp frame spins in with the code, and a new Spin card comes last among the logo cards (68 families; the sheet gains S66, and earlier ids keep their cards).
