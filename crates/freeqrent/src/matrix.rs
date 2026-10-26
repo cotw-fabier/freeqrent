@@ -96,7 +96,7 @@ impl Mask {
 
     // Written exactly as ISO 18004 Table 10 states them.
     #[allow(clippy::manual_is_multiple_of)]
-    fn inverts(self, x: usize, y: usize) -> bool {
+    pub(crate) fn inverts(self, x: usize, y: usize) -> bool {
         match self.0 {
             0 => (x + y) % 2 == 0,
             1 => y % 2 == 0,
@@ -243,6 +243,30 @@ impl QrMatrix {
             roles: m.roles,
         }
     }
+}
+
+/// The roles of a symbol's function patterns, with every module that
+/// carries codeword bits marked `Remainder`: what steering knows about a
+/// version before its codewords are chosen.
+#[cfg(feature = "halftone")]
+pub(crate) fn skeleton(version: Version) -> Vec<ModuleRole> {
+    let mut b = Builder::new(version);
+    b.draw_function_patterns();
+    b.roles
+}
+
+/// The module (row-major index) of each codeword bit, in order: the first
+/// `total_bits` free modules in zigzag order.
+#[cfg(feature = "halftone")]
+pub(crate) fn bit_modules(version: Version, total_bits: usize) -> Vec<usize> {
+    let roles = skeleton(version);
+    let mut out = Vec::with_capacity(total_bits);
+    for_each_placement(version.size() as usize, |idx| {
+        if roles[idx] == ModuleRole::Remainder && out.len() < total_bits {
+            out.push(idx);
+        }
+    });
+    out
 }
 
 /// Mutable construction state. Roles start as `Remainder` and are overwritten

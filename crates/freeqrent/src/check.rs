@@ -5,6 +5,8 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::geometry::Grid;
+#[cfg(feature = "halftone")]
+use crate::halftone::{self, Steering};
 use crate::logo::{self, LogoShape};
 use crate::matrix::{QrMatrix, misdecode_protection};
 use crate::palette::Token;
@@ -257,6 +259,10 @@ pub struct ScanReport {
     /// worst block: damaged codewords over correctable ones (0 when nothing
     /// is cleared). Above [`DAMAGE_BUDGET`] the code isn't rendered.
     pub ecc_budget_used: f32,
+    /// How well the modules follow the style's picture, when it has one
+    /// (SPEC §7.8).
+    #[cfg(feature = "halftone")]
+    pub steering: Option<Steering>,
 }
 
 impl ScanReport {
@@ -379,7 +385,34 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         warnings,
         min_contrast,
         ecc_budget_used,
+        #[cfg(feature = "halftone")]
+        steering: steering(style, qr),
     }
+}
+
+/// Steering numbers for a style with a picture: the free bits, and how
+/// many data and ECC modules match the picture's dithered light and dark.
+#[cfg(feature = "halftone")]
+fn steering(style: &Style, qr: &QrMatrix) -> Option<Steering> {
+    let halftone = style.halftone.as_ref()?;
+    let n = qr.size() as usize;
+    let targets = halftone::module_targets(halftone, n, style.palette.background());
+    let (mut code, mut matched) = (0, 0);
+    for (x, y, dark, role) in qr.modules() {
+        if !role.is_function() && role != crate::ModuleRole::Remainder {
+            code += 1;
+            matched += usize::from(targets[y as usize * n + x as usize] == dark);
+        }
+    }
+    let report = qr.capacity_report();
+    let free = report
+        .data_bits_available
+        .saturating_sub(report.data_bits_used + 4);
+    Some(Steering {
+        steerable_modules: if halftone.steer { free } else { 0 },
+        code_modules: code,
+        matched_modules: matched,
+    })
 }
 
 #[cfg(feature = "animate")]

@@ -4,7 +4,15 @@ use crate::bits::BitBuffer;
 use crate::check::RenderError;
 use crate::error::EncodeError;
 use crate::gf;
+#[cfg(feature = "halftone")]
+use crate::halftone::{self, Halftone};
 use crate::matrix::{Mask, QrMatrix};
+#[cfg(feature = "halftone")]
+use crate::scene;
+#[cfg(feature = "halftone")]
+use crate::steer::Want;
+#[cfg(not(feature = "halftone"))]
+type Want = core::convert::Infallible;
 use crate::segment::{self, ECI_UTF8, EciPolicy, Segment};
 use crate::style::Style;
 use crate::version::{BlockLayout, Ecc, Version};
@@ -102,9 +110,14 @@ impl QrBuilder {
     /// Encodes UTF-8 text, split into the shortest mix of modes
     /// ([`Segment::optimal`]), with an ECI header if the policy calls for one.
     pub fn encode_text(&self, text: &str) -> Result<QrMatrix, EncodeError> {
-        // Count-field widths change at versions 10 and 27, and the best split
-        // can change with them, so plan once per band in range.
-        let plans: [Vec<Segment>; 3] = core::array::from_fn(|band| {
+        let plans = self.plans(text);
+        self.encode_with(|v| &plans[v.count_band()], None)
+    }
+
+    /// Count-field widths change at versions 10 and 27, and the best split
+    /// can change with them, so text is planned once per band in range.
+    fn plans(&self, text: &str) -> [Vec<Segment>; 3] {
+        core::array::from_fn(|band| {
             let first = Version::BAND_STARTS[band];
             let in_range = Version::all()
                 .filter(|v| v.count_band() == band)
@@ -117,8 +130,54 @@ impl QrBuilder {
                 segments.insert(0, Segment::eci(ECI_UTF8).expect("26 is a valid designator"));
             }
             segments
-        });
-        self.encode_with(|v| &plans[v.count_band()])
+        })
+    }
+
+    /// Encodes text with the free data bits after the payload chosen so the
+    /// modules follow `halftone`'s picture (SPEC §7.7 A), and the mask that
+    /// matches it best (unless one is forced). The ECC level is used as
+    /// given, never boosted: a higher level would trade steerable bits for
+    /// error correction the picture doesn't spend. With steering off this
+    /// is [`encode_text`](Self::encode_text) without the boost.
+    #[cfg(feature = "halftone")]
+    pub fn encode_text_steered(
+        &self,
+        text: &str,
+        halftone: &Halftone,
+    ) -> Result<QrMatrix, EncodeError> {
+        self.steered(text, halftone, &Style::new())
+    }
+
+    /// Steers for `halftone` as drawn by `style`: the picture over its
+    /// background, and the modules it clears wanted light first.
+    #[cfg(feature = "halftone")]
+    fn steered(
+        &self,
+        text: &str,
+        halftone: &Halftone,
+        style: &Style,
+    ) -> Result<QrMatrix, EncodeError> {
+        let plans = self.plans(text);
+        let plain = QrBuilder {
+            boost_ecc: false,
+            ..*self
+        };
+        if !halftone.steer {
+            return plain.encode_with(|v| &plans[v.count_band()], None);
+        }
+        let backdrop = style.palette.background();
+        let wants = |v: Version| {
+            let roles = crate::matrix::skeleton(v);
+            let mut wants = halftone::wants(halftone, &roles, v.size() as usize, backdrop);
+            for i in scene::cleared_in(style, v, &roles) {
+                wants[i] = Want {
+                    dark: false,
+                    priority: halftone::MUST,
+                };
+            }
+            wants
+        };
+        plain.encode_with(|v| &plans[v.count_band()], Some(&wants))
     }
 
     /// Encodes text for `style`: the smallest code whose error-correction
@@ -137,20 +196,42 @@ impl QrBuilder {
                 )
             })
         };
-        let first = self.encode_text(text)?;
+        let encode = |b: &QrBuilder| {
+            #[cfg(feature = "halftone")]
+            if let Some(h) = &style.halftone {
+                return b.steered(text, h, style);
+            }
+            b.encode_text(text)
+        };
+        let first = encode(self)?;
         if affordable(&first) {
             return Ok(first);
         }
         let mut version = first.version();
         while let Some(next) = Version::new(version.number() + 1).filter(|&v| v <= self.max_version)
         {
-            let qr = self.min_version(next).encode_text(text)?;
+            let qr = encode(&self.min_version(next))?;
             if affordable(&qr) {
                 return Ok(qr);
             }
             version = qr.version();
         }
         Ok(first)
+    }
+
+    #[cfg(all(test, feature = "halftone"))]
+    pub(crate) fn plans_for_test(&self, text: &str) -> [Vec<Segment>; 3] {
+        self.plans(text)
+    }
+
+    #[cfg(all(test, feature = "halftone"))]
+    pub(crate) fn encode_steered_for_test(
+        &self,
+        plans: &[Vec<Segment>; 3],
+        wants: &[Want],
+    ) -> QrMatrix {
+        self.encode_with(|v| &plans[v.count_band()], Some(&|_| wants.to_vec()))
+            .unwrap()
     }
 
     /// Encodes raw bytes in byte mode, without an ECI header.
@@ -160,13 +241,15 @@ impl QrBuilder {
 
     /// Encodes explicit segments, in order.
     pub fn encode_segments(&self, segments: &[Segment]) -> Result<QrMatrix, EncodeError> {
-        self.encode_with(|_| segments)
+        self.encode_with(|_| segments, None)
     }
 
     /// Picks the smallest version whose segment plan fits, then encodes it.
+    /// With `steer`, the free bits are chosen for the modules it wants.
     fn encode_with<'s>(
         &self,
         segments_for: impl Fn(Version) -> &'s [Segment],
+        steer: Option<&dyn Fn(Version) -> Vec<Want>>,
     ) -> Result<QrMatrix, EncodeError> {
         if self.min_version > self.max_version {
             return Err(EncodeError::InvalidVersionRange {
@@ -218,14 +301,32 @@ impl QrBuilder {
             bits.push(pad, 8);
         }
 
-        let codewords = interleave_with_ecc(&bits.to_bytes(), &layout);
+        #[cfg_attr(not(feature = "halftone"), allow(unused_mut))]
+        let mut data = bits.to_bytes();
+        #[cfg_attr(not(feature = "halftone"), allow(unused_mut))]
+        let mut mask = self.mask;
+        #[cfg(feature = "halftone")]
+        if let Some(wants) = steer {
+            let free_from = (payload_bits + 4).min(capacity_bits);
+            mask = Some(crate::steer::steer(
+                version,
+                ecc,
+                &mut data,
+                free_from,
+                &wants(version),
+                self.mask,
+            ));
+        }
+        #[cfg(not(feature = "halftone"))]
+        let _ = steer;
+        let codewords = interleave_with_ecc(&data, &layout);
         Ok(QrMatrix::build(
             version,
             ecc,
             payload_bits,
             &codewords,
             layout.data_codewords(),
-            self.mask,
+            mask,
         ))
     }
 }

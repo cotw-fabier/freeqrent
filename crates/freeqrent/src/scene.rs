@@ -12,6 +12,8 @@ use crate::palette::Token;
 use crate::rng::SplitMix64;
 use crate::scanbox::{Emphasis, TimingStyle, Toward};
 use crate::style::{Frame, FrameRing, Style};
+#[cfg(feature = "halftone")]
+use crate::version::Version;
 
 pub(crate) const CORNERS: [Corner; 3] = [Corner::TopLeft, Corner::TopRight, Corner::BottomLeft];
 
@@ -260,28 +262,60 @@ pub(crate) fn alignment_centers(qr: &QrMatrix) -> Vec<(u16, u16)> {
 /// ECC and remainder modules in the ring one module outside each alignment
 /// pattern. Function modules are never cleared.
 pub(crate) fn cleared(style: &Style, qr: &QrMatrix) -> Grid {
-    let size = qr.size();
-    let mut grid = Grid::new(size as usize);
-    if style.alignment.emphasis != Emphasis::Outline {
-        return grid;
+    let size = qr.size() as usize;
+    let mut grid = Grid::new(size);
+    for (x, y) in outline_ring(style, size, |x, y| qr.role(x as u16, y as u16)) {
+        grid.set(x, y);
     }
-    for (cx, cy) in alignment_centers(qr) {
-        for dy in -3i32..=3 {
-            for dx in -3i32..=3 {
-                if dx.abs() != 3 && dy.abs() != 3 {
+    grid
+}
+
+/// [`cleared`] for a version whose codewords aren't chosen yet, from its
+/// function-pattern roles (row-major): module indices.
+#[cfg(feature = "halftone")]
+pub(crate) fn cleared_in(style: &Style, version: Version, roles: &[ModuleRole]) -> Vec<usize> {
+    let size = version.size() as usize;
+    outline_ring(style, size, |x, y| roles[y * size + x])
+        .map(|(x, y)| y * size + x)
+        .collect()
+}
+
+/// The non-function modules one ring outside each alignment pattern, when
+/// the style outlines them.
+fn outline_ring(
+    style: &Style,
+    size: usize,
+    role: impl Fn(usize, usize) -> ModuleRole,
+) -> impl Iterator<Item = (usize, usize)> {
+    let mut ring = Vec::new();
+    if style.alignment.emphasis == Emphasis::Outline {
+        for y in 0..size {
+            for x in 0..size {
+                let ModuleRole::Alignment { center } = role(x, y) else {
+                    continue;
+                };
+                if center != (x as u16, y as u16) {
                     continue;
                 }
-                let (x, y) = (cx as i32 + dx, cy as i32 + dy);
-                if x < 0 || y < 0 || x >= size as i32 || y >= size as i32 {
-                    continue;
-                }
-                if !qr.role(x as u16, y as u16).is_function() {
-                    grid.set(x as usize, y as usize);
+                for dy in -3i32..=3 {
+                    for dx in -3i32..=3 {
+                        if dx.abs() != 3 && dy.abs() != 3 {
+                            continue;
+                        }
+                        let (x, y) = (x as i32 + dx, y as i32 + dy);
+                        if x < 0 || y < 0 || x >= size as i32 || y >= size as i32 {
+                            continue;
+                        }
+                        let (x, y) = (x as usize, y as usize);
+                        if !role(x, y).is_function() {
+                            ring.push((x, y));
+                        }
+                    }
                 }
             }
         }
     }
-    grid
+    ring.into_iter()
 }
 
 /// Every module left out of the drawing: [`cleared`] plus, when the logo

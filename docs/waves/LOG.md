@@ -2,6 +2,14 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026081347 · M5 · Free-bit solver and module steering
+
+- Landed: feature `halftone` (default on, no deps) with `Halftone` (picture, `Fit::Cover|Contain`, focal point, priority map, `steer`) and `Style::halftone`. The free-bit solver: per Reed–Solomon block, effect vectors for every bit after the terminator, elimination in priority order, all 8 masks scored from one elimination. `QrBuilder::encode_text_steered`; `encode_text_for` steers when the style has a picture. `ScanReport::steering` (steerable, code and matched modules).
+- Decision (measured): targets are the picture's lightness squeezed into [0.2, 0.8] before dithering. Unsqueezed, flat areas came out solid and 29% of 132 steered codes failed the blurred, noisy ZXing render (hundreds of module errors inside the flat areas: ZXing's 5 × 5-block threshold sits at a flat area's own level); from 0.15 up none failed. Light pinholes every 4 modules weren't enough.
+- Decision: steering never boosts the ECC level; Outline rings are wanted light first, which took v7–v14 Outline from 0.55–1.44 of the damage budget to 0–0.44.
+- Checks: solver unit tests (payload bits untouched, every block still valid RS, sparse wants always met, forced masks, determinism); 4 verify tests, including five synthetic pictures × v2–v27 × L/M/Q/H at the full bar with matches of 67–90% at L/M (about 50% unsteered). 0.7–46 ms per steered code in release.
+- Next: the halftone renderer (§7.7 B).
+
 ## M4 complete · 2026-10-26
 
 Palettes: OKLab k-means extraction from pixels, CSS/HTML parsing with role hints, `freeqrent-image`, CLI flags. Waves 20261026073538, 20261026074436, 20261026075708.

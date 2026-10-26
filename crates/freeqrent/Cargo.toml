@@ -12,9 +12,11 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-default = ["std", "animate", "palette-extract"]
+default = ["std", "animate", "palette-extract", "halftone"]
 # Intro animations as CSS keyframes, `AnimationPlan` and frame renders.
 animate = []
+# Codes built from a picture: module steering and halftone (SPEC §7.7).
+halftone = []
 # Palettes derived from pixels (`Palette::from_image`) and CSS/HTML text.
 palette-extract = []
 # `std::error::Error` impls (and later the `std::io::Write` sink).

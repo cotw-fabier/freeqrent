@@ -10,6 +10,8 @@ use core::fmt;
 #[cfg(feature = "animate")]
 use crate::animate::{Idle, Intro};
 use crate::check::{self, RenderError, ScanReport};
+#[cfg(feature = "halftone")]
+use crate::halftone::Halftone;
 use crate::logo::Logo;
 use crate::matrix::QrMatrix;
 use crate::palette::Palette;
@@ -139,6 +141,8 @@ pub struct Style {
     pub(crate) frame: Frame,
     pub(crate) seed: Option<u64>,
     pub(crate) logo: Option<Logo>,
+    #[cfg(feature = "halftone")]
+    pub(crate) halftone: Option<Halftone>,
     #[cfg(feature = "animate")]
     pub(crate) intro: Option<Intro>,
     #[cfg(feature = "animate")]
@@ -166,6 +170,8 @@ impl Default for Style {
             frame: Frame::Square,
             seed: None,
             logo: None,
+            #[cfg(feature = "halftone")]
+            halftone: None,
             #[cfg(feature = "animate")]
             intro: None,
             #[cfg(feature = "animate")]
@@ -289,6 +295,21 @@ impl Style {
     pub fn logo(mut self, logo: Logo) -> Style {
         self.logo = Some(logo);
         self
+    }
+
+    /// Builds the code from a picture (SPEC §7.7). Encode with
+    /// [`QrBuilder::encode_text_for`](crate::QrBuilder::encode_text_for)
+    /// so the free data bits are steered to match it.
+    #[cfg(feature = "halftone")]
+    pub fn halftone(mut self, halftone: Halftone) -> Style {
+        self.halftone = Some(halftone);
+        self
+    }
+
+    /// The picture, if any.
+    #[cfg(feature = "halftone")]
+    pub fn halftone_options(&self) -> Option<&Halftone> {
+        self.halftone.as_ref()
     }
 
     /// Plays an intro when the code appears (SPEC §8). The document

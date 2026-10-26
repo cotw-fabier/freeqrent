@@ -35,6 +35,8 @@ mod error;
 mod extract;
 mod geometry;
 mod gf;
+#[cfg(feature = "halftone")]
+mod halftone;
 mod image;
 #[cfg(feature = "kanji")]
 mod kanji_table;
@@ -51,6 +53,8 @@ mod scene;
 mod segment;
 #[cfg(feature = "palette-extract")]
 mod site;
+#[cfg(feature = "halftone")]
+mod steer;
 mod style;
 mod svg;
 mod tables;
@@ -72,6 +76,8 @@ pub use error::EncodeError;
 pub use extract::{
     Choice, EXTRACT_CONTRAST, ExtractError, Origin, PaletteOpts, PaletteReport, Swatch,
 };
+#[cfg(feature = "halftone")]
+pub use halftone::{Fit, Halftone, Steering};
 pub use image::{ImageError, Rgba8Image};
 pub use logo::{Logo, LogoError, LogoShape, RasterFormat};
 pub use matrix::{CapacityReport, Corner, FinderRing, Mask, ModuleRole, QrMatrix};
