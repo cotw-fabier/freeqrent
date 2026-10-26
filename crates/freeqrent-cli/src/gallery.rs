@@ -934,7 +934,7 @@ main {{
   gap: 48px 28px;
   padding: clamp(28px, 4vw, 48px) clamp(16px, 4vw, 48px) 96px;
 }}
-figure {{ margin: 0; }}
+figure {{ margin: 0; display: grid; }}
 .code {{ position: relative; }}
 .code svg {{ display: block; width: 100%; height: auto; border-radius: 6px; }}
 .refused {{ aspect-ratio: 1; margin: 0; display: grid; place-items: center; text-align: center;
@@ -963,13 +963,16 @@ code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, mon
 .warning::before {{ background: var(--warn); }}
 .verdict.failed {{ color: var(--bad); }}
 .verdict.failed::before {{ background: var(--bad); }}
-/* Each card holds its code and the code's dark twin; one shows. */
-.variant.dark {{ display: none; }}
-:root[data-theme="dark"] .variant.dark {{ display: block; }}
-:root[data-theme="dark"] .variant.light {{ display: none; }}
+/* Each card holds its code and the code's dark twin in one grid cell, and
+   only one is visible: the card is as tall as the taller of the two either
+   way, so flipping the switch doesn't move the page. */
+.variant {{ grid-area: 1 / 1; }}
+.variant.dark {{ visibility: hidden; }}
+:root[data-theme="dark"] .variant.dark {{ visibility: visible; }}
+:root[data-theme="dark"] .variant.light {{ visibility: hidden; }}
 @media (prefers-color-scheme: dark) {{
-  :root:not([data-theme="light"]) .variant.dark {{ display: block; }}
-  :root:not([data-theme="light"]) .variant.light {{ display: none; }}
+  :root:not([data-theme="light"]) .variant.dark {{ visibility: visible; }}
+  :root:not([data-theme="light"]) .variant.light {{ visibility: hidden; }}
 }}
 /* The switch floats in the corner, so it's in reach anywhere on the page. */
 .theme {{ position: fixed; right: 16px; bottom: 16px; z-index: 10;
@@ -1028,8 +1031,9 @@ for (const box of document.querySelectorAll(".code")) {{
   box.closest(".variant").querySelector("h2").append(button);
 }}
 // Light, dark or the system's choice, for the page and the codes. Dark
-// shows each code's dark twin (`--dark`); a hidden code that comes into
-// view plays its intro then.
+// shows each code's dark twin (`--dark`). Both twins sit in the card all
+// along, so a twin's intro plays when the card scrolls into view, whichever
+// is showing; the replay button restarts the visible one.
 const buttons = document.querySelectorAll(".theme button");
 const setTheme = (theme) => {{
   if (theme === "auto") delete document.documentElement.dataset.theme;

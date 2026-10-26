@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026150957 · M5 · A steady page when the theme flips
+
+- Landed: each gallery card stacks its light and dark versions in one grid cell and hides the inactive one with `visibility` rather than `display`, so a card is always as tall as its taller version and flipping the switch moves nothing.
+- Measured: before, the dark page was 116–1,422 px taller (600–2560 px wide), from the extra inverted-warning line on dark cards. After, headless Chrome at 600, 1280 and 1728 px gives identical page heights and identical positions for all 70 cards, with exactly one version visible per card.
+- Decision: both versions stay in the layout, so a hidden version's intro plays when its card scrolls into view, the same as the visible one; the replay button restarts the visible version.
+
 ## 20261026150437 · M5 · Floating theme switch
 
 - Landed: the gallery's Auto / Light / Dark switch floats in the bottom-right corner (a lime pill with a soft shadow), so it can be flipped anywhere on the page; the grid gets extra bottom padding so the last captions clear it.
