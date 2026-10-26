@@ -320,6 +320,13 @@ impl Style {
     /// [`encode_text_for`](crate::QrBuilder::encode_text_for); accent the
     /// finders through the palette (`finder.outer`, `finder.eye`).
     ///
+    /// The defaults favor the picture, and phones scan them slowly: on
+    /// the standard and dense grids, art codes were slow on a Pixel and an
+    /// iPad, and one failed on iOS. For fast scans, use
+    /// [`TrackingGrid::Sparse`](crate::TrackingGrid::Sparse) when the
+    /// payload fits; on larger grids, `Clarity::Uniform(0.5)` to `0.6` in
+    /// [`Halftone::clarity`](crate::Halftone::clarity) helps (SPEC §7.8).
+    ///
     /// ```
     /// use freeqrent::{Halftone, QrCode, Rgba8Image, Style, TrackingGrid};
     ///

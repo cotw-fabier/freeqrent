@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026170720 · M5 · Art mode's scan speed, documented; the contrast floor stays
+
+- Decision: art mode keeps its defaults (standard grid, clarity 0), which draw the most picture. SPEC §7.8, `Style::art`, `TrackingGrid`, `--art`'s help and the README say they scan slowly on phones, and that the sparse grid scans fast and clarity 0.5–0.6 helps on larger grids (bench-measured; not yet on phones).
+- Decision: `EXTRACT_CONTRAST` stays 0.66 although both phones read ΔL 0.60. At 0.60, extracted palettes would check clean and still miss the verify bar's degraded render. The ROADMAP item is closed; SPEC §6.4 records why.
+- ROADMAP: "Art mode tuned for capture" keeps `Clarity::Auto`, a harsh verify level, and a phone check of clarity 0.5–0.6 on the standard grid.
+- Checks: fmt, clippy, rustdoc (no broken links), doctests, CLI tests. No output changes.
+
 ## 20261026165905 · M5 · The scan sheet says iOS Camera
 
 - Landed: the sheet's first device column is "iOS Camera" (was "iPhone Camera"), matching SPEC §9 and the iPad mini the first results came from. Verdicts are saved by column index, so recorded results keep their place.

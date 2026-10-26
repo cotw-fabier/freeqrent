@@ -96,7 +96,9 @@ Style:
   --halftone FILE          build the code from a PNG or JPEG picture (`sample` for a
                            built-in one): modules steered to match, 3x3 sub-cells
   --art FILE               art mode: --halftone plus outlined alignment boxes,
-                           dotted timing and the standard tracking grid
+                           dotted timing and the standard tracking grid; slow
+                           to scan on phones: --tracking-grid sparse scans
+                           fast, --clarity 0.5 helps
   --ink mono|color[:N]     sub-cells in fg, or the picture's colors, N per band (6)
   --bands D,L              darkest light and lightest dark sub-cell (0.28,0.94)
   --clarity C              pull sub-cells toward their module, 0-1 (default 0)

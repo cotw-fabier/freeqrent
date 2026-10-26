@@ -136,8 +136,10 @@ impl Ecc {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum TrackingGrid {
     /// A 3 × 3 grid: 6 alignment boxes, versions 7–13 (45–69 modules).
+    /// The one that scans fast on phones (SPEC §7.8).
     Sparse,
     /// A 4 × 4 grid: 13 boxes, versions 14–20 (73–97 modules). The default.
+    /// Phones scan it slowly at clarity 0 (SPEC §7.8).
     #[default]
     Standard,
     /// A 5 × 5 grid: 22 boxes, versions 21–27 (101–125 modules).
