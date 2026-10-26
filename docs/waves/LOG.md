@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026163931 · M5 · Dots at half the bytes
+
+- Landed: `Path::circle` draws a circle as one arc from its leftmost point nearly all the way round, closed across a chord a thousandth of a module long along the tangent, instead of two half-circle arcs (circles under a tenth of a module across keep the two). Every circle uses it: dots, filler, beads, the orbit's moon, round eyes, dotted timing.
+- Measured: v10/v20/v40 Dots 69/215/717 KB → 40/124/413 KB (−42%), with a round frame 116/352/1157 → 68/203/667 KB. resvg renders of the old and new v40 differ by at most 15 of 255 on edge pixels (antialiasing).
+- Decisions: zero-length round-capped strokes would be ~6 bytes a dot but aren't fills, which palette shifts and plan players rely on; compact arc flags are left out for parser compatibility (ROADMAP).
+- Checks: four snapshots change (dots and squircles, liquid with rounded finders, the round frame, the Settle intro on dots), each only in its circles, checked by normalizing both forms; golden fingerprints and every scan test pass unchanged.
+
 ## 20261026160831 · M5 · Frame colors that keep their light and leave the logo's alone
 
 - Landed: `logo.frame` has its own contrast floor, `FRAME_FLOOR` = 0.25, with no warning band; the check hadn't judged the frame at all before, since it's drawn outside the scene's layers. Extraction keeps the frame at ΔL 0.30 instead of darkening it to 0.66, and `PaletteOpts::logo_colors` keeps it ΔE 0.06 from the logo's colors (from `Logo::colors()`, a vector logo's paints), leaving it unset when nothing qualifies. The CLI passes `--logo`'s colors (a raster's swatches) to `--palette-from-*`.

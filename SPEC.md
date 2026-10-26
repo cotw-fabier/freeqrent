@@ -262,13 +262,13 @@ Paint is written at two levels, because renderers disagree about CSS:
 |---|---|---|
 | `Square` ("box") | Classic squares, optional `gap` (0–0.25; at 0.3 rqrr lost codes at 6 px/module) | Merge horizontal runs into rects, then one path |
 | `Rounded { radius }` | Squares with corners rounded only where they don't touch a neighbor | Per-corner neighbor test (4-neighborhood) |
-| `Dots { size }` | Circles, size 0.6–1.0 | Arc path per module; `size < 0.75` raises a warning |
+| `Dots { size }` | Circles, size 0.6–1.0 | One arc per module (below); `size < 0.75` raises a warning |
 | `Liquid { smoothness }` | Neighboring modules flow into one blob, with concave inner corners filled ("gooey"). Smoothness 0–1 | Contour tracing on the module lattice: boundary edges keep dark on the right (outer contours clockwise, holes counter-clockwise, nonzero fill), and where two modules touch only diagonally the walk turns right so they stay apart. Every corner is cut with one quadratic Bézier whose control point is the vertex, reaching `smoothness / 2` along each edge: convex corners round off, concave ones get the fillet. One subpath per contour. *(rev. W20261025221811)* |
 | `Bars { axis, radius }` | Vertical or horizontal pills that merge runs along an axis | Run-length per row/column → rounded rects |
 | `Diamond`, `Star`, `Plus`, … | Fun extras (v1.x) | Per-module glyph |
 | `Custom(fn)` | *Deferred (ROADMAP):* a user callback breaks "options are plain data" and can't cross the binding boundary | — |
 
-Shape logic is local: a module's geometry depends only on its neighbors in the same layer (`Rounded` looks at the 4-neighborhood). Geometry is integer, in thousandths of a module, and path commands are relative. Alignment patterns are never drawn in the module shape, even before they are styled: dots or gaps would break the 1:1:1:1:1 profile scanners look for (`Dots` at 0.6 lost rqrr from v5 up until alignment was drawn solid). *(rev. W20261025212852)*
+Shape logic is local: a module's geometry depends only on its neighbors in the same layer (`Rounded` looks at the 4-neighborhood). Geometry is integer, in thousandths of a module, and path commands are relative. A circle (dots, filler, beads, round eyes, dotted timing) is one arc from its leftmost point nearly all the way round to a thousandth of a module below it, closed across that chord, rather than two half-circle arcs: 27 bytes a dot instead of 49, and the chord is far below a pixel (circles under a tenth of a module across keep the two arcs). Measured (W20261026163931): v10/v20/v40 Dots fall from 69/215/717 KB to 40/124/413 KB, with a round frame from 116/352/1157 KB to 68/203/667 KB; renders of the old and new v40 differ by at most 15 of 255 grey levels, on edge pixels only. Alignment patterns are never drawn in the module shape, even before they are styled: dots or gaps would break the 1:1:1:1:1 profile scanners look for (`Dots` at 0.6 lost rqrr from v5 up until alignment was drawn solid). *(rev. W20261025212852)*
 
 ### 7.2 Scan boxes: finders, alignment & timing patterns (feature 4)
 

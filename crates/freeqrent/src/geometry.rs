@@ -12,6 +12,10 @@ use crate::style::{Axis, ModuleShape};
 /// One module, in path units.
 pub(crate) const UNIT: i64 = 1000;
 
+/// The smallest radius [`Path::circle`] draws with one arc: a tenth of a
+/// module, so the one-unit chord it closes across is under 1% of it.
+const MIN_ONE_ARC_RADIUS: i64 = UNIT / 10;
+
 /// A picture's sub-cells (SPEC §7.7 B) are drawn in fifths of a module.
 pub(crate) const FIFTHS: usize = 5;
 
@@ -181,10 +185,19 @@ impl Path {
         self.rounded_rect(x, y, w, h, [0; 4]);
     }
 
+    /// A filled circle: one arc nearly all the way round, from the leftmost
+    /// point to one unit below it, closed across that chord. It's about
+    /// half the bytes of two half-circle arcs, and the chord, a thousandth
+    /// of a module along the tangent, is far below a pixel. Tiny circles,
+    /// where that chord would show, take the two arcs.
     pub(crate) fn circle(&mut self, cx: i64, cy: i64, r: i64) {
         self.move_to(cx - r, cy);
-        self.arc_to(r, false, true, cx + r, cy);
-        self.arc_to(r, false, true, cx - r, cy);
+        if r >= MIN_ONE_ARC_RADIUS {
+            self.arc_to(r, true, true, cx - r, cy + 1);
+        } else {
+            self.arc_to(r, false, true, cx + r, cy);
+            self.arc_to(r, false, true, cx - r, cy);
+        }
         self.close();
     }
 }
@@ -492,8 +505,13 @@ mod tests {
 
     #[test]
     fn dots_are_circles() {
+        // One arc from the leftmost point most of the way round, closed a
+        // thousandth of a module below it.
         let d = draw(ModuleShape::Dots { size: 0.8 }, &["#"]);
-        assert_eq!(d, "m.1.5a.4.4 0 0 1 .8 0a.4.4 0 0 1-.8 0z");
+        assert_eq!(d, "m.1.5a.4.4 0 1 1 0 .001z");
+        // Tiny dots take two half-circle arcs, so the chord doesn't show.
+        let d = draw(ModuleShape::Dots { size: 0.1 }, &["#"]);
+        assert_eq!(d, "m.45.5a.05.05 0 0 1 .1 0a.05.05 0 0 1-.1 0z");
     }
 
     fn liquid(smoothness: f32, rows: &[&str]) -> String {

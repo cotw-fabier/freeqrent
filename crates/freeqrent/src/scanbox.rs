@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn shapes_cross_the_axes_at_module_boundaries() {
         // Each contour touches (cx ± half, cy) and (cx, cy ± half).
-        assert!(eye(EyeShape::Circle).starts_with("m2 3.5a1.5 1.5 0 0 1 3 0"));
+        assert_eq!(eye(EyeShape::Circle), "m2 3.5a1.5 1.5 0 1 1 0 .001z");
         assert!(eye(EyeShape::Squircle).starts_with("m5 3.5c0 1.363"));
     }
 

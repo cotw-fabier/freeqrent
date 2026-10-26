@@ -27,7 +27,7 @@ Each item says where it came from, so we remember why it's here.
 - **Extra module glyphs:** `Diamond`, `Star`, `Plus`, … (SPEC §7.1).
 - **More finder shapes, once they verify:** a `Circle` ring (ZXing missed ~1/200 clean renders from v15 up), a `Diamond` eye (fails ZXing's diagonal cross-check), a `Dashed` ring (failed clean v40 renders). Measured 2026-10-25 (W20261025214510). A design that keeps the diagonal profile might rescue the diamond.
 - **`ModuleShape::Custom`:** a per-module path callback (SPEC §7.1). Deferred 2026-10-25: callbacks aren't plain data and can't cross the binding boundary; a data form (e.g. a path template per neighborhood class) could replace it.
-- **Smaller dot/rounded output:** v40 `Dots` is ~700 KB. Implicit command repetition or a `<use>`-based dot could cut it a lot. Measured 2026-10-25 (W20261025212852).
+- **Even smaller dots:** a dot is now one arc, 27 bytes (W20261026163931), and v40 Dots is still ~410 KB. A zero-length stroke with round caps would take ~6 bytes, but palette shifts animate fills, and `AnimationPlan` players fill the geometry; both would need a stroke property first (as halftone strokes do, above). Compact arc flags (`01` with no separator) would save two more bytes, but some path parsers misread them.
 - **Re-themable gradient stops** through custom properties (SPEC §6.2).
 - **Richer logo CSS:** the sanitizer folds only `.class` rules into attributes; element and descendant selectors, and `pattern` fills, are dropped (W20261025223145).
 - **Steering logo-covered modules:** like art mode's free bits (SPEC §7.8), choose data so modules under the plate are light, which would let a backdrop-plated logo count only dark-covered codewords and grow larger (W20261025223145).
