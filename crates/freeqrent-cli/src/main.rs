@@ -107,6 +107,8 @@ Style:
   --no-steer               keep standard padding (no module steering)
   --allow-inverted         permit light modules on a dark background, and let
                            --palette-from-* keep a dark source's polarity
+  --dark                   the palette's dark twin: lightness mirrored, contrast
+                           kept (implies --allow-inverted; not for pictures)
   --target-px N            displayed size in device pixels (warns when too small)
   --target-mm N            printed size in millimeters (warns when too small)
 
@@ -155,6 +157,7 @@ pub struct StyleArgs {
     tokens: Vec<(String, String)>,
     quiet_zone: Option<u8>,
     allow_inverted: bool,
+    dark: bool,
     pretty: bool,
     title: Option<String>,
     label: Option<String>,
@@ -269,6 +272,7 @@ impl StyleArgs {
         match flag {
             "pretty" => self.pretty = true,
             "allow-inverted" => self.allow_inverted = true,
+            "dark" => self.dark = true,
             "no-logo-backdrop" => self.no_logo_backdrop = true,
             "keep-modules" => self.keep_modules = true,
             "no-steer" => self.no_steer = true,
@@ -490,6 +494,15 @@ impl StyleArgs {
             finders = finders.corner(corner, ring, eye);
         }
         let halftone = self.halftone();
+        if self.dark {
+            if halftone.is_some() {
+                return Err(
+                    "--dark doesn't apply to pictures: inverted halftones aren't measured"
+                        .to_string(),
+                );
+            }
+            palette = palette.dark_twin();
+        }
         if halftone.is_none()
             && (self.ink.is_some()
                 || self.bands.is_some()
@@ -529,7 +542,7 @@ impl StyleArgs {
             .timing(self.timing.unwrap_or(timing))
             .palette(palette)
             .quiet_zone(self.quiet_zone.unwrap_or(4))
-            .allow_inverted(self.allow_inverted)
+            .allow_inverted(self.allow_inverted || self.dark)
             .minify(!self.pretty);
         if let Some(frame) = &self.frame {
             let ring = self.frame_ring.unwrap_or_default();
@@ -591,12 +604,15 @@ impl StyleArgs {
             if self.intro.is_some() {
                 return Err("--intro and --from-* can't be combined".to_string());
             }
-            let old = Palette::from_tokens(
+            let mut old = Palette::from_tokens(
                 self.from_tokens
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.as_str())),
             )
             .map_err(|e| format!("--from-token: {e}"))?;
+            if self.dark {
+                old = old.dark_twin();
+            }
             let mut intro = Intro::palette_from(&old);
             if let Some(ms) = self.intro_ms {
                 intro = intro.duration_ms(ms);

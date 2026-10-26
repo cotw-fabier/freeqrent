@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026143324 · M5 · Dark twins and the gallery switch
+
+- Landed: `Palette::dark_twin()` (luma mirrored at constant OKLCH chroma and hue, `bg` at the luma of L 0.16; a dark palette is its own twin). CLI `--dark` (implies `--allow-inverted`; pictures exit 2). The gallery renders every non-picture card twice, and an Auto / Light / Dark switch in the header (remembered in localStorage) sets the page theme and shows the matching codes; picture cards stay light with a note; inverted warnings collapse into one line per card.
+- Measured: the first twin mirrored OKLab L, and "Mixed corners" (a red eye at ΔL 0.47) lost ZXing on the clean 6 px render, because mid-tones landed near the binarizer's threshold. Mirroring Rec. 601 luma, which is what the binarizer sees, fixed it: all 53 twins decode, as do the 70 light cards. OKLab contrast never drops under the luma mirror and grows for mid-tones (0.44 → 0.59).
+- Decisions: the twin keeps scanner luma, not OKLab ΔL, so a twin scans like its palette; the check's OKLab contrast is then more lenient on the dark side, which is safe because the luma gap is the light code's. Pictures don't get twins until inverted halftones are measured (ROADMAP).
+- Checks: unit test (polarity flips, luma mirrored, OKLab contrast doesn't drop, alpha and hue held, unset tokens stay unset, dark palettes are their own twins); verify test that the twins of three hand palettes and the eight extracted ones check clean and scan (v1–v10); CLI tests for `--dark` and the gallery's variant counts. Headless Chrome screenshots of the gallery in both schemes.
+
 ## 20261026141235 · M5 · Dark palettes
 
 - Landed: `PaletteOpts::allow_inverted` lets a dark source keep its polarity: a dark `bg` (the darkest low-chroma swatch at L ≤ 0.25, else a tinted near-black) and light inks, lightened at constant hue (`Origin::Lightened`). `Palette::from_css_with` / `from_html_with` take the options. `INVERTED_CONTRAST` = 0.70. `freeqrent_verify::Bar::inverted` reads inverted codes inverted, set by `for_report` from the inverted warning, and `scannable_after` follows it. CLI: `--allow-inverted` feeds extraction, `--palette-from-css sample-dark`, `--show-palette` reports lightening and adds `--allow-inverted`, `--verify` says "read inverted". Gallery: "Dark site palette" and "Dark picture palette" (70 families); scan sheet S67–S69 (the dark site and two inverted v1 codes at ΔL 0.70).

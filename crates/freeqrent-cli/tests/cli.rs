@@ -80,11 +80,18 @@ fn gallery_shows_every_family() {
     let html = std::fs::read_to_string(&path).unwrap();
     assert_eq!(html.matches("<figure>").count(), 70);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 70);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 123);
     // Without pictures the picture cards use the sample.
     assert!(html.contains("--art sample --clarity 0.5"));
-    // The dark cards are read inverted.
-    assert_eq!(html.matches(", read inverted").count(), 2);
+    // Every card but the pictures has a dark twin, and the twins and the
+    // two dark cards are read inverted.
+    assert_eq!(html.matches("<div class=\"variant dark\">").count(), 53);
+    assert_eq!(
+        html.matches("<div class=\"variant light only\">").count(),
+        17
+    );
+    assert_eq!(html.matches(", read inverted").count(), 55);
+    assert!(html.contains("freeqrent https://example.com/menu --dark</code>"));
 
     // With one, it stands in for both.
     let png = dir.join("brand.png");
@@ -98,7 +105,7 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 70);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 123);
     assert!(!html.contains("--art sample --clarity 0.5"));
     assert!(html.contains("brand.png --clarity 0.5"));
     std::fs::remove_dir_all(&dir).unwrap();
@@ -417,6 +424,20 @@ fn dark_sources_keep_their_polarity_with_allow_inverted() {
         "{}",
         stderr(&out)
     );
+}
+
+#[test]
+fn dark_twins_render_and_refuse_pictures() {
+    let out = freeqrent(&["HELLO", "--dark", "--verify"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stderr(&out).contains("read inverted"), "{}", stderr(&out));
+    // Deterministic, and different from the light code.
+    let again = freeqrent(&["HELLO", "--dark"]);
+    assert_eq!(stdout(&out), stdout(&again));
+    assert_ne!(stdout(&out), stdout(&freeqrent(&["HELLO"])));
+    let out = freeqrent(&["HELLO", "--dark", "--art", "sample"]);
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("--dark"), "{}", stderr(&out));
 }
 
 #[test]

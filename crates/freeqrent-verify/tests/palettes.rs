@@ -319,3 +319,41 @@ fn inverted_palettes_pass_and_scan() {
     }
     assert_eq!(found, ["dark theme", "dark first"]);
 }
+
+#[test]
+fn dark_twins_scan_like_their_palettes() {
+    // A dark twin mirrors the luma scanners threshold, so it scans at the
+    // same bar as its palette, read inverted.
+    let qr = QrCode::encode("https://example.com/menu", Ecc::M).unwrap();
+    let hand = [
+        Palette::new(),
+        Palette::from_tokens([("finder.top-left.eye", "#b03a2e")]).unwrap(),
+        Palette::from_tokens([
+            ("bg", "oklch(95% .03 85)"),
+            ("fg", "linear-gradient(45deg, #1e3a8a, #6d28d9)"),
+            ("finder.eye", "#c2410c"),
+        ])
+        .unwrap(),
+    ];
+    let extracted = corpus()
+        .into_iter()
+        .map(|(_, img)| Palette::from_image(&img, PaletteOpts::new()).unwrap().0);
+    for (i, palette) in hand.into_iter().chain(extracted).enumerate() {
+        let twin = palette.dark_twin();
+        assert!(twin.contrast(Token::Fg).inverted, "{i}");
+        let light = Style::new().palette(palette);
+        let dark = Style::new().palette(twin).allow_inverted(true);
+        let low = |s: &Style| {
+            s.check(&qr)
+                .warnings
+                .iter()
+                .any(|w| matches!(w, Warning::LowContrast { .. }))
+        };
+        assert!(dark.check(&qr).ok(), "{i}");
+        assert!(
+            !low(&dark) || low(&light),
+            "{i}: the twin warns, the palette doesn't"
+        );
+        assert_scans_at(&dark, &format!("twin {i}"), &PAYLOADS[..3], Ecc::M);
+    }
+}

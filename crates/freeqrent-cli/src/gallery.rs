@@ -3,7 +3,7 @@
 
 use std::fmt::Write;
 
-use freeqrent::QrBuilder;
+use freeqrent::{QrBuilder, Warning};
 
 use crate::StyleArgs;
 
@@ -734,6 +734,101 @@ pub(crate) fn shell_quote(value: &str) -> String {
     }
 }
 
+/// One card's code, command and verdict, as is or as its dark twin.
+#[allow(clippy::too_many_arguments)]
+fn variant(
+    cards: &mut String,
+    name: &str,
+    flags: &[(&str, &str)],
+    dark: bool,
+    text: &str,
+    builder: &QrBuilder,
+    pinned: bool,
+    base: &StyleArgs,
+    pictures: &[String],
+) {
+    let mut args = base.clone();
+    let mut command = format!(" {}", shell_quote(text));
+    let mut problem = None;
+    let dark_flag = [("dark", "")];
+    let extra: &[(&str, &str)] = if dark { &dark_flag } else { &[] };
+    for (flag, value) in flags.iter().chain(extra) {
+        let value = &picture_value(value, pictures);
+        if value.is_empty() && args.set_switch(flag) {
+            let _ = write!(command, " --{flag}");
+            continue;
+        }
+        if let Err(e) = args.set(flag, value) {
+            problem = Some(e);
+        }
+        let _ = write!(command, " --{flag} {}", shell_quote(value));
+    }
+    let rendered = problem.map_or_else(
+        || {
+            let style = args.build(text)?;
+            // Each family gets the smallest code its style can afford.
+            let qr = args
+                .encoder(*builder, pinned)
+                .encode_text_for(text, &style)
+                .map_err(|e| e.to_string())?;
+            let qr = &qr;
+            let svg = style.render(qr).map_err(|e| e.to_string())?;
+            let size = format!("version {}, ECC {:?}", qr.version().number(), qr.ecc());
+            let verdict = match crate::verify(&style, qr, text) {
+                Ok(v) => v,
+                Err(e) if cfg!(feature = "verify") => format!("does not decode: {e}"),
+                Err(_) => "not verified".to_string(),
+            };
+            // One line for inverted colors, not one per token.
+            let mut warnings = Vec::new();
+            let mut inverted = false;
+            for w in &style.check(qr).warnings {
+                if matches!(w, Warning::Inverted { .. }) {
+                    if !inverted {
+                        warnings.push(
+                            "light on dark: some scanners can't read inverted codes".to_string(),
+                        );
+                    }
+                    inverted = true;
+                } else {
+                    warnings.push(w.to_string());
+                }
+            }
+            Ok((svg, format!("{verdict} · {size}"), warnings))
+        },
+        Err,
+    );
+    let _ = write!(cards, "<div class=\"code\">");
+    match &rendered {
+        Ok((svg, _, _)) => cards.push_str(svg),
+        Err(e) => {
+            let _ = write!(cards, "<p class=\"refused\">Refused: {}</p>", escape(e));
+        }
+    }
+    let _ = write!(
+        cards,
+        "</div><figcaption><h2>{}</h2><code>freeqrent{}</code>",
+        escape(name),
+        escape(&command)
+    );
+    if let Ok((_, verdict, warnings)) = &rendered {
+        let failed = if verdict.starts_with("does not decode") {
+            " failed"
+        } else {
+            ""
+        };
+        let _ = write!(
+            cards,
+            "<p class=\"verdict{failed}\">{}</p>",
+            escape(verdict)
+        );
+        for w in warnings {
+            let _ = write!(cards, "<p class=\"warning\">{}</p>", escape(w));
+        }
+    }
+    cards.push_str("</figcaption>");
+}
+
 pub fn page(
     text: &str,
     builder: &QrBuilder,
@@ -748,75 +843,27 @@ pub fn page(
         .chain(DARK_FAMILIES)
         .chain(PICTURE_FAMILIES);
     for (name, flags) in families {
-        let mut args = base.clone();
-        let mut command = format!(" {}", shell_quote(text));
-        let mut problem = None;
-        for (flag, value) in *flags {
-            let value = &picture_value(value, pictures);
-            if value.is_empty() && args.set_switch(flag) {
-                let _ = write!(command, " --{flag}");
-                continue;
-            }
-            if let Err(e) = args.set(flag, value) {
-                problem = Some(e);
-            }
-            let _ = write!(command, " --{flag} {}", shell_quote(value));
-        }
-        let rendered = problem.map_or_else(
-            || {
-                let style = args.build(text)?;
-                // Each family gets the smallest code its style can afford.
-                let qr = args
-                    .encoder(*builder, pinned)
-                    .encode_text_for(text, &style)
-                    .map_err(|e| e.to_string())?;
-                let qr = &qr;
-                let svg = style.render(qr).map_err(|e| e.to_string())?;
-                let size = format!("version {}, ECC {:?}", qr.version().number(), qr.ecc());
-                let verdict = match crate::verify(&style, qr, text) {
-                    Ok(v) => v,
-                    Err(e) if cfg!(feature = "verify") => format!("does not decode: {e}"),
-                    Err(_) => "not verified".to_string(),
-                };
-                let warnings: Vec<String> = style
-                    .check(qr)
-                    .warnings
-                    .iter()
-                    .map(|w| w.to_string())
-                    .collect();
-                Ok((svg, format!("{verdict} · {size}"), warnings))
-            },
-            Err,
+        // Every card also has its dark twin (`--dark`), except pictures,
+        // which stay light: inverted halftones aren't measured.
+        let picture = flags.iter().any(|(f, _)| matches!(*f, "halftone" | "art"));
+        cards.push_str("<figure>");
+        let light = if picture { " light only" } else { " light" };
+        let _ = write!(cards, "<div class=\"variant{light}\">");
+        variant(
+            &mut cards, name, flags, false, text, builder, pinned, base, pictures,
         );
-        let _ = write!(cards, "<figure><div class=\"code\">");
-        match &rendered {
-            Ok((svg, _, _)) => cards.push_str(svg),
-            Err(e) => {
-                let _ = write!(cards, "<p class=\"refused\">Refused: {}</p>", escape(e));
-            }
+        if picture {
+            cards.push_str("<p class=\"note\">Pictures stay light: inverted halftones aren't measured yet.</p>");
         }
-        let _ = write!(
-            cards,
-            "</div><figcaption><h2>{}</h2><code>freeqrent{}</code>",
-            escape(name),
-            escape(&command)
-        );
-        if let Ok((_, verdict, warnings)) = &rendered {
-            let failed = if verdict.starts_with("does not decode") {
-                " failed"
-            } else {
-                ""
-            };
-            let _ = write!(
-                cards,
-                "<p class=\"verdict{failed}\">{}</p>",
-                escape(verdict)
+        cards.push_str("</div>");
+        if !picture {
+            cards.push_str("<div class=\"variant dark\">");
+            variant(
+                &mut cards, name, flags, true, text, builder, pinned, base, pictures,
             );
-            for w in warnings {
-                let _ = write!(cards, "<p class=\"warning\">{}</p>", escape(w));
-            }
+            cards.push_str("</div>");
         }
-        cards.push_str("</figcaption></figure>\n");
+        cards.push_str("</figure>\n");
     }
 
     format!(
@@ -839,8 +886,10 @@ pub fn page(
   --warn: oklch(76% .16 75);
   --bad: oklch(55% .2 25);
 }}
+/* The switch in the header sets data-theme; without it the page and the
+   codes follow the system. */
 @media (prefers-color-scheme: dark) {{
-  :root {{
+  :root:not([data-theme="light"]) {{
     --page: oklch(19% .014 140);
     --ink: oklch(94% .012 125);
     --muted: oklch(72% .02 130);
@@ -850,6 +899,16 @@ pub fn page(
     --ok: oklch(86% .2 125);
     --bad: oklch(70% .17 25);
   }}
+}}
+:root[data-theme="dark"] {{
+    --page: oklch(19% .014 140);
+    --ink: oklch(94% .012 125);
+    --muted: oklch(72% .02 130);
+    --rule: oklch(31% .02 140);
+    --fluor: oklch(89% .19 122);
+    --pink: oklch(70% .2 356);
+    --ok: oklch(86% .2 125);
+    --bad: oklch(70% .17 25);
 }}
 * {{ box-sizing: border-box; }}
 body {{
@@ -902,11 +961,38 @@ code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, mon
 .warning::before {{ background: var(--warn); }}
 .verdict.failed {{ color: var(--bad); }}
 .verdict.failed::before {{ background: var(--bad); }}
+/* Each card holds its code and the code's dark twin; one shows. */
+.variant.dark, .note {{ display: none; }}
+:root[data-theme="dark"] .variant.dark,
+:root[data-theme="dark"] .note {{ display: block; }}
+:root[data-theme="dark"] .variant.light:not(.only) {{ display: none; }}
+@media (prefers-color-scheme: dark) {{
+  :root:not([data-theme="light"]) .variant.dark,
+  :root:not([data-theme="light"]) .note {{ display: block; }}
+  :root:not([data-theme="light"]) .variant.light:not(.only) {{ display: none; }}
+}}
+.note {{ margin: 8px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); }}
+.top {{ display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+  gap: 16px 24px; }}
+.theme {{ display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px;
+  border: 1.5px solid var(--on-fluor); }}
+.theme button {{ font: 600 13px/1 ui-sans-serif, system-ui, sans-serif; color: var(--on-fluor);
+  background: transparent; border: 0; border-radius: 999px; padding: 8px 14px; cursor: pointer;
+  transition: background-color .2s cubic-bezier(.25, 1, .5, 1), color .2s cubic-bezier(.25, 1, .5, 1); }}
+.theme button[aria-pressed="true"] {{ background: var(--on-fluor); color: var(--fluor); }}
+.theme button:focus-visible {{ outline: 2px solid var(--pink); outline-offset: 2px; }}
 </style>
 </head>
 <body>
 <header>
+<div class="top">
 <h1>Style families</h1>
+<div class="theme" role="group" aria-label="Codes and page">
+<button type="button" data-theme="auto" aria-pressed="true">Auto</button>
+<button type="button" data-theme="light" aria-pressed="false">Light</button>
+<button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+</div>
+</div>
 <p>{payload}</p>
 </header>
 <main>
@@ -941,8 +1027,23 @@ for (const box of document.querySelectorAll(".code")) {{
   button.title = button.ariaLabel = "Replay animation";
   button.innerHTML = icon;
   button.addEventListener("click", () => replay(box));
-  box.closest("figure").querySelector("h2").append(button);
+  box.closest(".variant").querySelector("h2").append(button);
 }}
+// Light, dark or the system's choice, for the page and the codes. Dark
+// shows each code's dark twin (`--dark`); a hidden code that comes into
+// view plays its intro then.
+const buttons = document.querySelectorAll(".theme button");
+const setTheme = (theme) => {{
+  if (theme === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  for (const b of buttons) b.setAttribute("aria-pressed", String(b.dataset.theme === theme));
+  try {{ localStorage.setItem("freeqrent-theme", theme); }} catch {{}}
+}};
+for (const b of buttons) b.addEventListener("click", () => setTheme(b.dataset.theme));
+try {{
+  const saved = localStorage.getItem("freeqrent-theme");
+  if (saved === "light" || saved === "dark") setTheme(saved);
+}} catch {{}}
 </script>
 </body>
 </html>

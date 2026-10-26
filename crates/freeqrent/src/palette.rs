@@ -544,6 +544,9 @@ pub struct Contrast {
     pub inverted: bool,
 }
 
+/// Where [`Palette::dark_twin`] puts the background's lightness.
+const DARK_BG: f32 = 0.16;
+
 /// A set of token paints. Unset tokens follow [`Token::fallback`].
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Palette {
@@ -652,6 +655,71 @@ impl Palette {
         out
     }
 
+    /// The palette's dark twin (SPEC §6.3): every set color, gradient
+    /// stops included, with its luma mirrored to `k − Y′` at the same
+    /// OKLCH chroma and hue and the same alpha. `Y′` is Rec. 601 luma of
+    /// the gamma-encoded sRGB color, which is what cameras and
+    /// `freeqrent-verify` threshold, so a gray palette's twin is its
+    /// photographic negative and reads the same, inverted. `k` puts the
+    /// background at the luma of OKLab L 0.16, or lower when the darkest
+    /// color would otherwise pass white. Only the polarity flips, so the
+    /// codes need [`Style::allow_inverted`]; lightness differences in
+    /// OKLab move a little (they grow for mid-tones), and translucent
+    /// paints and gradients are blended in sRGB, so [`Style::check`] has
+    /// the final word. A palette whose `fg` is already lighter than `bg`
+    /// is its own twin. Colors come out as `oklch()`.
+    ///
+    /// [`Style::allow_inverted`]: crate::Style::allow_inverted
+    /// [`Style::check`]: crate::Style::check
+    pub fn dark_twin(&self) -> Palette {
+        if self.contrast(Token::Fg).inverted {
+            return self.clone();
+        }
+        let mut darkest = 1.0f64;
+        for paint in self.paints.iter().flatten() {
+            match paint {
+                Paint::Solid(c) => darkest = darkest.min(luma(*c)),
+                Paint::Gradient(g) => {
+                    for stop in &g.stops {
+                        darkest = darkest.min(luma(stop.color));
+                    }
+                }
+            }
+        }
+        let floor = luma(Color::oklch(DARK_BG, 0.0, 0.0));
+        let k = (luma(self.background()) + floor).min(1.0 + darkest);
+        let mirror = |c: Color| {
+            let [_, a, b] = c.to_oklab();
+            let chroma = math::sqrt((a * a + b * b) as f64) as f32;
+            let hue = (math::atan2(b as f64, a as f64) * (180.0 / core::f64::consts::PI)) as f32;
+            let target = (k - luma(c)).clamp(0.0, 1.0);
+            // Luma rises with lightness at a fixed chroma and hue (chroma
+            // gives way at the ends, by gamut mapping).
+            let (mut lo, mut hi) = (0.0f32, 1.0f32);
+            for _ in 0..32 {
+                let mid = (lo + hi) / 2.0;
+                if luma(Color::oklch(mid, chroma, hue)) < target {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            Color::oklch((lo + hi) / 2.0, chroma, hue).with_alpha(c.alpha())
+        };
+        let mut out = self.clone();
+        for paint in out.paints.iter_mut().flatten() {
+            match paint {
+                Paint::Solid(c) => *c = mirror(*c),
+                Paint::Gradient(g) => {
+                    for stop in &mut g.stops {
+                        stop.color = mirror(stop.color);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// The background color.
     pub fn background(&self) -> Color {
         match self.get(Token::Bg) {
@@ -667,6 +735,13 @@ impl Palette {
         let bg = composite(self.background(), white);
         contrast(&self.resolve(token), bg)
     }
+}
+
+/// Rec. 601 luma of the gamma-encoded sRGB color, 0–1, ignoring alpha:
+/// what a camera's binarizer (and `freeqrent-verify`) thresholds.
+fn luma(color: Color) -> f64 {
+    let [r, g, b] = color.to_srgb();
+    0.299 * r + 0.587 * g + 0.114 * b
 }
 
 /// `color` over an opaque gamma-encoded backdrop, the way browsers blend.
@@ -726,6 +801,70 @@ fn premultiplied(c: Color) -> [f64; 3] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dark_twins_keep_contrast_and_flip_polarity() {
+        let light = Palette::from_tokens([
+            ("bg", "#fefcf8"),
+            ("fg", "#17161c"),
+            ("finder.eye", "#c2410c"),
+            ("finder.outer", "linear-gradient(45deg, #1e3a8a, #0f766e)"),
+            ("alignment", "rgb(20 30 80 / 80%)"),
+        ])
+        .unwrap();
+        let dark = light.dark_twin();
+        assert!((dark.background().to_oklab()[0] - DARK_BG).abs() < 0.005);
+        for token in [
+            Token::Fg,
+            Token::FinderEye,
+            Token::FinderOuter,
+            Token::Alignment,
+        ] {
+            let (a, b) = (light.contrast(token), dark.contrast(token));
+            assert!(!a.inverted && b.inverted, "{token}: {a:?} {b:?}");
+            // Mirrored luma never loses OKLab contrast; mid-tones gain.
+            assert!(b.delta_l >= a.delta_l - 0.01, "{token}: {a:?} {b:?}");
+        }
+        // Luma is mirrored: the twin of a gray is its negative, lifted.
+        let lifted = luma(Color::oklch(DARK_BG, 0.0, 0.0));
+        let k = luma(light.background()) + lifted;
+        let fg = |p: &Palette| match p.get(Token::Fg) {
+            Some(Paint::Solid(c)) => luma(*c),
+            _ => unreachable!(),
+        };
+        assert!((fg(&dark) - (k - fg(&light))).abs() < 0.002);
+        // Hue and alpha hold; unset tokens stay unset.
+        let hue = |p: &Palette, t: Token| {
+            let Some(Paint::Solid(c)) = p.get(t) else {
+                unreachable!()
+            };
+            let [_, a, b] = c.to_oklab();
+            (math::atan2(b as f64, a as f64), c.alpha())
+        };
+        let (h0, a0) = hue(&light, Token::Alignment);
+        let (h1, a1) = hue(&dark, Token::Alignment);
+        assert!((h0 - h1).abs() < 0.02 && a0 == a1);
+        assert!(dark.get(Token::Timing).is_none());
+        // A dark palette is its own twin.
+        assert_eq!(dark.dark_twin(), dark);
+        // A near-black ink keeps the background below L 0.16, so it
+        // doesn't pass white.
+        let deep = Palette::from_tokens([("bg", "#ffffff"), ("fg", "#000000")]).unwrap();
+        let twin = deep.dark_twin();
+        assert!(twin.background().to_oklab()[0] < 0.01);
+        assert!(twin.contrast(Token::Fg).delta_l > 0.99);
+        // The red eye that lost ZXing with mirrored OKLab lightness keeps
+        // its luma gap.
+        let eye = Palette::from_tokens([("finder.top-left.eye", "#b03a2e")]).unwrap();
+        let twin = eye.dark_twin();
+        let gap = |p: &Palette| {
+            let Some(Paint::Solid(c)) = p.get(Token::CornerEye(Corner::TopLeft)) else {
+                unreachable!()
+            };
+            (luma(p.background()) - luma(*c)).abs()
+        };
+        assert!((gap(&eye) - gap(&twin)).abs() < 0.002);
+    }
+
     #[test]
     fn css_vars_list_solid_tokens() {
         let p = super::Palette::from_tokens([
