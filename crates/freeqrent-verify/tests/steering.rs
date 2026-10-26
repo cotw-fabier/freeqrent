@@ -5,7 +5,8 @@ mod common;
 
 use common::picture;
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Ecc, Emphasis, Fit, Halftone, QrCode, QrMatrix, Style, Version,
+    AlignmentShape, AlignmentStyle, Ecc, Emphasis, Fit, HALFTONE_DAMAGE_BUDGET, Halftone, QrCode,
+    QrMatrix, Style, Version,
 };
 use freeqrent_verify::{Bar, verify_style, verify_with};
 
@@ -69,12 +70,15 @@ fn steering_off_is_the_standard_encoding() {
 fn steered_outlines_fit() {
     // Unsteered, outlined alignment patterns are mostly refused from v7 to
     // v14 (SPEC §7.2); steered, the ring modules come out light and use at
-    // most half as much of the budget.
+    // most half as much of the budget. A picture code's budget is the
+    // smaller `HALFTONE_DAMAGE_BUDGET`; where it's still exceeded, the
+    // fitted code grows instead.
     let text = "https://example.com";
     let outline = AlignmentStyle {
         shape: AlignmentShape::Match,
         emphasis: Emphasis::Outline,
     };
+    let mut fit = 0;
     for version in 7..=14u8 {
         let qr = pinned(version, Ecc::M)
             .boost_ecc(false)
@@ -87,19 +91,28 @@ fn steered_outlines_fit() {
         let qr = pinned(version, Ecc::M)
             .encode_text_for(text, &style)
             .unwrap();
-        assert_eq!(qr.version().number(), version);
-        let report = style.check(&qr);
-        assert!(report.ok(), "v{version}: {report:?}");
         // Measured: 0.55–1.44 unsteered, 0–0.44 steered.
-        let used = report.ecc_budget_used;
+        let used = style.check(&qr).ecc_budget_used;
         assert!(
             used <= unsteered / 2.0 && used < 0.5,
             "v{version}: {used} vs {unsteered}"
         );
-        if let Err(e) = verify_style(&style, &qr, text) {
-            panic!("v{version}: {e}");
+        if used <= HALFTONE_DAMAGE_BUDGET {
+            fit += 1;
+            if let Err(e) = verify_style(&style, &qr, text) {
+                panic!("v{version}: {e}");
+            }
+        }
+        let grown = QrCode::builder()
+            .ecc(Ecc::M)
+            .min_version(Version::new(version).unwrap())
+            .encode_text_for(text, &style)
+            .unwrap();
+        if let Err(e) = verify_style(&style, &grown, text) {
+            panic!("v{version} grown to v{}: {e}", grown.version().number());
         }
     }
+    assert!(fit >= 7, "{fit} of 8 versions fit");
 }
 
 #[test]

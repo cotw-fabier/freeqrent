@@ -153,3 +153,27 @@ fn sweep_reveal_with_logo() {
         .unwrap();
     insta::assert_snapshot!(style.minify(false).render(&qr).unwrap());
 }
+
+#[cfg(feature = "halftone")]
+#[test]
+fn halftone_in_mono_and_color() {
+    use freeqrent::{Halftone, Ink, Rgba8Image};
+    // A dark disc on a light page, small enough to read the paths.
+    let mut picture = Rgba8Image::filled(16, 16, [245, 240, 230, 255]).unwrap();
+    for y in 0..16i32 {
+        for x in 0..16i32 {
+            if (x - 8).pow(2) + (y - 8).pow(2) < 30 {
+                picture.set_pixel(x as u32, y as u32, [30, 40, 90, 255]);
+            }
+        }
+    }
+    for ink in [Ink::Mono, Ink::Color { colors: 2 }] {
+        let style = Style::new().halftone(Halftone::new(picture.clone()).ink(ink));
+        let qr = QrCode::builder()
+            .ecc(Ecc::M)
+            .version(Version::new(1).unwrap())
+            .encode_text_for("HELLO", &style)
+            .unwrap();
+        insta::assert_snapshot!(style.minify(false).render(&qr).unwrap());
+    }
+}

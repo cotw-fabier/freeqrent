@@ -1,14 +1,15 @@
 //! Image-embedded codes (SPEC §7.7): a picture mapped onto the code's
-//! modules. This module samples it; [`steer`](crate::steer) chooses the
-//! free data bits so modules follow it.
+//! modules. This module samples it, aims the free-bit solver (`steer`) at
+//! it, and draws it into 3 × 3 sub-cells whose centers carry the code.
 
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::color::{Color, linear_to_srgb, srgb_to_linear, srgb_to_oklab};
+use crate::color::{Color, linear_to_oklab, srgb_to_linear};
+use crate::geometry::{FIFTHS, Grid, Path, UNIT};
 use crate::image::Rgba8Image;
 use crate::math;
-use crate::matrix::ModuleRole;
+use crate::matrix::{ModuleRole, QrMatrix};
 use crate::steer::Want;
 
 /// How a picture fills the code's square.
@@ -21,6 +22,41 @@ pub enum Fit {
     /// point places it in the leftover space.
     Contain,
 }
+
+/// How halftone sub-cells are painted (SPEC §7.7 rule 3).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Ink {
+    /// Dark sub-cells in `fg`; light ones show `bg`. The default.
+    #[default]
+    Mono,
+    /// Every sub-cell keeps the picture's color, its lightness clamped
+    /// into the dark or light band ([`Halftone::bands`]), quantized to
+    /// `colors` colors per band (2–16) so the code stays a few paths.
+    Color {
+        /// Colors per band.
+        colors: u8,
+    },
+}
+
+/// Where the picture gives way to plain modules (SPEC §7.7 rule 4):
+/// 0 draws the picture as it is, 1 draws pure modules. Sub-cells around a
+/// module's center are pulled toward its value by this much.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Clarity {
+    /// The same everywhere.
+    Uniform(f32),
+    /// Laid out like the picture: light areas clear, dark ones pictorial.
+    Map(Rgba8Image),
+}
+
+impl Default for Clarity {
+    fn default() -> Clarity {
+        Clarity::Uniform(DEFAULT_CLARITY)
+    }
+}
+
+/// The default [`Clarity`].
+pub const DEFAULT_CLARITY: f32 = 0.0;
 
 /// A picture to build the code from (SPEC §7.7). Plain data: the image is
 /// read when a code is encoded or drawn.
@@ -45,7 +81,13 @@ pub struct Halftone {
     pub(crate) focal: (f32, f32),
     pub(crate) priority: Option<Rgba8Image>,
     pub(crate) steer: bool,
+    pub(crate) ink: Ink,
+    pub(crate) bands: (f32, f32),
+    pub(crate) clarity: Clarity,
 }
+
+/// The default [`Halftone::bands`].
+pub const DEFAULT_BANDS: (f32, f32) = (0.28, 0.94);
 
 impl Halftone {
     /// The picture, covering the code, centered, with steering on.
@@ -56,7 +98,46 @@ impl Halftone {
             focal: (0.5, 0.5),
             priority: None,
             steer: true,
+            ink: Ink::Mono,
+            bands: DEFAULT_BANDS,
+            clarity: Clarity::default(),
         }
+    }
+
+    /// How sub-cells are painted (default [`Ink::Mono`]).
+    pub fn ink(mut self, ink: Ink) -> Halftone {
+        self.ink = ink;
+        self
+    }
+
+    /// For [`Ink::Color`]: the lightest a dark sub-cell may be and the
+    /// darkest a light one may be, in OKLab lightness (default
+    /// [`DEFAULT_BANDS`]). The gap is checked like any contrast.
+    pub fn bands(mut self, dark: f32, light: f32) -> Halftone {
+        self.bands = (dark, light);
+        self
+    }
+
+    /// Where the picture gives way to plain modules (default
+    /// [`DEFAULT_CLARITY`] everywhere).
+    pub fn clarity(mut self, clarity: Clarity) -> Halftone {
+        self.clarity = clarity;
+        self
+    }
+
+    /// How sub-cells are painted.
+    pub fn ink_mode(&self) -> Ink {
+        self.ink
+    }
+
+    /// The dark and light band limits.
+    pub fn band_limits(&self) -> (f32, f32) {
+        self.bands
+    }
+
+    /// The clarity.
+    pub fn clarity_map(&self) -> &Clarity {
+        &self.clarity
     }
 
     /// How the picture fills the square (default `Cover`).
@@ -130,13 +211,17 @@ pub(crate) struct Cell {
 }
 
 impl Cell {
-    /// The cell over `backdrop` (opaque), as sRGB.
-    pub(crate) fn over(self, backdrop: Color) -> [f64; 3] {
-        let bg = backdrop.to_srgb().map(srgb_to_linear);
-        core::array::from_fn(|i| {
-            linear_to_srgb((self.rgb[i] + (1.0 - self.alpha) * bg[i]).clamp(0.0, 1.0))
-        })
+    /// The cell over `backdrop` (opaque, linear sRGB), in OKLab.
+    pub(crate) fn over(self, backdrop: [f64; 3]) -> [f64; 3] {
+        linear_to_oklab(core::array::from_fn(|i| {
+            (self.rgb[i] + (1.0 - self.alpha) * backdrop[i]).clamp(0.0, 1.0)
+        }))
     }
+}
+
+/// A backdrop color as linear sRGB, for [`Cell::over`].
+pub(crate) fn linear(color: Color) -> [f64; 3] {
+    color.to_srgb().map(srgb_to_linear)
 }
 
 /// Samples `image` onto an `n` × `n` grid laid over the square as `fit`
@@ -272,10 +357,8 @@ impl Levels {
 
 /// OKLab lightness of each cell over `backdrop`.
 pub(crate) fn lightness(cells: &[Cell], backdrop: Color) -> Vec<f64> {
-    cells
-        .iter()
-        .map(|c| srgb_to_oklab(c.over(backdrop))[0])
-        .collect()
+    let backdrop = linear(backdrop);
+    cells.iter().map(|c| c.over(backdrop)[0]).collect()
 }
 
 /// Error diffusion (Floyd–Steinberg, serpentine) of an `n` × `n`
@@ -399,6 +482,288 @@ pub(crate) fn wants(
     out
 }
 
+// ----------------------------------------------------------------- drawing
+
+/// The three sub-cells across a module, as (start, length) in fifths: a
+/// thin edge, a center 0.6 of a module wide, a thin edge. Measured
+/// (W20261026092854), ZXing and rqrr on clean renders: an even 3 × 3 grid
+/// (a center a third of a module wide) failed 118 of 150 codes at
+/// 4 px/module, where the center covers 1.3 px; a half-module center
+/// failed none there, but rqrr, which samples one pixel through a
+/// perspective fitted to a single alignment pattern, still missed 2 of
+/// 216 renders from 4 to 12 px/module (18 with a logo); at 0.6, none.
+const SPANS: [(usize, usize); 3] = [(0, 1), (1, 3), (4, 1)];
+/// Sub-cell lightness is squeezed into `[CELL_SPAN, 1 − CELL_SPAN]` before
+/// dithering, for the reason module targets are (`TARGET_SPAN`): a flat
+/// area of the picture drawn flat makes ZXing's local threshold sink into
+/// the noise. Measured (W20261026092854): unsqueezed, every code failed
+/// the blurred, noisy render; with the 0.6 center, 0.15 left the color
+/// disc failing at ECC L (the blur swallows thin light edges) and 0.2
+/// left nothing.
+pub(crate) const CELL_SPAN: f64 = 0.2;
+
+/// The drawn sub-cells of a code: 3 × 3 per module.
+pub(crate) struct Subcells {
+    /// Sub-cells per side.
+    pub(crate) side: usize,
+    /// Row-major; `None` where nothing is drawn (function modules and
+    /// cleared ones).
+    pub(crate) dark: Vec<Option<bool>>,
+    /// In color mode: the palette (each color with its band, dark or
+    /// not), and each sub-cell's index into it.
+    pub(crate) colors: Option<Quantized>,
+}
+
+/// A color palette (each color with its band, dark or not) and each
+/// sub-cell's index into it.
+pub(crate) type Quantized = (Vec<(Color, bool)>, Vec<u8>);
+
+/// Dithers the picture into 3 × 3 sub-cells per module (SPEC §7.7 B). The
+/// center of each data, ECC or remainder module takes the module's value;
+/// the eight around it follow the picture, pulled toward the module by the
+/// clarity. Error diffusion (Floyd–Steinberg, serpentine, weighted by
+/// sub-cell area) runs over the whole grid, centers included, so the
+/// picture's tone survives them.
+pub(crate) fn subcells(
+    halftone: &Halftone,
+    qr: &QrMatrix,
+    removed: &Grid,
+    backdrop: Color,
+) -> Subcells {
+    let n = qr.size() as usize;
+    let side = n * 3;
+    let fine = n * FIFTHS;
+    let levels = Levels::of(&lightness(
+        &sample(&halftone.image, halftone.fit, halftone.focal, n),
+        backdrop,
+    ));
+    // Sampled in fifths of a module, then gathered into sub-cells.
+    let gather = |values: &[[f64; 3]]| -> Vec<[f64; 3]> {
+        let mut out = vec![[0.0; 3]; side * side];
+        for (cy, (y0, h)) in (0..side).map(|c| (c, SPANS[c % 3])) {
+            for (cx, (x0, w)) in (0..side).map(|c| (c, SPANS[c % 3])) {
+                let (bx, by) = ((cx / 3) * FIFTHS + x0, (cy / 3) * FIFTHS + y0);
+                let mut sum = [0.0; 3];
+                for y in by..by + h {
+                    for x in bx..bx + w {
+                        for (s, v) in sum.iter_mut().zip(values[y * fine + x]) {
+                            *s += v;
+                        }
+                    }
+                }
+                out[cy * side + cx] = sum.map(|v| v / (w * h) as f64);
+            }
+        }
+        out
+    };
+    let cells = sample(&halftone.image, halftone.fit, halftone.focal, fine);
+    let under = linear(backdrop);
+    let lab = gather(&cells.iter().map(|c| c.over(under)).collect::<Vec<_>>());
+    let clarity: Vec<f64> = match &halftone.clarity {
+        Clarity::Uniform(c) => vec![(*c as f64).clamp(0.0, 1.0); side * side],
+        Clarity::Map(map) => {
+            let l = lightness(
+                &sample(map, halftone.fit, halftone.focal, fine),
+                Color::srgb(0, 0, 0),
+            );
+            gather(&l.iter().map(|&v| [v, 0.0, 0.0]).collect::<Vec<_>>())
+                .iter()
+                .map(|v| v[0].clamp(0.0, 1.0))
+                .collect()
+        }
+    };
+    let area = |i: usize| (SPANS[(i % side) % 3].1 * SPANS[(i / side) % 3].1) as f64;
+    let mut v: Vec<f64> = (0..side * side)
+        .map(|i| {
+            let (mx, my) = ((i % side) / 3, (i / side) / 3);
+            let target = if qr.is_dark(mx as u16, my as u16) {
+                0.0
+            } else {
+                1.0
+            };
+            let l = CELL_SPAN + levels.apply(lab[i][0]) * (1.0 - 2.0 * CELL_SPAN);
+            (1.0 - clarity[i]) * l + clarity[i] * target
+        })
+        .collect();
+    let mut dark = vec![None; side * side];
+    for y in 0..side {
+        let reverse = y % 2 == 1;
+        for k in 0..side {
+            let x = if reverse { side - 1 - k } else { k };
+            let i = y * side + x;
+            let (mx, my) = (x / 3, y / 3);
+            if qr.role(mx as u16, my as u16).is_function() || removed.get(mx as i64, my as i64) {
+                continue;
+            }
+            let d = if x % 3 == 1 && y % 3 == 1 {
+                qr.is_dark(mx as u16, my as u16)
+            } else {
+                v[i] < 0.5
+            };
+            dark[i] = Some(d);
+            // The error as ink, shared out by area.
+            let err = (v[i] - if d { 0.0 } else { 1.0 }) * area(i);
+            let ahead = |dx: i64| -> Option<usize> {
+                let x = x as i64 + if reverse { -dx } else { dx };
+                (x >= 0 && x < side as i64).then_some(x as usize)
+            };
+            if let Some(x1) = ahead(1) {
+                let j = y * side + x1;
+                v[j] += err * 7.0 / 16.0 / area(j);
+            }
+            if y + 1 < side {
+                for (dx, k) in [(-1, 3.0), (0, 5.0), (1, 1.0)] {
+                    if let Some(x1) = ahead(dx) {
+                        let j = (y + 1) * side + x1;
+                        v[j] += err * k / 16.0 / area(j);
+                    }
+                }
+            }
+        }
+    }
+    let colors = match halftone.ink {
+        Ink::Mono => None,
+        Ink::Color { colors } => Some(quantize(
+            &lab,
+            &dark,
+            halftone.bands,
+            colors.clamp(2, 16) as usize,
+        )),
+    };
+    Subcells { side, dark, colors }
+}
+
+/// Clamps each sub-cell's color into its band (dark at most `bands.0`,
+/// light at least `bands.1`), then reduces each band to `k` colors with
+/// k-means in OKLab, started from evenly spaced lightness quantiles so the
+/// result is deterministic.
+fn quantize(lab: &[[f64; 3]], dark: &[Option<bool>], bands: (f32, f32), k: usize) -> Quantized {
+    let clamp = |c: [f64; 3], d: bool| {
+        let l = if d {
+            c[0].min(bands.0 as f64)
+        } else {
+            c[0].max(bands.1 as f64)
+        };
+        [l, c[1], c[2]]
+    };
+    let mut palette = Vec::new();
+    let mut index = vec![0u8; lab.len()];
+    for band in [true, false] {
+        let members: Vec<usize> = (0..lab.len()).filter(|&i| dark[i] == Some(band)).collect();
+        if members.is_empty() {
+            continue;
+        }
+        let points: Vec<[f64; 3]> = members.iter().map(|&i| clamp(lab[i], band)).collect();
+        let mut by_l: Vec<usize> = (0..points.len()).collect();
+        by_l.sort_by(|&a, &b| points[a][0].total_cmp(&points[b][0]).then(a.cmp(&b)));
+        let k = k.min(points.len());
+        let mut centers: Vec<[f64; 3]> = (0..k)
+            .map(|j| points[by_l[(2 * j + 1) * points.len() / (2 * k)]])
+            .collect();
+        let mut owner = vec![0usize; points.len()];
+        for _ in 0..QUANTIZE_ROUNDS {
+            for (p, o) in points.iter().zip(owner.iter_mut()) {
+                *o = (0..k)
+                    .min_by(|&a, &b| dist2(p, &centers[a]).total_cmp(&dist2(p, &centers[b])))
+                    .expect("k ≥ 1");
+            }
+            let mut sums = vec![([0.0f64; 3], 0usize); k];
+            for (p, &o) in points.iter().zip(&owner) {
+                for (s, v) in sums[o].0.iter_mut().zip(p) {
+                    *s += v;
+                }
+                sums[o].1 += 1;
+            }
+            for (c, (sum, count)) in centers.iter_mut().zip(sums) {
+                if count > 0 {
+                    *c = sum.map(|v| v / count as f64);
+                }
+            }
+        }
+        let base = palette.len();
+        palette.extend(
+            centers
+                .iter()
+                .map(|c| (Color::from_oklab(c[0], c[1], c[2]).opaque_srgb(), band)),
+        );
+        for (&i, &o) in members.iter().zip(&owner) {
+            index[i] = (base + o) as u8;
+        }
+    }
+    (palette, index)
+}
+
+/// Lloyd rounds in [`quantize`].
+const QUANTIZE_ROUNDS: usize = 8;
+
+fn dist2(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+    (0..3).map(|i| (a[i] - b[i]) * (a[i] - b[i])).sum()
+}
+
+/// The paths of a picture: per paint (the dark sub-cells in mono, each
+/// color in color mode, dark band first), one path for the thin edge rows
+/// and one for the center rows. Each is a run of horizontal lines along
+/// the rows' middles, to be stroked at the rows' height with butt caps:
+/// half the bytes of outlined rectangles. Coordinates are fifths of a
+/// module from the code's corner. `None` paints with `fg`.
+pub(crate) fn paths(cells: &Subcells) -> Vec<Stroke> {
+    let side = cells.side;
+    let at = |c: usize| ((c / 3) * FIFTHS + SPANS[c % 3].0) as i64 * UNIT;
+    let mut out = Vec::new();
+    let mut emit = |paint: Option<Color>, dark: bool, member: &dyn Fn(usize) -> bool| {
+        for height in [SPANS[0].1, SPANS[1].1] {
+            let mut path = Path::new();
+            for y in (0..side).filter(|y| SPANS[y % 3].1 == height) {
+                let mid = at(y) + height as i64 * UNIT / 2;
+                let mut x = 0;
+                while x < side {
+                    if !member(y * side + x) {
+                        x += 1;
+                        continue;
+                    }
+                    let start = x;
+                    while x + 1 < side && member(y * side + x + 1) {
+                        x += 1;
+                    }
+                    path.move_to(at(start), mid);
+                    path.line_to(at(x) + SPANS[x % 3].1 as i64 * UNIT, mid);
+                    x += 1;
+                }
+            }
+            if !path.is_empty() {
+                out.push(Stroke {
+                    paint,
+                    dark,
+                    width: height as u8,
+                    path,
+                });
+            }
+        }
+    };
+    match &cells.colors {
+        None => emit(None, true, &|i| cells.dark[i] == Some(true)),
+        Some((palette, index)) => {
+            for (c, &(color, dark)) in palette.iter().enumerate() {
+                emit(Some(color), dark, &|i| {
+                    cells.dark[i].is_some() && index[i] as usize == c
+                });
+            }
+        }
+    }
+    out
+}
+
+/// One stroked path of a picture (see [`paths`]).
+pub(crate) struct Stroke {
+    /// A fixed color, or `None` for the `fg` token.
+    pub(crate) paint: Option<Color>,
+    /// Whether the paint is in the dark band.
+    pub(crate) dark: bool,
+    /// The stroke width, in fifths of a module.
+    pub(crate) width: u8,
+    pub(crate) path: Path,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,5 +867,164 @@ mod tests {
         );
         // Black means "don't care": the right half is left to chance.
         assert!((half(false) - 0.5).abs() < 0.08, "{}", half(false));
+    }
+
+    fn code_and_cells(ink: Ink) -> (QrMatrix, Style, Subcells) {
+        let style = Style::new()
+            .halftone(Halftone::new(stripes(90)).ink(ink))
+            .alignment(crate::AlignmentStyle {
+                shape: crate::AlignmentShape::Match,
+                emphasis: crate::Emphasis::Outline,
+            });
+        let qr = QrCode::builder()
+            .ecc(Ecc::M)
+            .version(Version::new(7).unwrap())
+            .encode_text_for("https://example.com", &style)
+            .unwrap();
+        let removed = crate::scene::removed(&style, &qr);
+        let h = style.halftone.as_ref().unwrap();
+        let cells = subcells(h, &qr, &removed, style.palette.background());
+        (qr, style, cells)
+    }
+
+    #[test]
+    fn centers_carry_the_modules() {
+        let (qr, style, cells) = code_and_cells(Ink::Mono);
+        let removed = crate::scene::removed(&style, &qr);
+        assert!(!removed.is_empty());
+        let side = cells.side;
+        for (x, y, dark, role) in qr.modules() {
+            let (x, y) = (x as usize, y as usize);
+            let center = cells.dark[(y * 3 + 1) * side + x * 3 + 1];
+            if role.is_function() || removed.get(x as i64, y as i64) {
+                for i in 0..9 {
+                    assert_eq!(cells.dark[(y * 3 + i / 3) * side + x * 3 + i % 3], None);
+                }
+            } else {
+                assert_eq!(center, Some(dark), "({x}, {y})");
+            }
+        }
+    }
+
+    /// Replays a stroke's `m`/`h` commands into the sub-cells it covers.
+    fn covered(stroke: &Stroke, side: usize) -> Vec<bool> {
+        let d = stroke.path.data();
+        let mut out = vec![false; side * side];
+        let (mut x, mut y) = (0.0f64, 0.0f64);
+        let mut cmd = ' ';
+        let mut nums: Vec<f64> = Vec::new();
+        let mut flush = |cmd: char, nums: &mut Vec<f64>, out: &mut Vec<bool>| {
+            match cmd {
+                'm' => {
+                    x += nums[0];
+                    y += nums[1];
+                }
+                'h' => {
+                    // Fifths to sub-cells: edges 1 wide, centers 3.
+                    let row = (y - stroke.width as f64 / 2.0).round() as usize;
+                    let cy =
+                        row / FIFTHS * 3 + SPANS.iter().position(|s| s.0 == row % FIFTHS).unwrap();
+                    let (from, to) = (x.round() as usize, (x + nums[0]).round() as usize);
+                    for f in from..to {
+                        if let Some(k) = SPANS.iter().position(|s| s.0 == f % FIFTHS) {
+                            out[cy * side + f / FIFTHS * 3 + k] = true;
+                        }
+                    }
+                    x += nums[0];
+                }
+                _ => {}
+            }
+            nums.clear();
+        };
+        let mut num = alloc::string::String::new();
+        for c in d.chars().chain(core::iter::once(' ')) {
+            let starts = c == '-' || (c == '.' && num.contains('.'));
+            if c.is_ascii_digit() || (c == '.' && !starts) {
+                num.push(c);
+                continue;
+            }
+            if !num.is_empty() {
+                nums.push(num.parse().unwrap());
+                num.clear();
+            }
+            if c.is_ascii_alphabetic() {
+                if cmd != ' ' {
+                    flush(cmd, &mut nums, &mut out);
+                }
+                cmd = c;
+            } else if starts {
+                num.push(c);
+            }
+        }
+        flush(cmd, &mut nums, &mut out);
+        out
+    }
+
+    #[test]
+    fn strokes_cover_exactly_their_cells() {
+        for ink in [Ink::Mono, Ink::Color { colors: 3 }] {
+            let (_, _, cells) = code_and_cells(ink);
+            let side = cells.side;
+            let mut drawn = vec![None; side * side];
+            for stroke in paths(&cells) {
+                for (i, hit) in covered(&stroke, side).into_iter().enumerate() {
+                    if hit {
+                        assert_eq!(drawn[i], None, "{ink:?}: cell {i} drawn twice");
+                        drawn[i] = Some(stroke.paint);
+                    }
+                }
+            }
+            for i in 0..side * side {
+                let want = match (&cells.colors, cells.dark[i]) {
+                    (_, None) => None,
+                    (None, Some(d)) => d.then_some(None),
+                    (Some((palette, index)), Some(_)) => Some(Some(palette[index[i] as usize].0)),
+                };
+                assert_eq!(drawn[i], want, "{ink:?}: cell {i}");
+            }
+        }
+    }
+
+    #[test]
+    fn colors_stay_in_their_bands() {
+        let (_, _, cells) = code_and_cells(Ink::Color { colors: 3 });
+        let (palette, _) = cells.colors.unwrap();
+        assert!(palette.len() <= 6);
+        let (dark, light) = DEFAULT_BANDS;
+        for (color, is_dark) in palette {
+            let l = color.to_oklab()[0];
+            if is_dark {
+                assert!(l <= dark + 0.01, "{color} {l}");
+            } else {
+                assert!(l >= light - 0.01, "{color} {l}");
+            }
+        }
+    }
+
+    #[cfg(feature = "animate")]
+    #[test]
+    fn plans_describe_the_strokes() {
+        let style = Style::new().halftone(Halftone::new(stripes(90)).ink(Ink::Color { colors: 2 }));
+        let qr = QrCode::builder()
+            .ecc(Ecc::M)
+            .version(Version::new(7).unwrap())
+            .encode_text_for("https://example.com", &style)
+            .unwrap();
+        let plan = style.plan(&qr).unwrap();
+        let layers: Vec<_> = plan
+            .layers
+            .iter()
+            .filter(|l| l.role == crate::LayerRole::Halftone)
+            .collect();
+        // Two bands of two colors, each with edge and center rows.
+        assert_eq!(layers.len(), 8);
+        for l in &layers {
+            assert!(l.color.is_some());
+            assert_eq!(l.cells, Some((4.0, 4.0)));
+            assert!(matches!(l.stroke, Some(w) if w == 1.0 || w == 3.0));
+        }
+        let json = plan.to_json();
+        assert!(json.contains(r##""role":"halftone","token":"fg","color":"#"##));
+        assert!(json.contains(r#""cells":[4,4],"stroke":3"#));
     }
 }

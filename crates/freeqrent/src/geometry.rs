@@ -12,6 +12,9 @@ use crate::style::{Axis, ModuleShape};
 /// One module, in path units.
 pub(crate) const UNIT: i64 = 1000;
 
+/// A picture's sub-cells (SPEC §7.7 B) are drawn in fifths of a module.
+pub(crate) const FIFTHS: usize = 5;
+
 /// Converts a fraction of a module to path units.
 pub(crate) fn units(fraction: f32) -> i64 {
     crate::math::round(fraction as f64 * UNIT as f64) as i64

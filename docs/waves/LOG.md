@@ -2,6 +2,14 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026092854 · M5 · Halftone sub-cells
+
+- Landed: `Style::halftone` now draws the picture: 3 × 3 sub-cells per data, ECC and remainder module, the center carrying the module, the rest Floyd–Steinberg-dithered from the picture (area-weighted, centers included). `Ink::Mono` (`fg` over `bg`) and `Ink::Color { colors }` (the picture's colors clamped into dark and light bands, k-means per band); `Halftone::bands`; `Clarity::Uniform | Map`; `HALFTONE_DAMAGE_BUDGET` (0.40) for logos and Outline on picture codes. Output is stroked rows in fifths of a module inside a nested viewBox; plans carry `color`, `cells` and `stroke`; group intros move the picture as one piece.
+- Decisions (measured): a 0.6-wide center (even 3 × 3: 118/150 failed at 4 px/module; half-module: rqrr missed 2–18 of 216 off-center); sub-cells squeezed to [0.2, 0.8] (unsqueezed every code failed the degraded render); clarity 0 by default (it all passed); 40% budget (50% left 3/216 rqrr misses with a logo); color bands 0.28/0.94.
+- Decision: strokes instead of rectangles halved the paths (v20 mono 65–115 KB, under the 150 KB target; color 140–270 KB). Linear-light OKLab conversion took a v20 render from 114 to 35 ms.
+- Checks: 7 core unit tests (centers carry modules, strokes cover exactly their cells, bands hold, plan JSON), a halftone snapshot, 6 verify tests (5 pictures × v5–v27 × L/M/Q × mono/color at the full bar; logos at every size 4–12 px with rqrr; 8 style combinations; size; every preset's static and last frame equal the plain code).
+- Follow-up: palette fades on strokes, timing hidden on the picture, smaller color output (ROADMAP).
+
 ## 20261026081347 · M5 · Free-bit solver and module steering
 
 - Landed: feature `halftone` (default on, no deps) with `Halftone` (picture, `Fit::Cover|Contain`, focal point, priority map, `steer`) and `Style::halftone`. The free-bit solver: per Reed–Solomon block, effect vectors for every bit after the terminator, elimination in priority order, all 8 masks scored from one elimination. `QrBuilder::encode_text_steered`; `encode_text_for` steers when the style has a picture. `ScanReport::steering` (steerable, code and matched modules).

@@ -170,6 +170,10 @@ pub enum LayerRole {
     /// white band fading in and out across its width at 18% opacity at
     /// most, parked left of the canvas.
     Shimmer,
+    /// A picture drawn into sub-cells (SPEC §7.7 B): one layer per
+    /// paint. Its path is in sub-cells of a third of a module, from the
+    /// code's top-left corner ([`PlanLayer::cells`](crate::PlanLayer::cells)).
+    Halftone,
 }
 
 /// What a layer draws.
@@ -191,6 +195,10 @@ pub(crate) enum Part {
     /// never use the module shape: scanners look for their 1:1:1:1:1
     /// profile.
     Alignment(Vec<(u16, u16)>),
+    /// The data, ECC and remainder modules drawn into the style's picture.
+    /// Its sub-cells are worked out when it's drawn.
+    #[cfg_attr(not(feature = "halftone"), allow(dead_code))]
+    Halftone,
 }
 
 impl Part {
@@ -218,6 +226,7 @@ impl Layer {
             Part::FinderOuter(_) => LayerRole::FinderOuter,
             Part::FinderEye(_) => LayerRole::FinderEye,
             Part::Alignment(_) => LayerRole::Alignment,
+            Part::Halftone => LayerRole::Halftone,
         }
     }
 }
@@ -364,6 +373,16 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
         });
     }
     let cleared = removed(style, qr);
+    #[cfg(feature = "halftone")]
+    let pictured = style.halftone.is_some();
+    #[cfg(not(feature = "halftone"))]
+    let pictured = false;
+    if pictured {
+        layers.push(Layer {
+            token: Token::Fg,
+            part: Part::Halftone,
+        });
+    }
     let mut data = Grid::new(size);
     let mut timing = Grid::new(size);
     for (x, y, dark, role) in qr.modules() {
@@ -374,6 +393,8 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
         match role {
             ModuleRole::Finder { .. } | ModuleRole::Separator | ModuleRole::Alignment { .. } => {}
             ModuleRole::Timing => timing.set(x, y),
+            // Format and version modules stay whole (SPEC §7.7 rule 2).
+            ModuleRole::Data | ModuleRole::Ecc | ModuleRole::Remainder if pictured => {}
             _ => data.set(x, y),
         }
     }

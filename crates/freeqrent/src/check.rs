@@ -21,6 +21,21 @@ pub const CONTRAST_FLOOR: f32 = 0.40;
 /// The share of a block's correctable codewords that cleared modules may
 /// use up (SPEC §7.3), leaving the rest for print and camera damage.
 pub const DAMAGE_BUDGET: f32 = 0.60;
+/// [`DAMAGE_BUDGET`] for a code drawn into a picture (SPEC §7.7): its
+/// sub-cells cost decoders that sample off-center a few codewords too.
+/// Measured (W20261026092854): with a logo at 0.5, rqrr missed 3 of 216
+/// clean renders between 4 and 12 px/module; at 0.4, none.
+pub const HALFTONE_DAMAGE_BUDGET: f32 = 0.40;
+
+/// The damage budget that applies to `style`.
+pub(crate) fn damage_budget(style: &Style) -> f32 {
+    #[cfg(feature = "halftone")]
+    if style.halftone.is_some() {
+        return HALFTONE_DAMAGE_BUDGET;
+    }
+    let _ = style;
+    DAMAGE_BUDGET
+}
 
 /// The difference below which a code renders with a warning: under blur
 /// and sensor noise, ZXing starts missing codes below about 0.6, the
@@ -340,6 +355,8 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         }
     }
 
+    #[cfg(feature = "halftone")]
+    check_halftone(style, &mut errors, &mut warnings);
     #[cfg(feature = "animate")]
     check_intro(style, qr, &mut errors, &mut warnings);
     check_scan_boxes(style, &mut errors, &mut warnings);
@@ -413,6 +430,36 @@ fn steering(style: &Style, qr: &QrMatrix) -> Option<Steering> {
         code_modules: code,
         matched_modules: matched,
     })
+}
+
+/// A picture's options. In color, the gap between the dark and light
+/// bands is the code's contrast, judged like a token's (reported as `fg`).
+#[cfg(feature = "halftone")]
+fn check_halftone(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut Vec<Warning>) {
+    use crate::halftone::{Clarity, Ink};
+    let Some(h) = &style.halftone else {
+        return;
+    };
+    if let Clarity::Uniform(c) = h.clarity {
+        in_range(errors, "Clarity::Uniform", c, 0.0, 1.0);
+    }
+    if let Ink::Color { .. } = h.ink {
+        let (dark, light) = h.bands;
+        in_range(errors, "Halftone.bands dark", dark, 0.0, 1.0);
+        in_range(errors, "Halftone.bands light", light, 0.0, 1.0);
+        let gap = light - dark;
+        if gap < CONTRAST_FLOOR {
+            errors.push(RenderError::ContrastTooLow {
+                token: Token::Fg,
+                delta_l: gap,
+            });
+        } else if gap < CONTRAST_WARNING {
+            warnings.push(Warning::LowContrast {
+                token: Token::Fg,
+                delta_l: gap,
+            });
+        }
+    }
 }
 
 #[cfg(feature = "animate")]
@@ -530,7 +577,7 @@ fn check_scan_boxes(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut
 struct Budget {
     /// Correctable codewords per block (after misdecode protection).
     correctable: u16,
-    /// Of those, what [`DAMAGE_BUDGET`] lets cleared modules take.
+    /// Of those, what the damage budget lets cleared modules take.
     allowed: u16,
     /// For each module, its codeword and block.
     map: Vec<Option<(u16, u16)>>,
@@ -539,13 +586,13 @@ struct Budget {
 }
 
 impl Budget {
-    fn new(qr: &QrMatrix) -> Budget {
+    fn new(qr: &QrMatrix, share: f32) -> Budget {
         let layout = BlockLayout::new(qr.version(), qr.ecc());
         let correctable =
             ((layout.ecc_per_block - misdecode_protection(qr.version(), qr.ecc())) / 2) as u16;
         Budget {
             correctable,
-            allowed: (correctable as f32 * DAMAGE_BUDGET) as u16,
+            allowed: (correctable as f32 * share) as u16,
             map: qr.codeword_map(),
             blocks: layout.num_blocks,
             codewords: layout.total_codewords,
@@ -581,7 +628,7 @@ fn budget(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
     if cleared.is_empty() && style.logo.is_none() {
         return 0.0;
     }
-    let budget = Budget::new(qr);
+    let budget = Budget::new(qr, damage_budget(style));
     let share = |damaged: u16| damaged as f32 / budget.correctable as f32;
     let outline = budget.worst(qr, &cleared, None);
     if outline > budget.allowed {

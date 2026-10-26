@@ -22,29 +22,63 @@ use crate::scanbox::{self, AlignmentShape};
 use crate::scene::{self, Canvas, LayerRole, Part, Round};
 use crate::style::{Frame, Style};
 
-/// The paths to draw, one per (token, fill rule), in paint order.
-fn build_paths(
-    style: &Style,
-    qr: &QrMatrix,
-    canvas: &Canvas,
-) -> Vec<(LayerRole, Token, bool, Path)> {
-    let mut paths: Vec<(LayerRole, Token, bool, Path)> = Vec::new();
+/// The paths to draw, one per (token, fill rule), in paint order; a
+/// picture's sub-cells keep their own elements.
+fn build_paths(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
+    let mut paths: Vec<Element> = Vec::new();
     for layer in scene::layers(style, qr) {
+        if matches!(layer.part, Part::Halftone) {
+            paths.extend(halftone_elements(style, qr));
+            continue;
+        }
         let evenodd = layer.part.evenodd();
-        let i = match paths
-            .iter()
-            .position(|(_, t, e, _)| *t == layer.token && *e == evenodd)
-        {
+        let i = match paths.iter().position(|e| {
+            e.token == layer.token && e.evenodd == evenodd && e.role != LayerRole::Halftone
+        }) {
             Some(i) => i,
             None => {
-                paths.push((layer.role(), layer.token, evenodd, Path::new()));
+                paths.push(Element::new(
+                    layer.role(),
+                    layer.token,
+                    evenodd,
+                    Path::new(),
+                ));
                 paths.len() - 1
             }
         };
-        draw_part(style, qr, canvas, &layer.part, &mut paths[i].3);
+        draw_part(style, qr, canvas, &layer.part, &mut paths[i].path);
     }
-    paths.retain(|(_, _, _, p)| !p.is_empty());
+    paths.retain(|e| !e.path.is_empty());
     paths
+}
+
+/// The picture's elements: one per paint, in sub-cell units.
+#[cfg(feature = "halftone")]
+pub(crate) fn halftone_elements(style: &Style, qr: &QrMatrix) -> Vec<Element> {
+    let Some(h) = &style.halftone else {
+        return Vec::new();
+    };
+    let cells = crate::halftone::subcells(
+        h,
+        qr,
+        &scene::removed(style, qr),
+        style.palette.background(),
+    );
+    crate::halftone::paths(&cells)
+        .into_iter()
+        .map(|s| {
+            let token = if s.dark { Token::Fg } else { Token::Bg };
+            let mut e = Element::new(LayerRole::Halftone, token, false, s.path);
+            e.color = s.paint;
+            e.stroke = Some(s.width);
+            e
+        })
+        .collect()
+}
+
+#[cfg(not(feature = "halftone"))]
+pub(crate) fn halftone_elements(_: &Style, _: &QrMatrix) -> Vec<Element> {
+    Vec::new()
 }
 
 /// Appends one layer part's geometry to `path`.
@@ -64,6 +98,8 @@ pub(crate) fn draw_part(
         )
     };
     match part {
+        // Drawn as elements of their own (`halftone_elements`).
+        Part::Halftone => {}
         Part::Ring => {
             if let Some(round) = &canvas.round {
                 draw_ring(path, round, canvas.side * UNIT / 2);
@@ -164,6 +200,12 @@ pub(crate) struct Element {
     pub(crate) anim: Option<usize>,
     /// Its state at a fixed time, for a frame render.
     pub(crate) pose: Option<Pose>,
+    /// A fixed color instead of the token's paint (a picture's colors).
+    pub(crate) color: Option<Color>,
+    /// A picture's sub-cells (SPEC §7.7 B): the path is lines in fifths
+    /// of a module, stroked this wide, drawn through a nested viewport over
+    /// the code's modules.
+    pub(crate) stroke: Option<u8>,
 }
 
 impl Element {
@@ -178,6 +220,8 @@ impl Element {
             origin: (0.0, 0.0),
             anim: None,
             pose: None,
+            color: None,
+            stroke: None,
         }
     }
 }
@@ -247,9 +291,7 @@ pub(crate) fn static_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> 
             background_path(style, canvas),
         ));
     }
-    for (role, token, evenodd, path) in build_paths(style, qr, canvas) {
-        elements.push(Element::new(role, token, evenodd, path));
-    }
+    elements.extend(build_paths(style, qr, canvas));
     if let Some((plate, center)) = logo_plate(style, qr, canvas) {
         let mut logo = Element::new(LayerRole::Logo, Token::LogoBackdrop, false, plate);
         logo.origin = (center, center);
@@ -301,24 +343,25 @@ pub(crate) fn write<W: Write + ?Sized>(
     // Solid tokens that get a class, and the gradients to define.
     let mut solids: Vec<Token> = Vec::new();
     let mut gradients: Vec<Token> = Vec::new();
+    // A picture's strokes: solid tokens whose rules set `stroke`, and
+    // gradients restated in the strokes' space (fifths of a module).
+    let mut stroked: Vec<Token> = Vec::new();
+    let mut stroke_gradients: Vec<Token> = Vec::new();
     let painted = elements
         .iter()
         .filter(|e| e.role != LayerRole::Shimmer)
         .filter(|e| e.role != LayerRole::Logo || backdrop)
-        .map(|e| e.token);
-    for token in painted {
-        match palette.resolve(token) {
-            Paint::Solid(_) => {
-                if !solids.contains(&token) {
-                    solids.push(token);
-                }
-            }
-            Paint::Gradient(_) => {
-                let source = paint_source(palette, token);
-                if !gradients.contains(&source) {
-                    gradients.push(source);
-                }
-            }
+        .filter(|e| e.color.is_none())
+        .map(|e| (e.token, e.stroke.is_some()));
+    for (token, stroke) in painted {
+        let (list, token) = match palette.resolve(token) {
+            Paint::Solid(_) if stroke => (&mut stroked, token),
+            Paint::Solid(_) => (&mut solids, token),
+            Paint::Gradient(_) if stroke => (&mut stroke_gradients, paint_source(palette, token)),
+            Paint::Gradient(_) => (&mut gradients, paint_source(palette, token)),
+        };
+        if !list.contains(&token) {
+            list.push(token);
         }
     }
 
@@ -358,21 +401,23 @@ pub(crate) fn write<W: Write + ?Sized>(
         out.w,
         palette,
         &prefix,
-        &solids,
+        (&solids, &stroked),
         &gradients,
         fade,
         motion.as_ref(),
     )?;
 
-    if !gradients.is_empty() {
+    if !gradients.is_empty() || !stroke_gradients.is_empty() {
         out.line()?;
         out.w.write_str("<defs>")?;
-        for &source in &gradients {
+        let defs = gradients.iter().map(|&t| (t, false));
+        for (source, fifths) in defs.chain(stroke_gradients.iter().map(|&t| (t, true))) {
             let Some(Paint::Gradient(g)) = palette.get(source) else {
                 unreachable!("gradient sources hold gradients");
             };
             out.nested_line()?;
-            write_gradient(out.w, g, &prefix, source, canvas.origin, qr.size())?;
+            let at = (canvas.origin, qr.size());
+            write_gradient(out.w, g, &prefix, source, at, fifths)?;
         }
         out.line()?;
         out.w.write_str("</defs>")?;
@@ -433,6 +478,9 @@ pub(crate) fn write<W: Write + ?Sized>(
                 write_pose(out.w, e)?;
                 write!(out.w, " d=\"{}\"/>", e.path.data())?;
             }
+            _ if e.stroke.is_some() => {
+                write_subcells(out.w, palette, e, &prefix, &canvas, qr.size())?
+            }
             _ => {
                 out.w.write_str("<path")?;
                 write_element_paint(out.w, palette, e, &prefix)?;
@@ -459,6 +507,68 @@ pub(crate) fn write<W: Write + ?Sized>(
     Ok(())
 }
 
+/// A path in sub-cells: a nested viewport over the code's modules, so the
+/// path's integer coordinates scale exactly. Motion goes on a group around
+/// it, so transform origins stay in the document's units.
+fn write_subcells<W: Write + ?Sized>(
+    w: &mut W,
+    palette: &Palette,
+    e: &Element,
+    prefix: &str,
+    canvas: &Canvas,
+    size: u16,
+) -> fmt::Result {
+    let group = e.anim.is_some() || e.pose.is_some_and(|p| p != Pose::NATURAL);
+    if group {
+        w.write_str("<g")?;
+        if let Some(n) = e.anim {
+            write!(w, " class=\"{prefix}-e{n}\"")?;
+        }
+        write_pose(w, e)?;
+        w.write_char('>')?;
+    }
+    let (o, cells) = (canvas.origin, size as usize * geometry::FIFTHS);
+    write!(
+        w,
+        "<svg x=\"{o}\" y=\"{o}\" width=\"{size}\" height=\"{size}\" viewBox=\"0 0 {cells} {cells}\"><path"
+    )?;
+    let plain = Element {
+        anim: None,
+        pose: e.pose.map(|p| Pose {
+            fill: p.fill,
+            ..Pose::NATURAL
+        }),
+        ..e.clone()
+    };
+    let color = plain.pose.and_then(|p| p.fill).or(e.color);
+    match (color, palette.resolve(e.token)) {
+        (Some(c), _) | (None, Paint::Solid(c)) => {
+            if color.is_none() {
+                write!(w, " class=\"{prefix}-")?;
+                write_dashed(w, e.token.name())?;
+                w.write_str("-s\"")?;
+            }
+            w.write_str(" stroke=\"")?;
+            write_hex(w, c)?;
+            w.write_char('"')?;
+            write_opacity(w, "stroke-opacity", c)?;
+        }
+        (None, Paint::Gradient(_)) => {
+            write!(w, " stroke=\"url(#{prefix}-")?;
+            write_dashed(w, paint_source(palette, e.token).name())?;
+            w.write_str("-q)\"")?;
+        }
+    }
+    if let Some(width) = e.stroke.filter(|&k| k != 1) {
+        write!(w, " stroke-width=\"{width}\"")?;
+    }
+    write!(w, " d=\"{}\"/></svg>", e.path.data())?;
+    if group {
+        w.write_str("</g>")?;
+    }
+    Ok(())
+}
+
 /// The paint of an element: its token's, or a frame's fixed fill.
 fn write_element_paint<W: Write + ?Sized>(
     w: &mut W,
@@ -466,7 +576,7 @@ fn write_element_paint<W: Write + ?Sized>(
     e: &Element,
     prefix: &str,
 ) -> fmt::Result {
-    if let Some(color) = e.pose.and_then(|p| p.fill) {
+    if let Some(color) = e.pose.and_then(|p| p.fill).or(e.color) {
         w.write_str(" fill=\"")?;
         write_hex(w, color)?;
         w.write_char('"')?;
@@ -633,18 +743,20 @@ fn write_style<W: Write + ?Sized>(
     w: &mut W,
     palette: &Palette,
     prefix: &str,
-    solids: &[Token],
+    (solids, stroked): (&[Token], &[Token]),
     gradients: &[Token],
     fade: Option<u32>,
     motion: Option<&Motion>,
 ) -> fmt::Result {
     let wide = |c: Color| c.opaque_srgb() != c.opaque();
-    let mut needs_oklch = solids
-        .iter()
-        .any(|&t| match palette.get(paint_source(palette, t)) {
-            Some(Paint::Solid(c)) => wide(*c),
-            _ => false,
-        });
+    let mut needs_oklch =
+        solids
+            .iter()
+            .chain(stroked)
+            .any(|&t| match palette.get(paint_source(palette, t)) {
+                Some(Paint::Solid(c)) => wide(*c),
+                _ => false,
+            });
     for &g in gradients {
         if let Some(Paint::Gradient(g)) = palette.get(g) {
             needs_oklch |= g.stops().iter().any(|s| wide(s.color));
@@ -656,22 +768,27 @@ fn write_style<W: Write + ?Sized>(
         w.write_str(" and (color:oklch(0% 0 0))")?;
     }
     w.write_char('{')?;
-    for &token in solids {
+    let rules = solids.iter().map(|&t| (t, "", "fill"));
+    let rules: Vec<(Token, &str, &str)> = rules
+        .chain(stroked.iter().map(|&t| (t, "-s", "stroke")))
+        .collect();
+    for &(token, suffix, property) in &rules {
         write!(w, ".{prefix}-")?;
         write_dashed(w, token.name())?;
-        w.write_str("{fill:")?;
+        write!(w, "{suffix}{{{property}:")?;
         write_var_chain(w, palette, token)?;
         if let Some(ms) = fade {
-            write!(w, ";transition:fill {ms}ms cubic-bezier(.25,1,.5,1)")?;
+            write!(w, ";transition:{property} {ms}ms cubic-bezier(.25,1,.5,1)")?;
         }
         w.write_char('}')?;
     }
-    if fade.is_some() && !solids.is_empty() {
+    if fade.is_some() && !rules.is_empty() {
         w.write_str("@media (prefers-reduced-motion:reduce){")?;
-        for (i, &token) in solids.iter().enumerate() {
+        for (i, &(token, suffix, _)) in rules.iter().enumerate() {
             w.write_str(if i == 0 { "." } else { ",." })?;
             write!(w, "{prefix}-")?;
             write_dashed(w, token.name())?;
+            w.write_str(suffix)?;
         }
         w.write_str("{transition:none}}")?;
     }
@@ -766,13 +883,16 @@ fn write_dashed<W: Write + ?Sized>(w: &mut W, name: &str) -> fmt::Result {
     Ok(())
 }
 
+/// With `fifths`, the gradient is for a picture's strokes, whose user
+/// space is fifths of a module from the code's corner: it gets a `-q` id
+/// and a transform into that space, so it lands where the fills' does.
 fn write_gradient<W: Write + ?Sized>(
     w: &mut W,
     gradient: &Gradient,
     prefix: &str,
     source: Token,
-    origin: i64,
-    size: u16,
+    (origin, size): (i64, u16),
+    fifths: bool,
 ) -> fmt::Result {
     // Gradients span the code area, not the quiet zone.
     let side = size as f64;
@@ -788,6 +908,11 @@ fn write_gradient<W: Write + ?Sized>(
     };
     write!(w, "<{tag} id=\"{prefix}-")?;
     write_dashed(w, source.name())?;
+    if fifths {
+        let k = geometry::FIFTHS as i64;
+        let o = -k * origin;
+        write!(w, "-q\" gradientTransform=\"matrix({k} 0 0 {k} {o} {o})")?;
+    }
     w.write_str("\" gradientUnits=\"userSpaceOnUse\"")?;
     match gradient.kind() {
         GradientKind::Linear { angle } => {

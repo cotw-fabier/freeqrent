@@ -66,8 +66,8 @@ pub use animate::{
     Reveal, RevealShape, StaggerOrder, Target, Track, Trigger, Value,
 };
 pub use check::{
-    ANIMATED_ELEMENTS, CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, LONG_INTRO_MS, RenderError,
-    ScanReport, Warning,
+    ANIMATED_ELEMENTS, CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, HALFTONE_DAMAGE_BUDGET,
+    LONG_INTRO_MS, RenderError, ScanReport, Warning,
 };
 pub use code::{QrBuilder, QrCode};
 pub use color::{Color, ColorError};
@@ -77,7 +77,7 @@ pub use extract::{
     Choice, EXTRACT_CONTRAST, ExtractError, Origin, PaletteOpts, PaletteReport, Swatch,
 };
 #[cfg(feature = "halftone")]
-pub use halftone::{Fit, Halftone, Steering};
+pub use halftone::{Clarity, DEFAULT_BANDS, DEFAULT_CLARITY, Fit, Halftone, Ink, Steering};
 pub use image::{ImageError, Rgba8Image};
 pub use logo::{Logo, LogoError, LogoShape, RasterFormat};
 pub use matrix::{CapacityReport, Corner, FinderRing, Mask, ModuleRole, QrMatrix};

@@ -100,7 +100,7 @@ impl Color {
 
     /// An opaque OKLab color (L 0–1), stored at the precision `oklab()`
     /// parses to.
-    #[cfg_attr(not(feature = "animate"), allow(dead_code))]
+    #[cfg_attr(not(any(feature = "animate", feature = "halftone")), allow(dead_code))]
     pub(crate) fn from_oklab(l: f64, a: f64, b: f64) -> Color {
         Color {
             space: Space::Oklab {
@@ -284,7 +284,11 @@ pub(crate) fn linear_to_srgb(c: f64) -> f64 {
 
 /// Gamma-encoded sRGB to OKLab (Björn Ottosson's matrices).
 pub(crate) fn srgb_to_oklab(rgb: [f64; 3]) -> [f64; 3] {
-    let [r, g, b] = rgb.map(srgb_to_linear);
+    linear_to_oklab(rgb.map(srgb_to_linear))
+}
+
+/// Linear sRGB to OKLab.
+pub(crate) fn linear_to_oklab([r, g, b]: [f64; 3]) -> [f64; 3] {
     let l = math::cbrt(0.412_221_470_8 * r + 0.536_332_536_3 * g + 0.051_445_992_9 * b);
     let m = math::cbrt(0.211_903_498_2 * r + 0.680_699_545_1 * g + 0.107_396_956_6 * b);
     let s = math::cbrt(0.088_302_461_9 * r + 0.281_718_837_6 * g + 0.629_978_700_5 * b);

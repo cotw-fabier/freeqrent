@@ -514,9 +514,19 @@ pub struct PlanLayer {
     pub role: LayerRole,
     /// Its paint, looked up in [`AnimationPlan::palette`].
     pub token: Token,
+    /// A fixed color that replaces the token's paint: a picture's colors
+    /// (the token then says only whether the band is dark, `fg`, or light,
+    /// `bg`).
+    pub color: Option<Color>,
     /// SVG path data in viewBox units (modules). For the logo, its plate;
     /// the logo's content is drawn from the style.
     pub path: String,
+    /// For a picture's sub-cells: the path is in fifths of a module, from
+    /// this point (the code's top-left corner) in viewBox units.
+    pub cells: Option<(f32, f32)>,
+    /// For a picture's sub-cells: the path is horizontal lines, stroked
+    /// this wide (in the path's units, butt caps) instead of filled.
+    pub stroke: Option<f32>,
     /// Whether the path uses the even-odd fill rule.
     pub evenodd: bool,
     /// The stagger group, for split layers.
@@ -574,6 +584,8 @@ enum Unit {
     Corner(Corner),
     Center((u16, u16)),
     Ring,
+    /// A whole layer that moves as one: a picture's sub-cells.
+    Whole,
 }
 
 #[derive(Clone, Debug)]
@@ -695,6 +707,7 @@ fn pieces(
                 let s = canvas.side as f64;
                 push(Unit::Ring, (0.0, 0.0, s, s));
             }
+            Part::Halftone => push(Unit::Whole, (o, o, o + n as f64, o + n as f64)),
         }
     }
 
@@ -798,6 +811,14 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
                 .iter()
                 .filter(|p| p.group == group && corner_of(&p.unit) == corner)
                 .collect();
+            if matches!(layer.part, Part::Halftone) {
+                for mut e in svg::halftone_elements(style, qr) {
+                    e.group = Some(group);
+                    e.origin = (mid, mid);
+                    elements.push(e);
+                }
+                continue;
+            }
             let part = match &layer.part {
                 Part::Modules(_) | Part::Filler(_) | Part::Timing(_) => {
                     let size = if matches!(layer.part, Part::Filler(_)) {
@@ -831,6 +852,7 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
                         .collect(),
                 ),
                 Part::Ring => Part::Ring,
+                Part::Halftone => Part::Halftone,
             };
             let mut path = Path::new();
             svg::draw_part(style, qr, canvas, &part, &mut path);
@@ -1086,7 +1108,12 @@ fn palette_tracks(style: &Style, intro: &Intro, elements: &[Element]) -> Vec<Tra
     let ease = intro.curve();
     let mut tracks = Vec::new();
     for (i, e) in elements.iter().enumerate() {
-        if e.role == LayerRole::Shimmer || (e.role == LayerRole::Logo && !backdrop) {
+        // A picture's strokes take the new palette at once: their paint is
+        // a stroke, and fill tracks don't reach it.
+        if e.role == LayerRole::Shimmer
+            || e.role == LayerRole::Halftone
+            || (e.role == LayerRole::Logo && !backdrop)
+        {
             continue;
         }
         let (Some(a), Some(b)) = (solid(old, e.token), solid(&style.palette, e.token)) else {
@@ -1884,7 +1911,12 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
         .map(|e| PlanLayer {
             role: e.role,
             token: e.token,
+            color: e.color,
             path: String::from(e.path.data()),
+            cells: e
+                .stroke
+                .map(|_| (canvas.origin as f32, canvas.origin as f32)),
+            stroke: e.stroke.map(f32::from),
             evenodd: e.evenodd,
             group: e.group,
             corner: e.corner,
@@ -1943,6 +1975,7 @@ fn role_name(role: LayerRole) -> &'static str {
         LayerRole::FinderEye => "finder-eye",
         LayerRole::Logo => "logo",
         LayerRole::Shimmer => "shimmer",
+        LayerRole::Halftone => "halftone",
     }
 }
 
@@ -1989,6 +2022,23 @@ impl AnimationPlan {
             json_str(w, role_name(l.role))?;
             w.write_str(",\"token\":")?;
             json_str(w, l.token.name())?;
+            if let Some(c) = l.color {
+                w.write_str(",\"color\":")?;
+                let mut css = String::new();
+                write!(css, "{c}")?;
+                json_str(w, &css)?;
+            }
+            if let Some((x, y)) = l.cells {
+                w.write_str(",\"cells\":[")?;
+                json_num(w, x)?;
+                w.write_char(',')?;
+                json_num(w, y)?;
+                w.write_char(']')?;
+            }
+            if let Some(width) = l.stroke {
+                w.write_str(",\"stroke\":")?;
+                json_num(w, width)?;
+            }
             if l.evenodd {
                 w.write_str(",\"evenodd\":true")?;
             }

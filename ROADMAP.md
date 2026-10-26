@@ -36,6 +36,9 @@ Each item says where it came from, so we remember why it's here.
 - **Draw-on finder rings for `LockOn`:** a stroke-dashoffset draw-on needs stroke or mask geometry that covers each ring shape exactly; LockOn scales its rings instead (W20261025234738).
 - **Intro plus palette shift together:** today `Intro::palette_from` is its own intro with no entrance (W20261025235601).
 - **Shimmer clipped to the frame:** the band crosses the whole square canvas, including the corners outside a round frame (W20261025235601).
+- **Palette shifts on picture codes:** a picture's sub-cells are strokes, which fill tracks don't reach, so they take the new palette at once (W20261026092854). A stroke property in plans would let them fade.
+- **Timing hidden on the picture:** the planned `Hidden-on-image` timing style. Picture codes keep timing whole (SPEC §7.7 rule 2); drawing it into sub-cells needs its own measurement (W20261026092854).
+- **Smaller color halftones:** color ink at v20 is 140–270 KB with 6 colors per band, over the mono 150 KB target. Fewer colors, or merging runs across colors with similar lightness, would cut it (W20261026092854).
 - **Animated gradient tokens:** palette shifts swap gradients at once; re-themable stops (above) would let them fade (W20261025235601).
 
 ## Palettes

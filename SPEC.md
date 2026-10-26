@@ -287,7 +287,7 @@ Alignment styles (`AlignmentStyle { shape, emphasis }`):
 - Shape: `Match` (the top-left finder's shapes, radii scaled × 5/7 for the ring and × 1/3 for the eye), or `Own { outer, eye }` (ring radius ≤ 2.5, which is a circle; eye ≤ 0.5). Alignment patterns never use the data module shape.
 - `emphasis`: `None` (painted `fg`, blending with data), `Accent` (the `alignment` token; the default, which falls back to `finder.outer`), or `Outline` (also on a clean `bg` plate one module wider: the data/ECC/remainder modules in that ring are left out). Outline spends the error-correction budget (§7.3 rule): a codeword is damaged when one of its cleared modules was dark, counted per Reed–Solomon block, and each block may lose at most `DAMAGE_BUDGET` = 60% of its correctable codewords (`(ecc − p) / 2`). `ScanReport.ecc_budget_used` reports the worst block. Measured: Outline fits v2–v5 at M and above and v20+ at Q/H, but from v7 to v14 the rings' codewords pile into a few blocks and it's refused. With a steered picture (§7.7 A) the cleared modules are wanted light before anything else, so most of them already are: measured on v7–v14 at M, the worst block's use fell from 0.55–1.44 of the budget to 0–0.44, so Outline fits there too. *(rev. W20261026081347)*
 
-Timing styles (`TimingStyle`): `Plain` (data module shape), `Dotted` (0.8 circles), `Dashed` (dashes along the line, 0.6 thick). `Hidden-on-image` waits for halftone (M5).
+Timing styles (`TimingStyle`): `Plain` (data module shape), `Dotted` (0.8 circles), `Dashed` (dashes along the line, 0.6 thick). A `Hidden-on-image` style was planned for halftone; picture codes keep the timing patterns whole (§7.7 rule 2), and hiding them is in the ROADMAP. *(rev. W20261026092854)*
 
 *(rev. W20261025214510)*
 
@@ -342,18 +342,23 @@ Two techniques combine:
 - **Measured:** steered codes match 67–90% of the targets at L and M (v5–v27), against about 50% unsteered, and pass the full bar (ZXing on every render, rqrr on the clean ones) across five synthetic pictures, v2–v27 × L/M/Q/H.
 - `ScanReport.steering` (`Steering { steerable_modules, code_modules, matched_modules }`) reports the free bits, the data and ECC modules, and how many match.
 
-**B. Halftone sub-cells (Chu et al., 2013).** Each module is split into a 3×3 sub-grid. The **center sub-cell carries the true module value**, since that is where scanners sample. The 8 surrounding sub-cells follow the image's dithered luminance (Floyd–Steinberg or blue-noise ordered dither, in OKLab L).
+**B. Halftone sub-cells (Chu et al., 2013).** Each data, ECC and remainder module is split into a 3×3 sub-grid. The **center sub-cell carries the true module value**, since that is where scanners sample. The 8 surrounding sub-cells follow the image's dithered lightness (Floyd–Steinberg, serpentine, in OKLab L, error weighted by sub-cell area, centers included so the picture's tone survives them). *(rev. W20261026092854)*
+
+- **The grid isn't even.** Cell edges sit at 0, 0.2, 0.8 and 1 of a module: the center is 0.6 wide, the edges 0.2. Measured on clean renders: an even grid (a third-wide center) failed ZXing on 118 of 150 codes at 4 px/module, where the center covers 1.3 px. A half-module center fixed that, but rqrr, which samples one pixel through a perspective fitted to one alignment pattern, still missed 2 of 216 renders from 4 to 12 px/module (18 of 216 with a logo). At 0.6 none missed.
+- **Sub-cells are squeezed** like module targets: lightness goes into [0.2, 0.8] before dithering, so flat areas of the picture keep both colors. Measured: unsqueezed, every code failed the blurred, noisy render; 0.15 still lost the color disc at ECC L (the blur swallows the thin light edges); 0.2 lost nothing.
+- **Measured:** with clarity 0, five synthetic pictures × v5–v27 × L/M/Q × mono and color pass the full bar (ZXing on every render, rqrr on the clean ones); so do steering off, Outline with dotted timing, round frames, clarity maps, `Fit::Contain`, gradient `fg`, two-color ink, every intro preset, and logos at every size from 4 to 12 px/module. At the module centers, sampled ideally, no module reads wrong at 4, 6 or 10 px/module.
 
 A makes the code's own pattern resemble the image. B fills in detail at 3× resolution. Together they let the whole picture read as the code.
 
 Further rules:
-1. ECC level is configurable. **M is the default in art mode.** Lower ECC frees more bits for steering. Halftone doesn't spend the error budget, because the sampled centers are always correct.
-2. Function patterns (finders, timing, alignment, format/version) are rendered at full contrast, though they may be tinted.
-3. Color mode: sub-cells keep the image's hue but are clamped to dark/light luminance bands so contrast is preserved.
-4. A **clarity map** (auto or user-supplied) marks regions where image contrast is pulled toward pure modules, giving scanners a cleaner area, and regions where the image dominates.
-5. Output: one path per color band (not per sub-cell) to keep file size reasonable. Target ≤ 150 KB for a v20 code.
+1. ECC level is configurable. **M is the default in art mode.** Lower ECC frees more bits for steering. Halftone barely spends the error budget, because the sampled centers are correct, but decoders that sample off-center do lose a few codewords: a picture code's logo and Outline get `HALFTONE_DAMAGE_BUDGET` = 40% of each block's correctable codewords instead of 60%. Measured: with a logo at 50%, rqrr missed 3 of 216 clean renders from 4 to 12 px/module; at 40%, none.
+2. Function patterns (finders, separators, timing, alignment, format/version, the dark module) are drawn as whole modules at full contrast, though they may be tinted. Modules a logo or Outline clears get no sub-cells.
+3. **Ink** (`Halftone::ink`): `Ink::Mono` (default) paints dark sub-cells in `fg` over `bg`. `Ink::Color { colors }` gives every sub-cell the picture's color with its lightness clamped into the dark band (≤ 0.28) or the light band (≥ 0.94) (`Halftone::bands`, default `DEFAULT_BANDS`), each band reduced to `colors` (2–16) by k-means in OKLab, started from lightness quantiles so it's deterministic. The band gap is checked like a token's contrast (reported as `fg`): an error below 0.40, a warning below 0.60.
+4. A **clarity map** (`Halftone::clarity`: `Clarity::Uniform(c)` or `Clarity::Map(Rgba8Image)`, light = clear) pulls the surrounding sub-cells toward the module's value by `c`, giving scanners a cleaner area where it's set. The default is 0 everywhere: the squeeze above did what an automatic map was meant to do, and with it every measured code passed at 0.
+5. **Output:** per paint, one path for the thin edge rows and one for the center rows: horizontal runs as `m dx dy h w` lines along each row's middle, stroked at the row's height with butt caps, which halves the bytes of outlined rectangles. Paths are in fifths of a module inside a nested `<svg viewBox>` over the code, so integer coordinates scale exactly. Mono strokes carry a `{prefix}-fg-s` class whose rule sets `stroke` from `--qr-fg`; a gradient `fg` is restated as a `-q` gradient with a transform into that space. **Measured:** v20 in mono is 65–115 KB across the five pictures (≤ 150 KB, tested); in color with 6 colors per band, 140–270 KB. A v20 renders in about 35 ms (release; 1600 px picture: 48 ms).
+6. In an `AnimationPlan` (§8.5) each paint is a `LayerRole::Halftone` layer with `color` (in color ink), `cells` (the code's corner; the path is in fifths of a module from there) and `stroke` (1 or 3). Group intros move the picture as one piece; reveal presets mask it with everything else; a palette shift leaves its strokes on the new palette from the start.
 
-Input is `Rgba8Image` (same as palette extraction). The image is cropped/fit with `Fit::Cover | Contain` and optional focal point.
+Input is `Rgba8Image` (same as palette extraction). The image is cropped/fit with `Fit::Cover | Contain` and optional focal point. The sub-cells sample it at five per module and gather it into the uneven cells.
 
 **Compatibility note:** steered padding bits are non-standard (the spec suggests alternating `0xEC 0x11` pad bytes), but decoders stop reading at the terminator. ZXing, iOS Camera, and Google Lens all accept them, and the verify suite (§9) pins this per release. `Halftone::steer(false)` (the `strict_padding` of earlier drafts) turns steering off for conservative environments. rqrr and rxing accept steered padding in the verify suite; the device check is M5's scan matrix.
 
@@ -486,9 +491,12 @@ pub struct AnimationPlan {
 }
 
 pub struct PlanLayer {
-    pub role: LayerRole,             // Background, Ring, Filler, Data, Timing, Alignment, FinderOuter, FinderEye, Logo
+    pub role: LayerRole,             // Background, Ring, Filler, Data, Timing, Alignment, FinderOuter, FinderEye, Logo, Shimmer, Halftone
     pub token: Token,
+    pub color: Option<Color>,        // a picture's fixed color (§7.7 rule 6)
     pub path: String,                // SVG path data in modules; the logo's plate for Logo
+    pub cells: Option<(f32, f32)>,   // a picture's path is in fifths of a module from here
+    pub stroke: Option<f32>,         // …and stroked this wide instead of filled
     pub evenodd: bool,
     pub group: Option<u8>,
     pub corner: Option<Corner>,
