@@ -187,6 +187,13 @@ pub enum LayerRole {
     /// white slanted band, 45% opacity at most, clipped to the plate and
     /// parked left of it.
     LogoGlint,
+    /// The logo's content on its own, for the idles that move it
+    /// ([`Idle::LogoSpin`](crate::Idle::LogoSpin),
+    /// [`Idle::LogoFlip`](crate::Idle::LogoFlip)). It is drawn inside the
+    /// [`LayerRole::Logo`] layer, clipped to the window its path gives: it
+    /// takes that layer's motion as well as its own, and the window moves
+    /// with the plate, not with the content.
+    LogoArt,
 }
 
 impl LayerRole {
@@ -195,7 +202,11 @@ impl LayerRole {
     pub(crate) fn is_logo(self) -> bool {
         matches!(
             self,
-            LayerRole::Logo | LayerRole::LogoFrame | LayerRole::LogoInk | LayerRole::LogoGlint
+            LayerRole::Logo
+                | LayerRole::LogoArt
+                | LayerRole::LogoFrame
+                | LayerRole::LogoInk
+                | LayerRole::LogoGlint
         )
     }
 }

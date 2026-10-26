@@ -145,8 +145,8 @@ pub struct Choice {
 pub struct PaletteReport {
     /// The source's colors, most common first.
     pub swatches: Vec<Swatch>,
-    /// The tokens that were set: `bg`, `fg`, and `finder.eye` when the
-    /// source has an accent.
+    /// The tokens that were set: `bg`, `fg`, and `finder.eye` and
+    /// `logo.frame` when the source has an accent.
     pub choices: Vec<Choice>,
 }
 
@@ -170,7 +170,8 @@ impl fmt::Display for ExtractError {
 impl std::error::Error for ExtractError {}
 
 impl Palette {
-    /// Derives `bg`, `fg` and (when there is an accent) `finder.eye` from
+    /// Derives `bg`, `fg` and (when there is an accent) `finder.eye` and
+    /// `logo.frame` from
     /// an image (SPEC §6.4). The image is averaged down to at most 64×64,
     /// clustered in OKLab with seeded k-means++, and the clusters are
     /// assigned so every painted token has at least
@@ -506,12 +507,29 @@ pub(crate) fn assign(swatches: Vec<Swatch>, roles: &[Roles], min: f32) -> (Palet
             .copied()
             .filter(|&i| Some(i) != fg_index && hue(i) >= ACCENT_CHROMA)
     };
-    let accent = best(candidates().filter(|&i| roles[i].accent > 0.0), |i| {
+    let accent_index = best(candidates().filter(|&i| roles[i].accent > 0.0), |i| {
         roles[i].accent
     })
     .or_else(|| best(candidates(), |i| swatches[i].share * hue(i)))
-    .map(settle)
-    .filter(|&(c, _)| distance(c, fg) >= ACCENT_DISTANCE);
+    .filter(|&i| distance(settle(i).0, fg) >= ACCENT_DISTANCE);
+    let accent = accent_index.map(settle);
+
+    // logo.frame: an off color for the logo's border, the second most
+    // prominent hue when the source has one apart from fg and the eyes,
+    // else the eyes' accent.
+    let second = best(
+        candidates().filter(|&i| {
+            Some(i) != accent_index && {
+                let c = settle(i).0;
+                distance(c, fg) >= ACCENT_DISTANCE
+                    && accent.is_none_or(|(eye, _)| distance(c, eye) >= ACCENT_DISTANCE)
+            }
+        }),
+        |i| roles[i].accent + swatches[i].share * hue(i),
+    )
+    .filter(|_| accent.is_some())
+    .map(settle);
+    let frame = second.or(accent);
 
     let mut palette = Palette::new();
     let mut choices = Vec::new();
@@ -527,6 +545,9 @@ pub(crate) fn assign(swatches: Vec<Swatch>, roles: &[Roles], min: f32) -> (Palet
     put(Token::Fg, (fg, fg_origin));
     if let Some(eye) = accent {
         put(Token::FinderEye, eye);
+    }
+    if let Some(frame) = frame {
+        put(Token::LogoFrame, frame);
     }
     (palette, PaletteReport { swatches, choices })
 }
@@ -581,6 +602,29 @@ mod tests {
         };
         let orange = report.swatches[2].color;
         assert!((hue(eye.color) - hue(orange)).abs() < 0.05);
+        // One accent: the logo's frame takes it too.
+        assert_eq!(token(&report, Token::LogoFrame).unwrap().color, eye.color);
+    }
+
+    #[test]
+    fn a_second_accent_frames_the_logo() {
+        // White page, navy ink, orange and teal accents.
+        let img = stripes(&[
+            ([250, 248, 244, 255], 60),
+            ([20, 30, 80, 255], 24),
+            ([230, 90, 20, 255], 12),
+            ([20, 150, 140, 255], 8),
+        ]);
+        let (palette, report) = Palette::from_image(&img, PaletteOpts::new()).unwrap();
+        let eye = token(&report, Token::FinderEye).unwrap();
+        let frame = token(&report, Token::LogoFrame).unwrap();
+        assert!(matches!(eye.origin, Origin::Darkened { swatch: 2, .. }));
+        assert!(matches!(
+            frame.origin,
+            Origin::Swatch(3) | Origin::Darkened { swatch: 3, .. }
+        ));
+        let c = palette.contrast(Token::LogoFrame);
+        assert!(!c.inverted && c.delta_l >= EXTRACT_CONTRAST, "{c:?}");
     }
 
     #[test]

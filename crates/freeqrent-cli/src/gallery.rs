@@ -351,6 +351,62 @@ pub(crate) const LOGO_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("finder", "squircle/circle"),
         ],
     ),
+    (
+        "Thick off-color ring",
+        &[
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "ring:1.5"),
+            ("logo-frame-color", "oklch(52% .09 190)"),
+            ("shape", "dots:0.85"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
+    (
+        "Palette frame",
+        &[
+            ("palette-from-css", "sample"),
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "stamp"),
+            ("shape", "rounded:0.4"),
+        ],
+    ),
+    (
+        "Shrink logo intro",
+        &[
+            ("intro", "settle"),
+            ("logo", "sample"),
+            ("logo-shape", "rounded:1.5"),
+            ("logo-frame", "ring"),
+            ("logo-intro", "shrink"),
+            ("shape", "rounded:0.5"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
+        "Logo spin",
+        &[
+            ("intro", "settle"),
+            ("idle", "logo-spin"),
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "brackets"),
+            ("shape", "dots:0.85"),
+        ],
+    ),
+    (
+        "Logo flip",
+        &[
+            ("intro", "ripple"),
+            ("idle", "logo-flip"),
+            ("logo", "sample"),
+            ("logo-shape", "rounded:1.5"),
+            ("logo-frame", "ring"),
+            ("shape", "liquid:0.8"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
 ];
 
 pub(crate) fn escape(text: &str) -> String {

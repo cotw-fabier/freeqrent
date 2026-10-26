@@ -223,17 +223,23 @@ pub enum LogoIntro {
     /// The logo shows first as a flat silhouette in `fg`, then blooms into
     /// its own colors (800 ms).
     Ink,
+    /// The logo, plate and frame fade in as wide as the code, hold there
+    /// for the first 15% of the intro, then shrink to their place over the
+    /// rest while the code comes in beneath them. It always plays with the
+    /// code over the whole intro: the timing doesn't apply.
+    Shrink,
 }
 
 impl LogoIntro {
     /// Every logo intro.
-    pub const ALL: [LogoIntro; 6] = [
+    pub const ALL: [LogoIntro; 7] = [
         LogoIntro::None,
         LogoIntro::Reveal,
         LogoIntro::Stamp,
         LogoIntro::Draw,
         LogoIntro::Lock,
         LogoIntro::Ink,
+        LogoIntro::Shrink,
     ];
 
     /// The intro's lowercase name, as the CLI spells it.
@@ -245,6 +251,7 @@ impl LogoIntro {
             LogoIntro::Draw => "draw",
             LogoIntro::Lock => "lock",
             LogoIntro::Ink => "ink",
+            LogoIntro::Shrink => "shrink",
         }
     }
 
@@ -257,6 +264,8 @@ impl LogoIntro {
             LogoIntro::Draw => 700.0,
             LogoIntro::Lock => 550.0,
             LogoIntro::Ink => 800.0,
+            // The whole intro, whatever its length.
+            LogoIntro::Shrink => f64::INFINITY,
         }
     }
 }
@@ -499,16 +508,25 @@ pub enum Idle {
     /// other frames once every 24 s. Only round frames may turn
     /// ([`RenderError::TurnNeedsRoundFrame`](crate::RenderError::TurnNeedsRoundFrame)).
     LogoTurn,
+    /// Every 8 s the logo turns once in its plane (1.2 s, ease-in-out),
+    /// inside a window that stays put, then rests.
+    LogoSpin,
+    /// Every 8 s the logo flips over once about its horizontal axis, like
+    /// a coin (1 s), then rests. With [`Idle::LogoSpin`] the two take
+    /// turns, half the loop apart.
+    LogoFlip,
 }
 
 impl Idle {
     /// Every idle loop.
-    pub const ALL: [Idle; 5] = [
+    pub const ALL: [Idle; 7] = [
         Idle::FinderPulse,
         Idle::Shimmer,
         Idle::Breathe,
         Idle::LogoGlint,
         Idle::LogoTurn,
+        Idle::LogoSpin,
+        Idle::LogoFlip,
     ];
 
     /// The loop's lowercase name, as the CLI spells it.
@@ -519,6 +537,8 @@ impl Idle {
             Idle::Breathe => "breathe",
             Idle::LogoGlint => "logo-glint",
             Idle::LogoTurn => "logo-turn",
+            Idle::LogoSpin => "logo-spin",
+            Idle::LogoFlip => "logo-flip",
         }
     }
 }
@@ -544,13 +564,20 @@ pub enum Property {
     /// How much of an outline is drawn from its start, 0–1
     /// ([`PlanLayer::outline`]).
     Draw,
+    /// Vertical scale on top of [`Property::Scale`], about the layer's
+    /// origin; negative mirrors the layer top to bottom.
+    ScaleY,
 }
 
 impl Property {
     fn is_transform(self) -> bool {
         matches!(
             self,
-            Property::Scale | Property::TranslateX | Property::TranslateY | Property::Rotate
+            Property::Scale
+                | Property::TranslateX
+                | Property::TranslateY
+                | Property::Rotate
+                | Property::ScaleY
         )
     }
 
@@ -564,6 +591,7 @@ impl Property {
             Property::Reveal => "reveal",
             Property::Rotate => "rotate",
             Property::Draw => "draw",
+            Property::ScaleY => "scaleY",
         }
     }
 }
@@ -1116,7 +1144,13 @@ fn scatter(seed: u64, group: u8) -> (f32, f32) {
 }
 
 /// The tracks of `intro` for `elements`.
-fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<Track> {
+fn tracks(
+    style: &Style,
+    qr: &QrMatrix,
+    intro: &Intro,
+    seed: u64,
+    elements: &[Element],
+) -> Vec<Track> {
     let Some(preset) = intro.entrance() else {
         return Vec::new();
     };
@@ -1129,11 +1163,12 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
     let logo_ms = match logo_intro {
         LogoIntro::None => 0.0,
         LogoIntro::Reveal => LOGO_MS.min(total * 0.4),
+        LogoIntro::Shrink => total,
         other => other.ms().min(total * 0.6),
     };
     // The code's own stretch: it overlaps the logo's intro by half.
     let (code_start, code_end, logo_at) = match intro.logo_timing {
-        _ if logo_ms == 0.0 => (0.0, total, 0.0),
+        _ if logo_ms == 0.0 || logo_intro == LogoIntro::Shrink => (0.0, total, 0.0),
         LogoTiming::After => (0.0, total - logo_ms / 2.0, total - logo_ms),
         LogoTiming::Before => (logo_ms / 2.0, total, 0.0),
         LogoTiming::With => (0.0, total, (total - logo_ms) / 2.0),
@@ -1160,9 +1195,16 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
     };
 
     let has_frame = elements.iter().any(|e| e.role == LayerRole::LogoFrame);
+    // Shrink starts the plate as wide as the code.
+    let plate = 2.0 * plate_half(style, qr);
+    let wide = if plate > 0.0 {
+        (qr.size() as f64 / plate).max(1.0) as f32
+    } else {
+        1.0
+    };
     let logo_track = |i: usize, e: &Element| {
         let drawable = e.outline.as_ref().is_some_and(|o| o.dashes.is_empty());
-        logo_keys(logo_intro, e.role, has_frame, drawable).map(|(at, length, keys)| {
+        logo_keys(logo_intro, e.role, has_frame, drawable, wide).map(|(at, length, keys)| {
             track(
                 Target::Layer(i),
                 logo_at + at * logo_ms,
@@ -1271,12 +1313,14 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
 
 /// The keyframes a logo layer of `role` gets from `intro`: where its track
 /// starts and how long it runs, as shares of the logo's intro, and its
-/// keys. `drawable` says the layer is an outline that can draw on.
+/// keys. `drawable` says the layer is an outline that can draw on; `wide`
+/// is the scale at which the plate is as wide as the code.
 fn logo_keys(
     intro: LogoIntro,
     role: LayerRole,
     has_frame: bool,
     drawable: bool,
+    wide: f32,
 ) -> Option<(f64, f64, Vec<Keyframe>)> {
     let fade = |scale: f32| {
         alloc::vec![
@@ -1287,7 +1331,8 @@ fn logo_keys(
     let fade_in = || alloc::vec![number(Property::Opacity, 0.0, 0.0)];
     let frame = role == LayerRole::LogoFrame;
     match (intro, role) {
-        (_, LayerRole::LogoGlint) | (LogoIntro::None, _) => None,
+        // The content moves inside the plate's layer, with it.
+        (_, LayerRole::LogoGlint | LayerRole::LogoArt) | (LogoIntro::None, _) => None,
         (LogoIntro::Ink, LayerRole::LogoInk) => Some((
             0.0,
             1.0,
@@ -1295,6 +1340,18 @@ fn logo_keys(
             alloc::vec![number(Property::Opacity, 0.3, 1.0)],
         )),
         (_, LayerRole::LogoInk) => None,
+        (LogoIntro::Shrink, _) => Some((
+            0.0,
+            1.0,
+            // In fast at full width, so it never pops; a beat there so it
+            // reads as the whole code; then down, decelerating.
+            alloc::vec![
+                number(Property::Opacity, 0.0, 0.0),
+                number(Property::Opacity, 0.08, 1.0),
+                number(Property::Scale, 0.0, wide),
+                number(Property::Scale, 0.15, wide),
+            ],
+        )),
         (LogoIntro::Reveal, _) => Some((0.0, 1.0, fade(0.94))),
         (LogoIntro::Stamp, _) => Some((
             0.0,
@@ -1414,7 +1471,7 @@ fn palette_tracks(style: &Style, intro: &Intro, elements: &[Element]) -> Vec<Tra
         // a stroke, and fill tracks don't reach it.
         if matches!(
             e.role,
-            LayerRole::Shimmer | LayerRole::Halftone | LayerRole::LogoGlint
+            LayerRole::Shimmer | LayerRole::Halftone | LayerRole::LogoGlint | LayerRole::LogoArt
         ) || e.outline.is_some()
             || (e.role == LayerRole::Logo && !backdrop)
         {
@@ -1474,6 +1531,59 @@ pub(crate) fn breathe_color(style: &Style) -> Option<Color> {
 const GLINT_MS: u32 = 7000;
 const TURN_MS: u32 = 24_000;
 const ORBIT_MS: u32 = 12_000;
+/// How often the logo spins or flips, and how long each takes.
+const SPIN_EVERY_MS: u32 = 8000;
+const SPIN_MS: f64 = 1200.0;
+const FLIP_MS: f64 = 1000.0;
+/// A spin starts and lands softly: ease-in-out quart.
+const SPIN_EASE: CubicBezier = CubicBezier::new(0.76, 0.0, 0.24, 1.0);
+/// Steps a spin or flip is sampled in, through [`SPIN_EASE`]; a flip's
+/// height follows the cosine of its turn.
+const FLIP_STEPS: usize = 12;
+
+/// The keyframes of the logo's spin and flip in one loop: each property
+/// keyed at every step, so the browser interpolates matching transforms.
+/// The spin turns from −360° to 0 in its first stretch; the flip, half the
+/// loop later (or first, alone), takes the height through cos 0–360°. The
+/// steps carry the easing, so the track itself is linear.
+fn spin_flip_keys(spin: bool, flip: bool) -> Vec<Keyframe> {
+    let every = SPIN_EVERY_MS as f64;
+    let flip_at = if spin { 0.5 } else { 0.0 };
+    let mut keys = Vec::new();
+    let mut key = |offset: f64, rotate: f64, height: f64| {
+        let offset = (math::round(offset * 10_000.0) / 10_000.0) as f32;
+        if spin {
+            keys.push(number(Property::Rotate, offset, rotate as f32));
+        }
+        if flip {
+            keys.push(number(
+                Property::ScaleY,
+                offset,
+                (math::round(height * 1000.0) / 1000.0) as f32,
+            ));
+        }
+    };
+    if spin {
+        let length = SPIN_MS / every;
+        for i in 0..=FLIP_STEPS {
+            let t = i as f64 / FLIP_STEPS as f64;
+            let angle = math::round((SPIN_EASE.at(t) - 1.0) * 360_000.0) / 1000.0;
+            key(t * length, angle, 1.0);
+        }
+    }
+    if flip {
+        let (start, length) = (flip_at, FLIP_MS / every);
+        if spin {
+            key(start, 0.0, 1.0);
+        }
+        for i in 1..=FLIP_STEPS {
+            let t = i as f64 / FLIP_STEPS as f64;
+            let turn = SPIN_EASE.at(t) * 2.0 * core::f64::consts::PI;
+            key(start + t * length, 0.0, math::sin_cos(turn).1);
+        }
+    }
+    keys
+}
 
 /// The idle loops, starting at `start` ms.
 fn idle_tracks(
@@ -1549,6 +1659,20 @@ fn idle_tracks(
                     // A whole turn back to its own angle.
                     alloc::vec![number(Property::Rotate, 0.0, -360.0)],
                 ));
+            }
+            LayerRole::LogoArt => {
+                let (spin, flip) = (
+                    style.idle.contains(&Idle::LogoSpin),
+                    style.idle.contains(&Idle::LogoFlip),
+                );
+                if spin || flip {
+                    tracks.push(endless(
+                        target,
+                        SPIN_EVERY_MS,
+                        CubicBezier::LINEAR,
+                        spin_flip_keys(spin, flip),
+                    ));
+                }
             }
             LayerRole::Shimmer => {
                 // Across in the first quarter, then home unseen.
@@ -1689,6 +1813,7 @@ pub(crate) fn build(
     if let Some(intro) = intro {
         tracks.extend(self::tracks(
             style,
+            qr,
             intro,
             scene::seed(style, qr),
             &elements,
@@ -1849,6 +1974,9 @@ fn pose<'a>(
         if let Some(v) = sample(track, Property::Rotate, 0.0, t) {
             pose.rotate = v;
         }
+        if let Some(v) = sample(track, Property::ScaleY, 1.0, t) {
+            pose.scale_y = v;
+        }
         if let Some(v) = sample(track, Property::Draw, 1.0, t) {
             pose.draw = v;
         }
@@ -1900,6 +2028,10 @@ fn write_curve<W: Write + ?Sized>(w: &mut W, c: CubicBezier) -> fmt::Result {
 
 /// One keyframe list as CSS rules, grouped by offset.
 fn write_keyframes<W: Write + ?Sized>(w: &mut W, keys: &[Keyframe]) -> fmt::Result {
+    // A list that turns or flips writes those functions in every rule, so
+    // neighboring transforms match and interpolate by angle, not matrix.
+    let turns = keys.iter().any(|k| k.property == Property::Rotate);
+    let flips = keys.iter().any(|k| k.property == Property::ScaleY);
     let mut offsets: Vec<f32> = keys.iter().map(|k| k.offset).collect();
     offsets.sort_unstable_by(|a, b| a.total_cmp(b));
     offsets.dedup();
@@ -1963,7 +2095,7 @@ fn write_keyframes<W: Write + ?Sized>(w: &mut W, keys: &[Keyframe]) -> fmt::Resu
                 parts += 1;
             }
             let r = num(Property::Rotate, 0.0);
-            if r != 0.0 {
+            if r != 0.0 || turns {
                 if parts > 0 {
                     w.write_char(' ')?;
                 }
@@ -1972,7 +2104,16 @@ fn write_keyframes<W: Write + ?Sized>(w: &mut W, keys: &[Keyframe]) -> fmt::Resu
                 w.write_str("deg)")?;
                 parts += 1;
             }
-            if s != 1.0 || parts == 0 {
+            if flips {
+                if parts > 0 {
+                    w.write_char(' ')?;
+                }
+                w.write_str("scale(")?;
+                write_number(w, s)?;
+                w.write_char(',')?;
+                write_number(w, s * num(Property::ScaleY, 1.0))?;
+                w.write_char(')')?;
+            } else if s != 1.0 || parts == 0 {
                 if parts > 0 {
                     w.write_char(' ')?;
                 }
@@ -2086,8 +2227,13 @@ impl Motion {
             write_keyframes(w, keys)?;
             w.write_char('}')?;
         }
-        let mut targets: Vec<Target> = self.tracks.iter().map(|t| t.target).collect();
-        targets.dedup();
+        // Each target once, in order of its first track.
+        let mut targets: Vec<Target> = Vec::new();
+        for t in &self.tracks {
+            if !targets.contains(&t.target) {
+                targets.push(t.target);
+            }
+        }
         // Elements whose tracks differ only in delay share one rule; each
         // element then sets its delays and origin.
         let signature = |target: Target| -> Vec<Signature> {
@@ -2408,6 +2554,7 @@ fn role_name(role: LayerRole) -> &'static str {
         LayerRole::LogoFrame => "logo-frame",
         LayerRole::LogoInk => "logo-ink",
         LayerRole::LogoGlint => "logo-glint",
+        LayerRole::LogoArt => "logo-art",
     }
 }
 
@@ -2959,6 +3106,111 @@ mod tests {
         let plan = turn.plan(&qr).unwrap();
         let frame = turn.render_frame(&qr, plan.total_ms + 6000).unwrap();
         assert!(frame.contains("transform=\"matrix("));
+    }
+
+    #[test]
+    fn shrink_starts_as_wide_as_the_code() {
+        let ring = framed(crate::LogoFrame::Ring);
+        let qr = framed_code(&ring);
+        for timing in LogoTiming::ALL {
+            let style = ring.clone().intro(
+                Intro::new(Preset::Settle)
+                    .logo(LogoIntro::Shrink)
+                    .logo_timing(timing),
+            );
+            let plan = style.plan(&qr).unwrap();
+            let plate = 2.0 * plate_half(&style, &qr);
+            for (i, layer) in plan.layers.iter().enumerate() {
+                let mine: Vec<&Track> = plan
+                    .tracks
+                    .iter()
+                    .filter(|t| t.target == Target::Layer(i))
+                    .collect();
+                if !layer.role.is_logo() {
+                    // The code plays over the whole intro too.
+                    assert!(mine.iter().all(|t| t.delay_ms + t.duration_ms <= 1200));
+                    continue;
+                }
+                let [track] = mine[..] else {
+                    panic!("{:?}: {mine:?}", layer.role)
+                };
+                assert_eq!((track.delay_ms, track.duration_ms), (0, 1200), "{timing:?}");
+                let wide = track
+                    .keys
+                    .iter()
+                    .find(|k| k.property == Property::Scale)
+                    .unwrap();
+                let Value::Number(v) = wide.value else {
+                    unreachable!()
+                };
+                assert!((v as f64 * plate - qr.size() as f64).abs() < 1e-3);
+            }
+        }
+    }
+
+    #[test]
+    fn spin_and_flip_move_the_art_alone() {
+        let style = framed(crate::LogoFrame::Ring);
+        let qr = framed_code(&style);
+        let still = style.render(&qr).unwrap();
+        for idles in [
+            &[Idle::LogoSpin][..],
+            &[Idle::LogoFlip],
+            &[Idle::LogoSpin, Idle::LogoFlip],
+        ] {
+            let moving = idles.iter().fold(style.clone(), |s, &i| s.idle(i));
+            let plan = moving.plan(&qr).unwrap();
+            let art = plan
+                .layers
+                .iter()
+                .position(|l| l.role == LayerRole::LogoArt)
+                .unwrap();
+            assert_eq!(plan.layers[art - 1].role, LayerRole::Logo);
+            let [track] = &plan.tracks[..] else {
+                panic!("{:?}", plan.tracks)
+            };
+            assert_eq!(track.target, Target::Layer(art));
+            assert_eq!((track.iterations, track.duration_ms), (None, 8000));
+            // Every key ends where it started, at rest.
+            let at = |p: Property, offset: f32| {
+                track
+                    .keys
+                    .iter()
+                    .rfind(|k| k.property == p && k.offset <= offset)
+                    .map(|k| k.value)
+            };
+            if idles.contains(&Idle::LogoSpin) {
+                assert_eq!(at(Property::Rotate, 0.0), Some(Value::Number(-360.0)));
+                assert_eq!(at(Property::Rotate, 1.0), Some(Value::Number(0.0)));
+            }
+            if idles.contains(&Idle::LogoFlip) {
+                assert_eq!(at(Property::ScaleY, 1.0), Some(Value::Number(1.0)));
+                let lowest = track
+                    .keys
+                    .iter()
+                    .filter_map(|k| match (k.property, k.value) {
+                        (Property::ScaleY, Value::Number(v)) => Some(v),
+                        _ => None,
+                    })
+                    .fold(1.0f32, f32::min);
+                assert!(lowest < -0.9, "{lowest}");
+            }
+            let svg = moving.render(&qr).unwrap();
+            assert!(svg.contains("-logo-clip)\"><g class="));
+            // At rest it is the still picture's logo, plate apart.
+            let frame = moving.render_frame(&qr, 7000).unwrap();
+            assert!(!frame.contains("matrix("));
+            assert_eq!(
+                still.matches("<image").count() + still.matches("<svg").count(),
+                frame.matches("<image").count() + frame.matches("<svg").count()
+            );
+            // Mid-move it turns or squashes.
+            let mid = moving.render_frame(&qr, 400).unwrap();
+            assert!(mid.contains("transform=\"matrix("), "{idles:?}");
+        }
+        let both = style.idle(Idle::LogoSpin).idle(Idle::LogoFlip);
+        let svg = both.render(&qr).unwrap();
+        assert!(svg.contains("rotate(0deg) scale(1,"));
     }
 
     #[test]

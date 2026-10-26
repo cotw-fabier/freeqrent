@@ -166,11 +166,20 @@ fn intros_scan_before_they_end() {
 /// The logo's own idle loops need a logo with a round frame to act on.
 fn for_idle(style: Style, idle: Idle) -> Style {
     match idle {
+        // These pin small codes: the moon is the size it was before it
+        // grew (W20261026105648).
         Idle::LogoGlint | Idle::LogoTurn => style.logo(
             Logo::svg(r##"<svg viewBox="0 0 4 4"><rect width="4" height="4" fill="#c33"/></svg>"##)
                 .unwrap()
                 .scale(0.1)
-                .frame(LogoFrame::Orbit),
+                .frame(LogoFrame::Orbit)
+                .moon_size(0.8),
+        ),
+        // A square logo with no frame: its corners turn inside the plate.
+        Idle::LogoSpin | Idle::LogoFlip => style.logo(
+            Logo::svg(r##"<svg viewBox="0 0 4 4"><rect width="4" height="4" fill="#c33"/></svg>"##)
+                .unwrap()
+                .scale(0.1),
         ),
         _ => style,
     }

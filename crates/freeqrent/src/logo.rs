@@ -103,23 +103,26 @@ impl LogoSize {
 
 /// A border on the logo's plate (SPEC §7.3), painted in `logo.frame`. It
 /// sits inside the plate, a quarter module in from its edge, and the plate
-/// grows to hold it, so the error-correction budget counts it.
+/// grows to hold it, so the error-correction budget counts it. Unless set,
+/// its width grows with the logo: the default below for logos up to
+/// [`FRAME_REFERENCE`] modules wide, in proportion past that.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum LogoFrame {
-    /// A solid band along the plate's outline (default 0.45 modules wide).
+    /// A solid band along the plate's outline (default 0.8 modules wide).
     Ring,
     /// A ring of beads in the code's own module shape: dots for Dots,
     /// Liquid and Bars, squares for Square, rounded squares for Rounded
-    /// (default 0.7 modules).
+    /// (default 0.9 modules).
     Beads,
-    /// A band with a scalloped outer edge, like a seal (default 0.6).
+    /// A band with a scalloped outer edge, like a seal (default 0.9).
     Stamp,
-    /// Four corner brackets, like a viewfinder (default 0.5). On a
+    /// Four corner brackets, like a viewfinder (default 0.8). On a
     /// circle they are four arcs.
     Brackets,
-    /// A thin circle inside the plate with a gap and a moon in it: the
-    /// width is the moon's (default 0.8). With
+    /// A circle inside the plate with a gap and a moon in it: the width
+    /// is the circle's line (default 0.4), the moon is
+    /// [`Logo::moon_size`] across (default 2.4). With
     /// [`Idle::LogoTurn`](crate::Idle::LogoTurn) the moon orbits.
     Orbit,
 }
@@ -148,14 +151,23 @@ impl LogoFrame {
     /// The width a frame gets unless set, in modules.
     pub fn default_width(self) -> f32 {
         match self {
-            LogoFrame::Ring => 0.45,
-            LogoFrame::Beads => 0.7,
-            LogoFrame::Stamp => 0.6,
-            LogoFrame::Brackets => 0.5,
-            LogoFrame::Orbit => 0.8,
+            LogoFrame::Ring => 0.8,
+            LogoFrame::Beads => 0.9,
+            LogoFrame::Stamp => 0.9,
+            LogoFrame::Brackets => 0.8,
+            LogoFrame::Orbit => 0.4,
         }
     }
 }
+
+/// The logo width, in modules, up to which a frame keeps its default
+/// width; wider logos get proportionally wider frames.
+pub const FRAME_REFERENCE: f32 = 8.0;
+/// The widest a frame or moon gets by default, in modules.
+const FRAME_AUTO_MAX: f64 = 2.5;
+/// An Orbit's moon unless set, in modules: three times the line it rode
+/// before (W20261026105648).
+pub const DEFAULT_MOON: f32 = 2.4;
 
 /// Why a logo couldn't be made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -218,6 +230,7 @@ pub struct Logo {
     pub(crate) grow: bool,
     pub(crate) frame: Option<LogoFrame>,
     pub(crate) frame_width: Option<f32>,
+    pub(crate) moon: Option<f32>,
 }
 
 impl Logo {
@@ -232,6 +245,7 @@ impl Logo {
             grow: false,
             frame: None,
             frame_width: None,
+            moon: None,
         }
     }
 
@@ -284,10 +298,19 @@ impl Logo {
         self
     }
 
-    /// The frame's width in modules (0.1–1.5; each frame has its own
-    /// default, [`LogoFrame::default_width`]).
+    /// The frame's width in modules (0.1–2.5). Unless set it is
+    /// [`LogoFrame::default_width`], grown in proportion for logos wider
+    /// than [`FRAME_REFERENCE`] modules.
     pub fn frame_width(mut self, width: f32) -> Logo {
         self.frame_width = Some(width);
+        self
+    }
+
+    /// The diameter of an [`Orbit`](LogoFrame::Orbit) frame's moon, in
+    /// modules (0.4–4; default [`DEFAULT_MOON`], grown like the width).
+    /// Other frames ignore it.
+    pub fn moon_size(mut self, size: f32) -> Logo {
+        self.moon = Some(size);
         self
     }
 
@@ -350,8 +373,13 @@ pub(crate) struct Placement {
     pub(crate) radius: f64,
     /// Half the side of the box the content is fitted into.
     pub(crate) content_half: f64,
-    /// The frame's width, when there is one.
+    /// The band the frame takes, when there is one: its width, or an
+    /// Orbit's moon when that is wider.
     pub(crate) frame: Option<f64>,
+    /// The frame's own width: its line, for an Orbit.
+    pub(crate) line: f64,
+    /// An Orbit's moon diameter.
+    pub(crate) moon: f64,
 }
 
 /// How far a frame sits in from the plate's edge, in modules, so a light
@@ -359,17 +387,28 @@ pub(crate) struct Placement {
 pub(crate) const FRAME_INSET: f64 = 0.25;
 
 impl Logo {
-    /// The frame's width in modules, when there is a frame.
-    pub(crate) fn frame_extent(&self) -> Option<f64> {
+    /// The frame's line width and moon diameter in modules, for a logo
+    /// `side` modules wide, when there is a frame.
+    pub(crate) fn frame_extent(&self, side: f64) -> Option<(f64, f64)> {
         let frame = self.frame?;
-        Some(self.frame_width.unwrap_or(frame.default_width()) as f64)
+        let grow = (side / FRAME_REFERENCE as f64).max(1.0);
+        let auto = |v: f32| (v as f64 * grow).min(FRAME_AUTO_MAX.max(v as f64));
+        let line = self
+            .frame_width
+            .map_or_else(|| auto(frame.default_width()), |w| w as f64);
+        let moon = match frame {
+            LogoFrame::Orbit => self.moon.map_or_else(|| auto(DEFAULT_MOON), |m| m as f64),
+            _ => 0.0,
+        };
+        Some((line, moon))
     }
 }
 
 pub(crate) fn placement(logo: &Logo, qr: &QrMatrix, scale: f32) -> Placement {
     let n = qr.size() as f64;
     let content_half = n * scale as f64 / 2.0;
-    let frame = logo.frame_extent();
+    let (line, moon) = logo.frame_extent(2.0 * content_half).unwrap_or((0.0, 0.0));
+    let frame = logo.frame.map(|_| line.max(moon));
     let half = content_half + logo.padding as f64 + frame.map_or(0.0, |w| w + FRAME_INSET);
     let radius = match logo.shape {
         LogoShape::Square => 0.0,
@@ -382,6 +421,8 @@ pub(crate) fn placement(logo: &Logo, qr: &QrMatrix, scale: f32) -> Placement {
         radius,
         content_half,
         frame,
+        line,
+        moon,
     }
 }
 
@@ -448,7 +489,7 @@ pub(crate) fn frame_shape(
     let (h, r) = (u(outer - width / 2.0), u((outer_r - width / 2.0).max(0.0)));
     let (edge, arc) = sides(h, r);
     let length = 4.0 * (edge + arc);
-    let w = u(width);
+    let w = u(p.line);
     let mut path = Path::new();
     let square = |path: &mut Path, h: i64, r: i64| {
         path.rounded_rect(c - h, c - h, 2 * h, 2 * h, [r; 4]);
@@ -510,11 +551,13 @@ pub(crate) fn frame_shape(
             None
         }
         LogoFrame::Orbit => {
-            // Inscribed in the plate whatever its shape, so it can turn.
+            // Inscribed in the plate whatever its shape, so it can turn;
+            // the line and the moon share the band's middle.
             let radius = u(outer - width / 2.0) as f64;
-            let thick = u((width * 0.25).max(0.15)) as f64;
+            let thick = w as f64;
+            let moon_d = u(p.moon);
             let at = -core::f64::consts::FRAC_PI_4;
-            let gap = (w as f64 * 0.85) / radius;
+            let gap = (moon_d as f64 * 0.85) / radius;
             let point = |angle: f64, rr: f64| {
                 let (sin, cos) = math::sin_cos(angle);
                 (
@@ -535,7 +578,7 @@ pub(crate) fn frame_shape(
                 path.close();
             }
             let moon = point(at, radius);
-            path.circle(moon.0, moon.1, w / 2);
+            path.circle(moon.0, moon.1, moon_d / 2);
             None
         }
     };
@@ -708,9 +751,18 @@ mod tests {
         for frame in LogoFrame::ALL {
             let l = logo().frame(frame);
             let p = placement(&l, &qr, 0.2);
-            let w = frame.default_width() as f64;
+            // A version 7 logo at 0.2 is 9 modules wide: the defaults
+            // grow by 9/8.
+            let grow = 2.0 * p.content_half / FRAME_REFERENCE as f64;
+            assert!((grow - 1.125).abs() < 1e-6);
+            // Up to the cap: an Orbit's moon (2.4 × 1.125) reaches it.
+            let w = match frame {
+                LogoFrame::Orbit => DEFAULT_MOON as f64 * grow,
+                _ => frame.default_width() as f64 * grow,
+            }
+            .min(FRAME_AUTO_MAX);
             assert!(
-                (p.half - plain.half - w - FRAME_INSET).abs() < 1e-9,
+                (p.half - plain.half - w - FRAME_INSET).abs() < 1e-6,
                 "{frame:?}"
             );
             let shape = frame_shape(&l, &p, 4.0, &ModuleShape::SQUARE).unwrap();
@@ -731,6 +783,28 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn set_widths_and_moons_win() {
+        let qr = QrCode::builder()
+            .version(Version::new(7).unwrap())
+            .encode_text("HELLO")
+            .unwrap();
+        let plain = placement(&logo(), &qr, 0.2);
+        let orbit = logo().frame(LogoFrame::Orbit).frame_width(0.3);
+        let p = placement(&orbit.clone().moon_size(1.0), &qr, 0.2);
+        assert_eq!(
+            (p.line as f32, p.moon as f32, p.frame.map(|f| f as f32)),
+            (0.3, 1.0, Some(1.0))
+        );
+        // A thin moon leaves the line the band.
+        let p = placement(&orbit.frame_width(1.2).moon_size(0.6), &qr, 0.2);
+        assert_eq!(p.frame.map(|f| f as f32), Some(1.2));
+        assert!((p.half - plain.half - 1.2 - FRAME_INSET).abs() < 1e-6);
+        // Small logos keep the defaults.
+        let small = placement(&logo().frame(LogoFrame::Ring), &qr, 0.1);
+        assert_eq!(small.line, LogoFrame::Ring.default_width() as f64);
     }
 
     #[test]

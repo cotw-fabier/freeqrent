@@ -80,7 +80,9 @@ pub use extract::{
 #[cfg(feature = "halftone")]
 pub use halftone::{Clarity, DEFAULT_BANDS, DEFAULT_CLARITY, Fit, Halftone, Ink, Steering};
 pub use image::{ImageError, Rgba8Image};
-pub use logo::{Logo, LogoError, LogoFrame, LogoShape, LogoSize, RasterFormat};
+pub use logo::{
+    DEFAULT_MOON, FRAME_REFERENCE, Logo, LogoError, LogoFrame, LogoShape, LogoSize, RasterFormat,
+};
 pub use matrix::{CapacityReport, Corner, FinderRing, Mask, ModuleRole, QrMatrix};
 pub use palette::{
     Contrast, Gradient, GradientKind, GradientStop, Paint, Palette, PaletteError, Token,

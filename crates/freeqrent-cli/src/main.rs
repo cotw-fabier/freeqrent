@@ -65,7 +65,13 @@ Style:
   --logo-size SIZE         small, medium, large, or largest (as big as the code's
                            error correction allows, at least --logo-scale)
   --logo-frame FRAME[:W]   ring, beads, stamp, brackets, orbit, W modules wide
-  --logo-intro INTRO       reveal (default), stamp, draw, lock, ink, none
+                           (default: grows with the logo)
+  --logo-frame-width W     the frame's width, 0.1-2.5 modules (an orbit's line)
+  --logo-frame-color PAINT shortcut for --token logo.frame=PAINT (default: fg,
+                           or an accent found by --palette-from-*)
+  --logo-moon D            an orbit's moon, 0.4-4 modules across (default 2.4)
+  --logo-intro INTRO       reveal (default), stamp, draw, lock, ink, shrink
+                           (from as wide as the code, with its intro), none
   --logo-timing WHEN       after (default), before, with the code's intro
   --intro PRESET           settle, ripple, lock-on, sweep, raster, iris, assemble,
                            develop (for pictures)
@@ -77,7 +83,8 @@ Style:
   --from-token NAME=PAINT  cross-fade from these colors instead of an intro
   --from-fg C, --from-bg C shortcuts for --from-token fg=C, bg=C
   --idle LOOP              finder-pulse, shimmer, breathe, logo-glint,
-                           logo-turn (round frames) (repeatable)
+                           logo-turn (round frames), logo-spin, logo-flip
+                           (repeatable)
   --theme-transition MS    ease re-themes through the --qr-* properties
   --halftone FILE          build the code from a PNG or JPEG picture (`sample` for a
                            built-in one): modules steered to match, 3x3 sub-cells
@@ -153,6 +160,8 @@ pub struct StyleArgs {
     keep_modules: bool,
     logo_size: Option<LogoSize>,
     logo_frame: Option<(LogoFrame, Option<f32>)>,
+    logo_frame_width: Option<f32>,
+    logo_moon: Option<f32>,
     logo_intro: Option<LogoIntro>,
     logo_timing: Option<LogoTiming>,
     intro: Option<Preset>,
@@ -300,6 +309,11 @@ impl StyleArgs {
             "logo-padding" => self.logo_padding = Some(options::number(flag, value)?),
             "logo-size" => self.logo_size = Some(options::logo_size(value)?),
             "logo-frame" => self.logo_frame = Some(options::logo_frame(value)?),
+            "logo-frame-width" => self.logo_frame_width = Some(options::number(flag, value)?),
+            "logo-frame-color" => self
+                .tokens
+                .push(("logo.frame".to_string(), value.to_string())),
+            "logo-moon" => self.logo_moon = Some(options::number(flag, value)?),
             "logo-intro" => self.logo_intro = Some(options::logo_intro(value)?),
             "logo-timing" => self.logo_timing = Some(options::logo_timing(value)?),
             "intro" => self.intro = Some(options::preset(value)?),
@@ -469,6 +483,8 @@ impl StyleArgs {
         if self.logo.is_none()
             && (self.logo_size.is_some()
                 || self.logo_frame.is_some()
+                || self.logo_frame_width.is_some()
+                || self.logo_moon.is_some()
                 || self.logo_intro.is_some()
                 || self.logo_timing.is_some())
         {
@@ -514,9 +530,14 @@ impl StyleArgs {
             }
             if let Some((frame, width)) = self.logo_frame {
                 logo = logo.frame(frame);
-                if let Some(width) = width {
+                if let Some(width) = width.or(self.logo_frame_width) {
                     logo = logo.frame_width(width);
                 }
+                if let Some(moon) = self.logo_moon {
+                    logo = logo.moon_size(moon);
+                }
+            } else if self.logo_frame_width.is_some() || self.logo_moon.is_some() {
+                return Err("--logo-frame-width and --logo-moon need --logo-frame".to_string());
             }
             if let Some(shape) = self.logo_shape {
                 logo = logo.shape(shape);

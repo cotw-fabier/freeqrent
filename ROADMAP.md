@@ -41,6 +41,9 @@ Each item says where it came from, so we remember why it's here.
 - **Smaller color halftones:** color ink at v20 is 140–270 KB with 6 colors per band, over the mono 150 KB target. Fewer colors, or merging runs across colors with similar lightness, would cut it (W20261026092854).
 - **More logo frames:** a double hairline and a dashed "ticket" ring were in the options list but not built (W20261026102223). Both are strokes, like Ring.
 - **More logo motion:** a `Spin` intro (the frame turns 90° → 0 as it lands); `Heartbeat` (two quick shrink-pulses every 6 s) and `Sync` (the logo pulses with `FinderPulse`) idles; a hover lift on `Trigger::Hover`; Draw for filled frames (beads appearing in order round the ring) (W20261026102223).
+- **True 3D logo turns:** `LogoFlip` fakes an X-axis turn with a vertical scale; a `rotateX` with perspective (a Y-axis turn too) would need CSS 3D transforms in SVG, which renderers handle unevenly, and a plan property every player can reproduce (W20261026105648).
+- **Spin and flip intervals:** both run every 8 s; an option for the interval (and for flipping to a back face, such as a second logo) (W20261026105648).
+- **Frame color contrast against the logo:** the auto `logo.frame` is chosen against `bg` and `fg`, not against the logo's own colors, so an accent taken from the logo can match it (the sample logo and the sample style sheet share an orange) (W20261026105648).
 - **Turning square frames:** `LogoTurn` needs a round frame because a turning square leaves the plate. Quarter turns that rest between steps, or a frame inset far enough to clear the plate's corners as it turns, would allow it (W20261026102223).
 - **Animated gradient tokens:** palette shifts swap gradients at once; re-themable stops (above) would let them fade (W20261025235601).
 

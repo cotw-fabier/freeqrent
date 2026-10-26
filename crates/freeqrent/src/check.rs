@@ -365,7 +365,10 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
             in_range(&mut errors, "LogoShape::Rounded radius", r, 0.0, f32::MAX);
         }
         if let Some(width) = logo.frame_width {
-            in_range(&mut errors, "Logo.frame_width", width, 0.1, 1.5);
+            in_range(&mut errors, "Logo.frame_width", width, 0.1, 2.5);
+        }
+        if let Some(moon) = logo.moon {
+            in_range(&mut errors, "Logo.moon_size", moon, 0.4, 4.0);
         }
     }
 

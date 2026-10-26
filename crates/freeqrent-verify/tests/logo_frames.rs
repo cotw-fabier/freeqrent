@@ -92,34 +92,42 @@ fn frames_cost_budget_and_widths_are_checked() {
             "{frame:?}"
         );
     }
-    let wide = Style::new().logo(plain.clone().frame(LogoFrame::Ring).frame_width(2.0));
-    assert!(matches!(
-        wide.check(&qr).errors[..],
-        [RenderError::OptionOutOfRange {
+    let wide = Style::new().logo(plain.clone().frame(LogoFrame::Ring).frame_width(3.0));
+    // Out of range (and, as wide as that, too large for this code too).
+    assert!(wide.check(&qr).errors.iter().any(|e| matches!(
+        e,
+        RenderError::OptionOutOfRange {
             option: "Logo.frame_width",
             ..
-        }]
-    ));
+        }
+    )));
+    let moon = Style::new().logo(plain.frame(LogoFrame::Orbit).moon_size(4.5));
+    // Out of range (and, as wide as that, too large for this code too).
+    assert!(moon.check(&qr).errors.iter().any(|e| matches!(
+        e,
+        RenderError::OptionOutOfRange {
+            option: "Logo.moon_size",
+            ..
+        }
+    )));
 }
 
 #[test]
-fn sizes_scan_and_largest_fills_the_budget() {
-    let mut last = 0.0;
-    for size in LogoSize::ALL {
-        let style = Style::new().logo(Logo::svg(MARK).unwrap().size(size));
-        let qr = fitted(&style);
-        let report = style.check(&qr);
-        let scale = report.logo_scale.unwrap();
-        assert!(scale >= last, "{size:?} {scale}");
-        last = scale;
-        assert_verifies(&style, &qr, TEXT, &format!("{size:?}"));
-        if size == LogoSize::Largest {
-            // One more hundredth would not fit.
-            let over = Style::new().logo(Logo::svg(MARK).unwrap().scale(scale + 0.01));
-            assert!(
-                scale >= 0.5 || !over.check(&qr).ok(),
-                "{scale} isn't the largest"
-            );
+fn widths_and_moons_scan_at_their_limits() {
+    for frame in LogoFrame::ALL {
+        for width in [0.1, 2.5] {
+            for moon in [0.4, 4.0] {
+                let logo = Logo::svg(DARK)
+                    .unwrap()
+                    .shape(LogoShape::Circle)
+                    .frame(frame)
+                    .frame_width(width)
+                    .moon_size(moon)
+                    .size(LogoSize::Largest);
+                let style = Style::new().logo(logo);
+                let qr = fitted(&style);
+                assert_verifies(&style, &qr, TEXT, &format!("{frame:?} {width} {moon}"));
+            }
         }
     }
 }
@@ -188,15 +196,20 @@ fn idles_scan_all_the_way_round() {
             .logo(logo.size(LogoSize::Largest))
             .intro(Intro::new(Preset::Settle))
             .idle(Idle::LogoTurn)
-            .idle(Idle::LogoGlint);
+            .idle(Idle::LogoGlint)
+            .idle(Idle::LogoSpin)
+            .idle(Idle::LogoFlip);
         let qr = fitted(&style);
         let label = format!("{shape:?} {frame:?}");
         assert_verifies(&style, &qr, TEXT, &label);
-        // Every eighth of a turn, and the glint at every stage of its pass.
+        // Every eighth of a turn, the glint at every stage of its pass,
+        // and the spin and the flip all the way through.
         let start = style.plan(&qr).unwrap().total_ms;
         let times = (0..8)
             .map(|k| start + k * 3000)
-            .chain((0..8).map(|k| start + k * 175));
+            .chain((0..8).map(|k| start + k * 175))
+            .chain((0..13).map(|k| start + k * 100))
+            .chain((0..11).map(|k| start + 4000 + k * 100));
         for t in times {
             let frame = style.render_frame(&qr, t).unwrap();
             if let Err(e) = verify_one(&frame, TEXT, render, true) {

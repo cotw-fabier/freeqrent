@@ -78,9 +78,9 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 42);
+    assert_eq!(html.matches("<figure>").count(), 47);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 42);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 47);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -127,6 +127,56 @@ fn logo_frames_and_motion_flags() {
         "halo",
     ]);
     assert_eq!(out.status.code(), Some(2));
+}
+
+#[test]
+fn frame_widths_colors_moons_spins_and_flips() {
+    let out = freeqrent(&[
+        "https://example.com",
+        "--logo",
+        "sample",
+        "--logo-shape",
+        "circle",
+        "--logo-frame",
+        "orbit",
+        "--logo-frame-width",
+        "0.5",
+        "--logo-moon",
+        "1.6",
+        "--logo-frame-color",
+        "#0f766e",
+        "--logo-intro",
+        "shrink",
+        "--idle",
+        "logo-spin",
+        "--idle",
+        "logo-flip",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let svg = stdout(&out);
+    assert!(svg.contains("--qr-logo-frame,#0f766e"));
+    assert!(svg.contains("rotate(") && svg.contains("scale(1,"));
+    // A width or a moon without a frame is a mistake; so is a moon too big.
+    let out = freeqrent(&[
+        "https://example.com",
+        "--logo",
+        "sample",
+        "--logo-moon",
+        "2",
+    ]);
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("need --logo-frame"));
+    let out = freeqrent(&[
+        "https://example.com",
+        "--logo",
+        "sample",
+        "--logo-frame",
+        "orbit",
+        "--logo-moon",
+        "9",
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("Logo.moon_size"));
 }
 
 #[test]
@@ -297,13 +347,13 @@ fn the_scan_sheet_names_every_card() {
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
     let cards = html.matches("<figure data-id=").count();
-    assert_eq!(cards, 60);
+    assert_eq!(cards, 65);
     // Every code renders, and each payload names its card.
     assert!(!html.contains("Refused"));
     assert!(html.contains("https://example.com/scan/S01"));
     assert!(html.contains("FQ-S46"));
     // The logo cards come last, so the earlier ids keep their cards.
-    assert!(html.contains("https://example.com/scan/S60"));
+    assert!(html.contains("https://example.com/scan/S65"));
     assert_eq!(html.matches("<select data-device=").count(), cards * 4);
     std::fs::remove_dir_all(&dir).unwrap();
 }

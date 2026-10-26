@@ -237,6 +237,8 @@ pub(crate) struct Pose {
     pub(crate) translate: (f64, f64),
     /// Clockwise turn about the origin, in degrees.
     pub(crate) rotate: f64,
+    /// Vertical scale on top of `scale`, for flips (negative mirrors).
+    pub(crate) scale_y: f64,
     /// How much of an outline is drawn, 0–1.
     pub(crate) draw: f64,
     /// A fill that replaces the token's paint.
@@ -250,6 +252,7 @@ impl Pose {
         scale: 1.0,
         translate: (0.0, 0.0),
         rotate: 0.0,
+        scale_y: 1.0,
         draw: 1.0,
         fill: None,
     };
@@ -332,15 +335,16 @@ pub(crate) fn logo_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Ve
         return Vec::new();
     };
     #[cfg(feature = "animate")]
-    let (ink, glint) = (
+    let (ink, glint, art) = (
         style
             .intro
             .as_ref()
             .is_some_and(|i| i.entrance().is_some() && i.logo == crate::animate::LogoIntro::Ink),
         style.idle.contains(&crate::Idle::LogoGlint),
+        style.idle.contains(&crate::Idle::LogoSpin) || style.idle.contains(&crate::Idle::LogoFlip),
     );
     #[cfg(not(feature = "animate"))]
-    let (ink, glint) = (false, false);
+    let (ink, glint, art) = (false, false, false);
     let mut out = Vec::new();
     out.push(Element::new(
         LayerRole::Logo,
@@ -349,6 +353,15 @@ pub(crate) fn logo_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Ve
         plate.clone(),
     ));
     let p = logo::placement(logo, qr, crate::check::logo_scale(style, qr));
+    if art {
+        let (window, _) = logo_window(&p, canvas.origin as f64);
+        out.push(Element::new(
+            LayerRole::LogoArt,
+            Token::LogoBackdrop,
+            false,
+            window,
+        ));
+    }
     if ink {
         let (window, _) = logo_window(&p, canvas.origin as f64);
         out.push(Element::new(LayerRole::LogoInk, Token::Fg, false, window));
@@ -420,7 +433,12 @@ pub(crate) fn write<W: Write + ?Sized>(
     let mut stroke_gradients: Vec<Token> = Vec::new();
     let painted = elements
         .iter()
-        .filter(|e| !matches!(e.role, LayerRole::Shimmer | LayerRole::LogoGlint))
+        .filter(|e| {
+            !matches!(
+                e.role,
+                LayerRole::Shimmer | LayerRole::LogoGlint | LayerRole::LogoArt
+            )
+        })
         .filter(|e| e.role != LayerRole::Logo || backdrop)
         .filter(|e| e.color.is_none())
         .map(|e| (e.token, e.stroke.is_some(), e.outline.is_some()));
@@ -539,8 +557,11 @@ pub(crate) fn write<W: Write + ?Sized>(
             }
             LayerRole::Logo => {
                 let ink = elements.iter().any(|e| e.role == LayerRole::LogoInk);
-                write_logo(&mut out, style, qr, &canvas, &prefix, e, ink)?
+                let art = elements.iter().find(|e| e.role == LayerRole::LogoArt);
+                write_logo(&mut out, style, qr, &canvas, &prefix, e, art, ink)?
             }
+            // Drawn inside the logo's own group.
+            LayerRole::LogoArt => {}
             LayerRole::LogoFrame => write_frame(out.w, palette, e, &prefix)?,
             LayerRole::LogoInk => {
                 write!(
@@ -767,12 +788,13 @@ fn write_pose<W: Write + ?Sized>(w: &mut W, e: &Element) -> fmt::Result {
         w.write_char('"')?;
     }
     let (s, (tx, ty)) = (pose.scale, pose.translate);
-    if k(pose.rotate) != 0 {
+    if k(pose.rotate) != 0 || k(pose.scale_y) != 1000 {
         // Scale, turn, then translate, about the origin: CSS
         // `translate(..) rotate(..) scale(..)` with that transform origin.
         let (ox, oy) = e.origin;
         let (sin, cos) = math::sin_cos(math::radians(pose.rotate));
-        let (a, b, c, d) = (s * cos, s * sin, -s * sin, s * cos);
+        let sy = s * pose.scale_y;
+        let (a, b, c, d) = (s * cos, s * sin, -sy * sin, sy * cos);
         w.write_str(" transform=\"matrix(")?;
         let values = [
             a,
@@ -812,7 +834,11 @@ fn write_pose<W: Write + ?Sized>(w: &mut W, e: &Element) -> fmt::Result {
 /// The logo (SPEC §7.3): a clip path for round plates, the plate, then
 /// the content fitted into its box and clipped to the plate, so nothing
 /// paints outside the modules the budget counted. An animated logo is
-/// wrapped in a group that carries its motion.
+/// wrapped in a group that carries its motion. Content that moves on its
+/// own (`art`, [`LayerRole::LogoArt`]) gets a group of its own inside the
+/// clip, so it moves with the plate and apart from it, and never past the
+/// window.
+#[allow(clippy::too_many_arguments)]
 fn write_logo<W: Write + ?Sized>(
     out: &mut Out<'_, W>,
     style: &Style,
@@ -820,6 +846,7 @@ fn write_logo<W: Write + ?Sized>(
     canvas: &Canvas,
     prefix: &str,
     e: &Element,
+    art: Option<&Element>,
     ink: bool,
 ) -> fmt::Result {
     let Some(logo) = &style.logo else {
@@ -841,7 +868,7 @@ fn write_logo<W: Write + ?Sized>(
     }
     // Without a frame the window is the plate itself.
     let (window, radius) = logo_window(&p, o);
-    let clip = radius > 0.0;
+    let clip = radius > 0.0 || art.is_some();
     if clip {
         write!(
             out.w,
@@ -862,6 +889,15 @@ fn write_logo<W: Write + ?Sized>(
     }
     if clip {
         write!(out.w, "<g clip-path=\"url(#{prefix}-logo-clip)\">")?;
+    }
+    let moves = art.filter(|a| a.anim.is_some() || a.pose.is_some());
+    if let Some(a) = moves {
+        out.w.write_str("<g")?;
+        if let Some(n) = a.anim {
+            write!(out.w, " class=\"{prefix}-e{n}\"")?;
+        }
+        write_pose(out.w, a)?;
+        out.w.write_char('>')?;
     }
     let box_attrs = |w: &mut W| -> fmt::Result {
         let (at, side) = (u(o + p.center - p.content_half), u(2.0 * p.content_half));
@@ -895,6 +931,9 @@ fn write_logo<W: Write + ?Sized>(
             logo::base64(out.w, data)?;
             out.w.write_str("\"/>")?;
         }
+    }
+    if moves.is_some() {
+        out.w.write_str("</g>")?;
     }
     if clip {
         out.w.write_str("</g>")?;
@@ -1199,6 +1238,9 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
         // existing prefixes stay the same.
         if logo.grow || logo.frame.is_some() {
             let _ = write!(text, "{}{:?}{:?}", logo.grow, logo.frame, logo.frame_width);
+        }
+        if let Some(moon) = logo.moon {
+            let _ = write!(text, "{moon:?}");
         }
         text.bytes().for_each(&mut eat);
         match &logo.content {
