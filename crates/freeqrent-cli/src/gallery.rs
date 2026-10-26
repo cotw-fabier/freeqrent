@@ -130,6 +130,37 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "Shimmer idle",
+        &[
+            ("idle", "shimmer"),
+            ("shape", "rounded:0.5"),
+            ("finder", "rounded:2/rounded:1"),
+            ("fg", "oklch(30% .1 250)"),
+        ],
+    ),
+    (
+        "Breathe idle",
+        &[
+            ("idle", "breathe"),
+            ("shape", "dots:0.85"),
+            ("finder", "squircle/circle"),
+            ("bg", "oklch(88% .06 160)"),
+            ("fg", "oklch(28% .06 200)"),
+        ],
+    ),
+    (
+        "Every idle loop",
+        &[
+            ("intro", "ripple"),
+            ("idle", "finder-pulse"),
+            ("idle", "shimmer"),
+            ("idle", "breathe"),
+            ("shape", "liquid:0.8"),
+            ("finder", "rounded:2/circle"),
+            ("bg", "oklch(94% .03 85)"),
+        ],
+    ),
+    (
         "Site palette",
         &[
             ("palette-from-css", "sample"),
@@ -267,6 +298,7 @@ main {{
   gap: 40px 28px;
 }}
 figure {{ margin: 0; }}
+.code {{ position: relative; }}
 .code svg {{ display: block; width: 100%; height: auto; border-radius: 6px; }}
 .refused {{ aspect-ratio: 1; margin: 0; display: grid; place-items: center; text-align: center;
   padding: 16px; border: 1px dashed var(--rule); color: var(--bad); border-radius: 6px; }}
@@ -274,6 +306,13 @@ figcaption {{ padding-top: 12px; border-top: 1px solid var(--rule); margin-top: 
 h2 {{ font-size: 1rem; margin: 0 0 4px; font-weight: 600; }}
 code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--muted); overflow-wrap: anywhere; }}
+.code.waiting svg * {{ animation-play-state: paused !important; }}
+.replay {{ position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; padding: 0;
+  display: grid; place-items: center; border: 1px solid var(--rule); border-radius: 50%;
+  background: var(--page); color: var(--ink); cursor: pointer; opacity: .75; }}
+.replay:hover, .replay:focus-visible {{ opacity: 1; }}
+.replay svg {{ width: 14px; height: 14px; }}
+@media (prefers-reduced-motion: reduce) {{ .replay {{ display: none; }} }}
 .verdict, .warning {{ margin: 6px 0 0; font-size: 13px; }}
 .warning {{ color: var(--warn); }}
 </style>
@@ -286,12 +325,34 @@ code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, mon
 <main>
 {cards}</main>
 <script>
-// Click an animated code to replay its intro.
+// Animated codes hold their first frame until they scroll into view, and
+// a button replays them. A fresh copy of the SVG restarts its animations.
+const icon = '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M12.5 1.5v3h-3"/></svg>';
+const replay = (box) => {{
+  const svg = box.querySelector("svg.qr");
+  svg.replaceWith(svg.cloneNode(true));
+  box.classList.remove("waiting");
+}};
+const seen = new IntersectionObserver((entries) => {{
+  for (const entry of entries) {{
+    if (!entry.isIntersecting) continue;
+    seen.unobserve(entry.target);
+    replay(entry.target);
+  }}
+}}, {{ threshold: 0.5 }});
 for (const box of document.querySelectorAll(".code")) {{
-  if (!box.querySelector("svg.qr[class~='qr'] style")?.textContent.includes("@keyframes")) continue;
-  box.title = "Click to replay";
-  box.style.cursor = "pointer";
-  box.addEventListener("click", () => {{ box.innerHTML = box.innerHTML; }});
+  if (!box.querySelector("svg.qr style")?.textContent.includes("@keyframes")) continue;
+  box.classList.add("waiting");
+  seen.observe(box);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "replay";
+  button.title = button.ariaLabel = "Replay animation";
+  button.innerHTML = icon;
+  button.addEventListener("click", () => replay(box));
+  box.append(button);
 }}
 </script>
 </body>

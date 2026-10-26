@@ -22,3 +22,5 @@ docs/waves/notes/
 # Fuzzing output
 fuzz/artifacts/
 fuzz/corpus/
+
+/gallery.html
