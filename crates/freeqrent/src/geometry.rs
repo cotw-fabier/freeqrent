@@ -155,6 +155,28 @@ impl Path {
         self.close();
     }
 
+    /// The outline of [`rounded_rect`](Path::rounded_rect) with one radius,
+    /// drawn counter-clockwise: a hole under the nonzero fill rule.
+    pub(crate) fn rounded_rect_ccw(&mut self, x: i64, y: i64, w: i64, h: i64, r: i64) {
+        self.move_to(x + r, y);
+        if r > 0 {
+            self.arc_to(r, false, false, x, y + r);
+        }
+        self.line_to(x, y + h - r);
+        if r > 0 {
+            self.arc_to(r, false, false, x + r, y + h);
+        }
+        self.line_to(x + w - r, y + h);
+        if r > 0 {
+            self.arc_to(r, false, false, x + w, y + h - r);
+        }
+        self.line_to(x + w, y + r);
+        if r > 0 {
+            self.arc_to(r, false, false, x + w - r, y);
+        }
+        self.close();
+    }
+
     pub(crate) fn rect(&mut self, x: i64, y: i64, w: i64, h: i64) {
         self.rounded_rect(x, y, w, h, [0; 4]);
     }

@@ -37,10 +37,12 @@ pub enum Token {
     CornerOuter(Corner),
     /// One finder's eye (default: `finder.eye`).
     CornerEye(Corner),
+    /// The frame on a logo's plate (default: `fg`).
+    LogoFrame,
 }
 
 const CORNERS: [Corner; 3] = [Corner::TopLeft, Corner::TopRight, Corner::BottomLeft];
-const NUM_TOKENS: usize = 15;
+const NUM_TOKENS: usize = 16;
 
 impl Token {
     /// Every token, in a fixed order.
@@ -60,6 +62,7 @@ impl Token {
         Token::CornerEye(Corner::TopLeft),
         Token::CornerEye(Corner::TopRight),
         Token::CornerEye(Corner::BottomLeft),
+        Token::LogoFrame,
     ];
 
     fn index(self) -> usize {
@@ -76,6 +79,7 @@ impl Token {
             Token::Frame => 8,
             Token::CornerOuter(c) => 9 + corner(c),
             Token::CornerEye(c) => 12 + corner(c),
+            Token::LogoFrame => 15,
         }
     }
 
@@ -98,6 +102,7 @@ impl Token {
             "finder.top-left.eye",
             "finder.top-right.eye",
             "finder.bottom-left.eye",
+            "logo.frame",
         ][self.index()]
     }
 
@@ -125,6 +130,7 @@ impl Token {
             "--qr-finder-top-left-eye",
             "--qr-finder-top-right-eye",
             "--qr-finder-bottom-left-eye",
+            "--qr-logo-frame",
         ][self.index()]
     }
 
@@ -136,7 +142,8 @@ impl Token {
             | Token::FinderEye
             | Token::Timing
             | Token::Filler
-            | Token::Frame => Some(Token::Fg),
+            | Token::Frame
+            | Token::LogoFrame => Some(Token::Fg),
             Token::Alignment => Some(Token::FinderOuter),
             Token::LogoBackdrop => Some(Token::Bg),
             Token::CornerOuter(_) => Some(Token::FinderOuter),
@@ -144,11 +151,13 @@ impl Token {
         }
     }
 
-    /// True for the tokens that accept gradients: `fg` and the finder tokens.
+    /// True for the tokens that accept gradients: `fg`, the finder tokens
+    /// and `logo.frame`.
     pub fn accepts_gradient(self) -> bool {
         matches!(
             self,
             Token::Fg
+                | Token::LogoFrame
                 | Token::FinderOuter
                 | Token::FinderEye
                 | Token::CornerOuter(_)

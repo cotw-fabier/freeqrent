@@ -5,10 +5,12 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::geometry::Grid;
+use crate::geometry::{Grid, Path, UNIT};
+use crate::math;
 use crate::matrix::{ModuleRole, QrMatrix};
 use crate::sanitize::{self, SvgDoc, SvgProblem};
 use crate::scene;
+use crate::style::ModuleShape;
 
 /// A raster image format a logo can be inlined as.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -59,6 +61,100 @@ pub enum LogoShape {
     Rounded(f32),
     /// A circle.
     Circle,
+}
+
+/// How big the logo is (SPEC §7.3). The sizes are scales, the logo's
+/// width as a fraction of the code's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum LogoSize {
+    /// 0.14.
+    Small,
+    /// 0.2, the default.
+    Medium,
+    /// 0.26.
+    Large,
+    /// The largest scale, in hundredths up to 0.5, that the code's
+    /// error-correction budget affords, and at least 0.26 (or the `scale`
+    /// set after it). Fitting a code to the style asks for the minimum;
+    /// the logo then grows into whatever the chosen code leaves.
+    Largest,
+}
+
+impl LogoSize {
+    /// Every size, smallest first.
+    pub const ALL: [LogoSize; 4] = [
+        LogoSize::Small,
+        LogoSize::Medium,
+        LogoSize::Large,
+        LogoSize::Largest,
+    ];
+
+    /// The size's lowercase name, as the CLI spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            LogoSize::Small => "small",
+            LogoSize::Medium => "medium",
+            LogoSize::Large => "large",
+            LogoSize::Largest => "largest",
+        }
+    }
+}
+
+/// A border on the logo's plate (SPEC §7.3), painted in `logo.frame`. It
+/// sits inside the plate, a quarter module in from its edge, and the plate
+/// grows to hold it, so the error-correction budget counts it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum LogoFrame {
+    /// A solid band along the plate's outline (default 0.45 modules wide).
+    Ring,
+    /// A ring of beads in the code's own module shape: dots for Dots,
+    /// Liquid and Bars, squares for Square, rounded squares for Rounded
+    /// (default 0.7 modules).
+    Beads,
+    /// A band with a scalloped outer edge, like a seal (default 0.6).
+    Stamp,
+    /// Four corner brackets, like a viewfinder (default 0.5). On a
+    /// circle they are four arcs.
+    Brackets,
+    /// A thin circle inside the plate with a gap and a moon in it: the
+    /// width is the moon's (default 0.8). With
+    /// [`Idle::LogoTurn`](crate::Idle::LogoTurn) the moon orbits.
+    Orbit,
+}
+
+impl LogoFrame {
+    /// Every frame.
+    pub const ALL: [LogoFrame; 5] = [
+        LogoFrame::Ring,
+        LogoFrame::Beads,
+        LogoFrame::Stamp,
+        LogoFrame::Brackets,
+        LogoFrame::Orbit,
+    ];
+
+    /// The frame's lowercase name, as the CLI spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            LogoFrame::Ring => "ring",
+            LogoFrame::Beads => "beads",
+            LogoFrame::Stamp => "stamp",
+            LogoFrame::Brackets => "brackets",
+            LogoFrame::Orbit => "orbit",
+        }
+    }
+
+    /// The width a frame gets unless set, in modules.
+    pub fn default_width(self) -> f32 {
+        match self {
+            LogoFrame::Ring => 0.45,
+            LogoFrame::Beads => 0.7,
+            LogoFrame::Stamp => 0.6,
+            LogoFrame::Brackets => 0.5,
+            LogoFrame::Orbit => 0.8,
+        }
+    }
 }
 
 /// Why a logo couldn't be made.
@@ -118,6 +214,10 @@ pub struct Logo {
     pub(crate) backdrop: bool,
     pub(crate) padding: f32,
     pub(crate) clear_modules: bool,
+    /// [`LogoSize::Largest`]: grow past `scale` as far as the budget goes.
+    pub(crate) grow: bool,
+    pub(crate) frame: Option<LogoFrame>,
+    pub(crate) frame_width: Option<f32>,
 }
 
 impl Logo {
@@ -129,6 +229,9 @@ impl Logo {
             backdrop: true,
             padding: 0.5,
             clear_modules: true,
+            grow: false,
+            frame: None,
+            frame_width: None,
         }
     }
 
@@ -161,6 +264,38 @@ impl Logo {
         self
     }
 
+    /// A named size (SPEC §7.3). `Small`, `Medium` and `Large` set the
+    /// scale; `Largest` sets Large's as the minimum and grows the logo as
+    /// far as the code's budget affords. A [`scale`](Logo::scale) after it
+    /// changes the minimum.
+    pub fn size(mut self, size: LogoSize) -> Logo {
+        self.scale = match size {
+            LogoSize::Small => 0.14,
+            LogoSize::Medium => 0.2,
+            LogoSize::Large | LogoSize::Largest => 0.26,
+        };
+        self.grow = size == LogoSize::Largest;
+        self
+    }
+
+    /// A border on the plate (none by default).
+    pub fn frame(mut self, frame: LogoFrame) -> Logo {
+        self.frame = Some(frame);
+        self
+    }
+
+    /// The frame's width in modules (0.1–1.5; each frame has its own
+    /// default, [`LogoFrame::default_width`]).
+    pub fn frame_width(mut self, width: f32) -> Logo {
+        self.frame_width = Some(width);
+        self
+    }
+
+    /// The frame, if any.
+    pub fn logo_frame(&self) -> Option<LogoFrame> {
+        self.frame
+    }
+
     /// The plate and excavation outline (default square).
     pub fn shape(mut self, shape: LogoShape) -> Logo {
         self.shape = shape;
@@ -188,7 +323,9 @@ impl Logo {
         self
     }
 
-    /// The logo's width as a fraction of the code's.
+    /// The logo's width as a fraction of the code's (the minimum, with
+    /// [`LogoSize::Largest`]; [`Style::check`](crate::Style::check) reports
+    /// what it grew to).
     pub fn logo_scale(&self) -> f32 {
         self.scale
     }
@@ -213,12 +350,27 @@ pub(crate) struct Placement {
     pub(crate) radius: f64,
     /// Half the side of the box the content is fitted into.
     pub(crate) content_half: f64,
+    /// The frame's width, when there is one.
+    pub(crate) frame: Option<f64>,
+}
+
+/// How far a frame sits in from the plate's edge, in modules, so a light
+/// gap always parts it from the modules around the plate.
+pub(crate) const FRAME_INSET: f64 = 0.25;
+
+impl Logo {
+    /// The frame's width in modules, when there is a frame.
+    pub(crate) fn frame_extent(&self) -> Option<f64> {
+        let frame = self.frame?;
+        Some(self.frame_width.unwrap_or(frame.default_width()) as f64)
+    }
 }
 
 pub(crate) fn placement(logo: &Logo, qr: &QrMatrix, scale: f32) -> Placement {
     let n = qr.size() as f64;
     let content_half = n * scale as f64 / 2.0;
-    let half = content_half + logo.padding as f64;
+    let frame = logo.frame_extent();
+    let half = content_half + logo.padding as f64 + frame.map_or(0.0, |w| w + FRAME_INSET);
     let radius = match logo.shape {
         LogoShape::Square => 0.0,
         LogoShape::Rounded(r) => (r as f64).clamp(0.0, half),
@@ -229,7 +381,165 @@ pub(crate) fn placement(logo: &Logo, qr: &QrMatrix, scale: f32) -> Placement {
         half,
         radius,
         content_half,
+        frame,
     }
+}
+
+/// A frame drawn as a stroke along its path instead of filled: its width
+/// in path units, the path's length in modules, and a dash pattern (empty
+/// for a solid stroke) with its offset, in modules.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Outline {
+    pub(crate) width: i64,
+    pub(crate) length: f64,
+    pub(crate) dashes: Vec<f64>,
+    pub(crate) offset: f64,
+}
+
+/// A frame's drawing: a filled path, or an outline stroked along it.
+#[derive(Clone, Debug)]
+pub(crate) struct FrameShape {
+    pub(crate) path: Path,
+    pub(crate) outline: Option<Outline>,
+}
+
+/// The rounded square of half-side `h` and corner radius `r` (in path
+/// units) as the frame paths walk it: from the end of the top-left corner,
+/// clockwise. Returns its straight edge and corner arc lengths.
+fn sides(h: i64, r: i64) -> (f64, f64) {
+    (
+        (2 * (h - r)) as f64,
+        core::f64::consts::FRAC_PI_2 * r as f64,
+    )
+}
+
+/// The point `s` path units along that walk, relative to the center.
+fn along(h: i64, r: i64, s: f64) -> (f64, f64) {
+    let (edge, arc) = sides(h, r);
+    let side = edge + arc;
+    let s = s - 4.0 * side * math::floor(s / (4.0 * side));
+    let k = math::floor(s / side) as usize % 4;
+    let t = s - k as f64 * side;
+    let (h, r) = (h as f64, r as f64);
+    let (x, y) = if t < edge || r == 0.0 {
+        (-(h - r) + t.min(edge), -h)
+    } else {
+        let (sin, cos) = math::sin_cos(-core::f64::consts::FRAC_PI_2 + (t - edge) / r);
+        (h - r + r * cos, -(h - r) + r * sin)
+    };
+    // A quarter turn clockwise per side (y points down).
+    (0..k).fold((x, y), |(x, y), _| (-y, x))
+}
+
+/// The frame of `logo` placed at `p`, on a canvas whose code starts
+/// `origin` modules in, drawn for a code of `shape` modules (SPEC §7.3).
+pub(crate) fn frame_shape(
+    logo: &Logo,
+    p: &Placement,
+    origin: f64,
+    shape: &ModuleShape,
+) -> Option<FrameShape> {
+    let (frame, width) = (logo.frame?, p.frame?);
+    let u = |v: f64| math::round(v * UNIT as f64) as i64;
+    let c = u(origin + p.center);
+    let outer = p.half - FRAME_INSET;
+    let outer_r = (p.radius - FRAME_INSET).clamp(0.0, outer);
+    // The band's middle line, where strokes and beads sit.
+    let (h, r) = (u(outer - width / 2.0), u((outer_r - width / 2.0).max(0.0)));
+    let (edge, arc) = sides(h, r);
+    let length = 4.0 * (edge + arc);
+    let w = u(width);
+    let mut path = Path::new();
+    let square = |path: &mut Path, h: i64, r: i64| {
+        path.rounded_rect(c - h, c - h, 2 * h, 2 * h, [r; 4]);
+    };
+    // Points around the middle line, a multiple of four, starting on
+    // the top-left corner's middle so the corners match.
+    let ring = |spacing: f64| {
+        let n = 4 * (math::round(length / (4.0 * spacing)) as usize).max(2);
+        (0..n).map(move |i| {
+            let (x, y) = along(h, r, -arc / 2.0 + i as f64 * length / n as f64);
+            (c + math::round(x) as i64, c + math::round(y) as i64)
+        })
+    };
+    let outline = match frame {
+        LogoFrame::Ring => {
+            square(&mut path, h, r);
+            Some(Outline {
+                width: w,
+                length: length / UNIT as f64,
+                dashes: Vec::new(),
+                offset: 0.0,
+            })
+        }
+        LogoFrame::Brackets => {
+            square(&mut path, h, r);
+            // Each corner's arc and a fifth of each edge beside it, at most
+            // half of the side, so a circle gets four 45° arcs.
+            let dash = (arc + 0.44 * edge).min((arc + edge) / 2.0);
+            let m = |v: f64| v / UNIT as f64;
+            Some(Outline {
+                width: w,
+                length: m(length),
+                dashes: alloc::vec![m(dash), m(arc + edge - dash)],
+                offset: m(arc / 2.0 + dash / 2.0),
+            })
+        }
+        LogoFrame::Beads => {
+            for (x, y) in ring(1.6 * w as f64) {
+                match *shape {
+                    ModuleShape::Square { .. } => path.rect(x - w / 2, y - w / 2, w, w),
+                    ModuleShape::Rounded { radius } => {
+                        let k = math::round(radius as f64 * w as f64) as i64;
+                        path.rounded_rect(x - w / 2, y - w / 2, w, w, [k; 4]);
+                    }
+                    _ => path.circle(x, y, w / 2),
+                }
+            }
+            None
+        }
+        LogoFrame::Stamp => {
+            for (x, y) in ring(0.95 * w as f64) {
+                path.circle(x, y, w / 2);
+            }
+            // A smooth inner edge: the band from the middle line in,
+            // its hole drawn the other way round.
+            square(&mut path, h, r);
+            let (hi, ri) = (u(outer - width), u((outer_r - width).max(0.0)));
+            path.rounded_rect_ccw(c - hi, c - hi, 2 * hi, 2 * hi, ri.min(hi));
+            None
+        }
+        LogoFrame::Orbit => {
+            // Inscribed in the plate whatever its shape, so it can turn.
+            let radius = u(outer - width / 2.0) as f64;
+            let thick = u((width * 0.25).max(0.15)) as f64;
+            let at = -core::f64::consts::FRAC_PI_4;
+            let gap = (w as f64 * 0.85) / radius;
+            let point = |angle: f64, rr: f64| {
+                let (sin, cos) = math::sin_cos(angle);
+                (
+                    c + math::round(rr * cos) as i64,
+                    c + math::round(rr * sin) as i64,
+                )
+            };
+            if gap < core::f64::consts::FRAC_PI_2 {
+                let (ro, ri) = (radius + thick / 2.0, radius - thick / 2.0);
+                let start = point(at + gap, ro);
+                path.move_to(start.0, start.1);
+                let end = point(at - gap, ro);
+                path.arc_to(math::round(ro) as i64, true, true, end.0, end.1);
+                let inner = point(at - gap, ri);
+                path.line_to(inner.0, inner.1);
+                let back = point(at + gap, ri);
+                path.arc_to(math::round(ri) as i64, true, false, back.0, back.1);
+                path.close();
+            }
+            let moon = point(at, radius);
+            path.circle(moon.0, moon.1, w / 2);
+            None
+        }
+    };
+    Some(FrameShape { path, outline })
 }
 
 /// What a logo covers.
@@ -377,6 +687,50 @@ mod tests {
         let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
         assert!(cover(&logo(), &qr, 0.08).valid);
         assert!(!cover(&logo(), &qr, 0.2).valid);
+    }
+
+    #[test]
+    fn sizes_set_the_scale() {
+        assert_eq!(logo().size(LogoSize::Small).scale, 0.14);
+        assert_eq!(logo().size(LogoSize::Large).scale, 0.26);
+        let largest = logo().size(LogoSize::Largest);
+        assert!(largest.grow && largest.scale == 0.26);
+        assert!(!largest.size(LogoSize::Medium).grow);
+    }
+
+    #[test]
+    fn frames_grow_the_plate_and_stay_inside_it() {
+        let qr = QrCode::builder()
+            .version(Version::new(7).unwrap())
+            .encode_text("HELLO")
+            .unwrap();
+        let plain = placement(&logo(), &qr, 0.2);
+        for frame in LogoFrame::ALL {
+            let l = logo().frame(frame);
+            let p = placement(&l, &qr, 0.2);
+            let w = frame.default_width() as f64;
+            assert!(
+                (p.half - plain.half - w - FRAME_INSET).abs() < 1e-9,
+                "{frame:?}"
+            );
+            let shape = frame_shape(&l, &p, 4.0, &ModuleShape::SQUARE).unwrap();
+            assert!(!shape.path.is_empty(), "{frame:?}");
+            if let Some(o) = shape.outline {
+                // A stroke on the band's middle line, w wide, ends at the
+                // inset: a rounded square's perimeter at that line.
+                let side = 2.0 * (p.half - FRAME_INSET - w / 2.0);
+                assert!(
+                    (o.length - 4.0 * side).abs() < 0.01,
+                    "{frame:?} {}",
+                    o.length
+                );
+                if !o.dashes.is_empty() {
+                    // Four corners' worth of dashes fill the outline.
+                    let period: f64 = o.dashes.iter().sum();
+                    assert!((4.0 * period - o.length).abs() < 0.01, "{frame:?}");
+                }
+            }
+        }
     }
 
     #[test]

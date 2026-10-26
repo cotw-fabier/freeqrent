@@ -78,10 +78,55 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 28);
+    assert_eq!(html.matches("<figure>").count(), 42);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 28);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 42);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn logo_frames_and_motion_flags() {
+    let out = freeqrent(&[
+        "https://example.com",
+        "--logo",
+        "sample",
+        "--logo-size",
+        "largest",
+        "--logo-shape",
+        "circle",
+        "--logo-frame",
+        "orbit:0.9",
+        "--logo-intro",
+        "draw",
+        "--logo-timing",
+        "before",
+        "--idle",
+        "logo-turn",
+        "--check",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    // Turning needs a round frame; logo flags need a logo.
+    let out = freeqrent(&[
+        "https://example.com",
+        "--logo",
+        "sample",
+        "--logo-frame",
+        "ring",
+        "--idle",
+        "logo-turn",
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("orbit frame"));
+    let out = freeqrent(&["https://example.com", "--logo-frame", "ring"]);
+    assert_eq!(out.status.code(), Some(2));
+    let out = freeqrent(&[
+        "https://example.com",
+        "--logo",
+        "sample",
+        "--logo-frame",
+        "halo",
+    ]);
+    assert_eq!(out.status.code(), Some(2));
 }
 
 #[test]
@@ -252,11 +297,13 @@ fn the_scan_sheet_names_every_card() {
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
     let cards = html.matches("<figure data-id=").count();
-    assert_eq!(cards, 46);
+    assert_eq!(cards, 60);
     // Every code renders, and each payload names its card.
     assert!(!html.contains("Refused"));
     assert!(html.contains("https://example.com/scan/S01"));
     assert!(html.contains("FQ-S46"));
+    // The logo cards come last, so the earlier ids keep their cards.
+    assert!(html.contains("https://example.com/scan/S60"));
     assert_eq!(html.matches("<select data-device=").count(), cards * 4);
     std::fs::remove_dir_all(&dir).unwrap();
 }

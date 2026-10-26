@@ -39,6 +39,9 @@ Each item says where it came from, so we remember why it's here.
 - **Palette shifts on picture codes:** a picture's sub-cells are strokes, which fill tracks don't reach, so they take the new palette at once (W20261026092854). A stroke property in plans would let them fade.
 - **Timing hidden on the picture:** the planned `Hidden-on-image` timing style. Picture codes keep timing whole (SPEC §7.7 rule 2); drawing it into sub-cells needs its own measurement (W20261026092854).
 - **Smaller color halftones:** color ink at v20 is 140–270 KB with 6 colors per band, over the mono 150 KB target. Fewer colors, or merging runs across colors with similar lightness, would cut it (W20261026092854).
+- **More logo frames:** a double hairline and a dashed "ticket" ring were in the options list but not built (W20261026102223). Both are strokes, like Ring.
+- **More logo motion:** a `Spin` intro (the frame turns 90° → 0 as it lands); `Heartbeat` (two quick shrink-pulses every 6 s) and `Sync` (the logo pulses with `FinderPulse`) idles; a hover lift on `Trigger::Hover`; Draw for filled frames (beads appearing in order round the ring) (W20261026102223).
+- **Turning square frames:** `LogoTurn` needs a round frame because a turning square leaves the plate. Quarter turns that rest between steps, or a frame inset far enough to clear the plate's corners as it turns, would allow it (W20261026102223).
 - **Animated gradient tokens:** palette shifts swap gradients at once; re-themable stops (above) would let them fade (W20261025235601).
 
 ## Palettes

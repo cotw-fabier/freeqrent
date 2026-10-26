@@ -13,10 +13,10 @@ use std::process::ExitCode;
 
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Clarity, Corner, Ease, Ecc, Emphasis, EyeShape, FinderStyle,
-    Fit, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoShape, ModuleShape, Origin, Paint,
-    Palette, PaletteError, PaletteOpts, PaletteReport, Preset, QrBuilder, QrCode, QrMatrix,
-    RasterFormat, Rgba8Image, RingShape, ScanReport, StaggerOrder, Style, TargetSize, TimingStyle,
-    Token, TrackingGrid, Trigger, Version,
+    Fit, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
+    LogoTiming, ModuleShape, Origin, Paint, Palette, PaletteError, PaletteOpts, PaletteReport,
+    Preset, QrBuilder, QrCode, QrMatrix, RasterFormat, Rgba8Image, RingShape, ScanReport,
+    StaggerOrder, Style, TargetSize, TimingStyle, Token, TrackingGrid, Trigger, Version,
 };
 
 const HELP: &str = "\
@@ -62,6 +62,11 @@ Style:
   --logo-padding N         modules between logo and code (default 0.5)
   --no-logo-backdrop       no plate behind the logo
   --keep-modules           draw the modules under the logo
+  --logo-size SIZE         small, medium, large, or largest (as big as the code's
+                           error correction allows, at least --logo-scale)
+  --logo-frame FRAME[:W]   ring, beads, stamp, brackets, orbit, W modules wide
+  --logo-intro INTRO       reveal (default), stamp, draw, lock, ink, none
+  --logo-timing WHEN       after (default), before, with the code's intro
   --intro PRESET           settle, ripple, lock-on, sweep, raster, iris, assemble,
                            develop (for pictures)
   --intro-ms N             whole intro length (default 1200)
@@ -71,7 +76,8 @@ Style:
   --trigger TRIGGER        load, hover, class:NAME
   --from-token NAME=PAINT  cross-fade from these colors instead of an intro
   --from-fg C, --from-bg C shortcuts for --from-token fg=C, bg=C
-  --idle LOOP              finder-pulse, shimmer, breathe (repeatable)
+  --idle LOOP              finder-pulse, shimmer, breathe, logo-glint,
+                           logo-turn (round frames) (repeatable)
   --theme-transition MS    ease re-themes through the --qr-* properties
   --halftone FILE          build the code from a PNG or JPEG picture (`sample` for a
                            built-in one): modules steered to match, 3x3 sub-cells
@@ -145,6 +151,10 @@ pub struct StyleArgs {
     logo_padding: Option<f32>,
     no_logo_backdrop: bool,
     keep_modules: bool,
+    logo_size: Option<LogoSize>,
+    logo_frame: Option<(LogoFrame, Option<f32>)>,
+    logo_intro: Option<LogoIntro>,
+    logo_timing: Option<LogoTiming>,
     intro: Option<Preset>,
     intro_ms: Option<u32>,
     stagger: Option<StaggerOrder>,
@@ -288,6 +298,10 @@ impl StyleArgs {
             "logo-scale" => self.logo_scale = Some(options::number(flag, value)?),
             "logo-shape" => self.logo_shape = Some(options::logo_shape(value)?),
             "logo-padding" => self.logo_padding = Some(options::number(flag, value)?),
+            "logo-size" => self.logo_size = Some(options::logo_size(value)?),
+            "logo-frame" => self.logo_frame = Some(options::logo_frame(value)?),
+            "logo-intro" => self.logo_intro = Some(options::logo_intro(value)?),
+            "logo-timing" => self.logo_timing = Some(options::logo_timing(value)?),
             "intro" => self.intro = Some(options::preset(value)?),
             "intro-ms" => {
                 self.intro_ms = Some(
@@ -452,6 +466,14 @@ impl StyleArgs {
         {
             return Err("picture options need --halftone or --art".to_string());
         }
+        if self.logo.is_none()
+            && (self.logo_size.is_some()
+                || self.logo_frame.is_some()
+                || self.logo_intro.is_some()
+                || self.logo_timing.is_some())
+        {
+            return Err("logo options need --logo".to_string());
+        }
         // Art mode's own defaults, under whatever was given.
         let base = match &halftone {
             Some(h) if self.art => Style::art(h.clone()),
@@ -484,8 +506,17 @@ impl StyleArgs {
             let mut logo = load_logo(source)?
                 .backdrop(!self.no_logo_backdrop)
                 .clear_modules(!self.keep_modules);
+            if let Some(size) = self.logo_size {
+                logo = logo.size(size);
+            }
             if let Some(scale) = self.logo_scale {
                 logo = logo.scale(scale);
+            }
+            if let Some((frame, width)) = self.logo_frame {
+                logo = logo.frame(frame);
+                if let Some(width) = width {
+                    logo = logo.frame_width(width);
+                }
             }
             if let Some(shape) = self.logo_shape {
                 logo = logo.shape(shape);
@@ -499,7 +530,9 @@ impl StyleArgs {
             || self.stagger.is_some()
             || self.ease.is_some()
             || self.groups.is_some()
-            || self.trigger.is_some();
+            || self.trigger.is_some()
+            || self.logo_intro.is_some()
+            || self.logo_timing.is_some();
         if !self.from_tokens.is_empty() {
             if self.intro.is_some() {
                 return Err("--intro and --from-* can't be combined".to_string());
@@ -537,6 +570,12 @@ impl StyleArgs {
             }
             if let Some(trigger) = &self.trigger {
                 intro = intro.trigger(trigger.clone());
+            }
+            if let Some(logo) = self.logo_intro {
+                intro = intro.logo(logo);
+            }
+            if let Some(timing) = self.logo_timing {
+                intro = intro.logo_timing(timing);
             }
             style = style.intro(intro);
         }

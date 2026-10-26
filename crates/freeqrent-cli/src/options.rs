@@ -3,8 +3,8 @@
 
 use freeqrent::{
     AlignmentShape, Axis, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape, Fit, Frame,
-    FrameRing, Idle, Ink, LogoShape, ModuleShape, Preset, RingShape, StaggerOrder, TimingStyle,
-    TrackingGrid, Trigger,
+    FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape,
+    Preset, RingShape, StaggerOrder, TimingStyle, TrackingGrid, Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -244,7 +244,50 @@ pub fn idle(value: &str) -> Result<Idle, String> {
     Idle::ALL
         .into_iter()
         .find(|i| i.name() == value)
-        .ok_or_else(|| format!("unknown idle loop {value:?}: try finder-pulse, shimmer or breathe"))
+        .ok_or_else(|| {
+            let names: Vec<&str> = Idle::ALL.iter().map(|i| i.name()).collect();
+            format!("unknown idle loop {value:?}: try {}", names.join(", "))
+        })
+}
+
+/// A logo size name.
+pub fn logo_size(value: &str) -> Result<LogoSize, String> {
+    LogoSize::ALL
+        .into_iter()
+        .find(|s| s.name() == value)
+        .ok_or_else(|| format!("unknown logo size {value:?}: try small, medium, large or largest"))
+}
+
+/// A logo frame name, with an optional width: `ring`, `beads:0.6`.
+pub fn logo_frame(value: &str) -> Result<(LogoFrame, Option<f32>), String> {
+    let (name, width) = named(value)?;
+    let frame = LogoFrame::ALL
+        .into_iter()
+        .find(|f| f.name() == name)
+        .ok_or_else(|| {
+            let names: Vec<&str> = LogoFrame::ALL.iter().map(|f| f.name()).collect();
+            format!("unknown logo frame {name:?}: try {}", names.join(", "))
+        })?;
+    Ok((frame, width))
+}
+
+/// A logo intro name.
+pub fn logo_intro(value: &str) -> Result<LogoIntro, String> {
+    LogoIntro::ALL
+        .into_iter()
+        .find(|i| i.name() == value)
+        .ok_or_else(|| {
+            let names: Vec<&str> = LogoIntro::ALL.iter().map(|i| i.name()).collect();
+            format!("unknown logo intro {value:?}: try {}", names.join(", "))
+        })
+}
+
+/// When the logo's intro plays: `after`, `before`, `with`.
+pub fn logo_timing(value: &str) -> Result<LogoTiming, String> {
+    LogoTiming::ALL
+        .into_iter()
+        .find(|t| t.name() == value)
+        .ok_or_else(|| format!("unknown logo timing {value:?}: try after, before or with"))
 }
 
 /// `radial`, `linear`, `diagonal`, `random[:seed]`, `polar`.
@@ -455,7 +498,19 @@ mod tests {
         assert_eq!(preset("lock-on").unwrap(), Preset::LockOn);
         assert!(preset("bloom").is_err());
         assert_eq!(idle("finder-pulse").unwrap(), Idle::FinderPulse);
+        assert_eq!(idle("logo-turn").unwrap(), Idle::LogoTurn);
         assert!(idle("spin").is_err());
+        assert_eq!(logo_size("largest").unwrap(), LogoSize::Largest);
+        assert!(logo_size("huge").is_err());
+        assert_eq!(logo_frame("ring").unwrap(), (LogoFrame::Ring, None));
+        assert_eq!(
+            logo_frame("beads:0.6").unwrap(),
+            (LogoFrame::Beads, Some(0.6))
+        );
+        assert!(logo_frame("halo").is_err());
+        assert_eq!(logo_intro("ink").unwrap(), LogoIntro::Ink);
+        assert_eq!(logo_timing("before").unwrap(), LogoTiming::Before);
+        assert!(logo_timing("during").is_err());
         assert_eq!(stagger("random:7").unwrap(), StaggerOrder::Random(7));
         assert!(stagger("radial:1").is_err());
         assert_eq!(

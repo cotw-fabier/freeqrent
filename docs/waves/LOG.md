@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026102223 · M5 · Logo sizes, frames, logo intros and idles
+
+- Landed: `LogoSize` (Small/Medium/Large; `Largest` grows to the budget's limit, at least 0.26) and `ScanReport::logo_scale`; `LogoFrame::{Ring, Beads, Stamp, Brackets, Orbit}` with `frame_width` and a `logo.frame` token, inside a plate grown to hold them, with the logo clipped to the frame's window; `LogoIntro::{None, Reveal, Stamp, Draw, Lock, Ink}` and `LogoTiming::{After, Before, With}` on `Intro`, stacking with any preset; `Idle::LogoGlint` and `Idle::LogoTurn`; `Property::Rotate` and `Property::Draw`, `PlanLayer::outline` and `PlanLayer::opacity`; `RenderError::TurnNeedsRoundFrame`. CLI: `--logo-size`, `--logo-frame`, `--logo-intro`, `--logo-timing`; fourteen logo gallery cards (42 families, all decode), appended to the scan sheet as S47–S60.
+- Measured: the largest affordable dark logo with each frame, on each plate shape, L–H × v4/v8/v15, scans at the full bar; logo idles decode at every eighth of a turn and through the glint. Time to scannable with a logo intro: After 500–650 ms, With 700–750, Before 750–900 (of 1200).
+- Decisions: Turn only on round frames (a turning square leaves the plate); the Orbit idle from the options list became Turn on an Orbit frame; Reveal + After keeps documents byte-identical (a hand-written `Debug` for `Intro` keeps old ID prefixes), and every snapshot is unchanged. Track ends are now rounded instead of lengths, so `Before` can't run 1 ms past the intro.
+- Checks: 7 new verify tests (`logo_frames.rs`), 5 core unit tests, a CLI flag test; the intro tests give the logo idles an Orbit-framed logo.
+
 ## 20261026100651 · M5 · First device results
 
 - A Pixel 10 XL (built-in camera, which reads codes through Google Lens) read all eight v1 contrast cards of the scan sheet (ΔL 0.60–0.66 on bg L 0.85 and 0.95); the bench's blurred, noisy render had failed six. Decision: no lightness-aware warning in `check`; `EXTRACT_CONTRAST` stays 0.66 until an iPhone result is in (ROADMAP).

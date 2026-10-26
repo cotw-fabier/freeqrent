@@ -206,6 +206,8 @@ pub(crate) struct Element {
     /// of a module, stroked this wide, drawn through a nested viewport over
     /// the code's modules.
     pub(crate) stroke: Option<u8>,
+    /// A logo frame stroked along its path instead of filled.
+    pub(crate) outline: Option<logo::Outline>,
 }
 
 impl Element {
@@ -222,6 +224,7 @@ impl Element {
             pose: None,
             color: None,
             stroke: None,
+            outline: None,
         }
     }
 }
@@ -232,6 +235,10 @@ pub(crate) struct Pose {
     pub(crate) opacity: f64,
     pub(crate) scale: f64,
     pub(crate) translate: (f64, f64),
+    /// Clockwise turn about the origin, in degrees.
+    pub(crate) rotate: f64,
+    /// How much of an outline is drawn, 0–1.
+    pub(crate) draw: f64,
     /// A fill that replaces the token's paint.
     pub(crate) fill: Option<Color>,
 }
@@ -242,6 +249,8 @@ impl Pose {
         opacity: 1.0,
         scale: 1.0,
         translate: (0.0, 0.0),
+        rotate: 0.0,
+        draw: 1.0,
         fill: None,
     };
 }
@@ -269,13 +278,25 @@ pub(crate) fn background_path(style: &Style, canvas: &Canvas) -> Path {
 /// The logo's plate and its center, in modules.
 pub(crate) fn logo_plate(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<(Path, f64)> {
     let logo = style.logo.as_ref()?;
-    let p = logo::placement(logo, qr, logo.scale);
+    let p = logo::placement(logo, qr, crate::check::logo_scale(style, qr));
     let o = canvas.origin as f64;
     let u = |v: f64| math::round(v * UNIT as f64) as i64;
     let mut plate = Path::new();
     let (at, side) = (u(o + p.center - p.half), u(2.0 * p.half));
     plate.rounded_rect(at, at, side, side, [u(p.radius); 4]);
     Some((plate, o + p.center))
+}
+
+/// The outline the logo's content is clipped to: the plate, or with a
+/// frame the window inside it, and its corner radius.
+fn logo_window(p: &logo::Placement, origin: f64) -> (Path, f64) {
+    let inset = p.frame.map_or(0.0, |w| w + logo::FRAME_INSET);
+    let (half, radius) = (p.half - inset, (p.radius - inset).max(0.0));
+    let u = |v: f64| math::round(v * UNIT as f64) as i64;
+    let mut path = Path::new();
+    let (at, side) = (u(origin + p.center - half), u(2.0 * half));
+    path.rounded_rect(at, at, side, side, [u(radius); 4]);
+    (path, radius)
 }
 
 /// The elements of a code that doesn't animate: one path per (token,
@@ -292,17 +313,67 @@ pub(crate) fn static_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> 
         ));
     }
     elements.extend(build_paths(style, qr, canvas));
-    if let Some((plate, center)) = logo_plate(style, qr, canvas) {
-        let mut logo = Element::new(LayerRole::Logo, Token::LogoBackdrop, false, plate);
-        logo.origin = (center, center);
-        elements.push(logo);
-    }
     for e in &mut elements {
-        if e.role != LayerRole::Logo {
-            e.origin = (mid, mid);
-        }
+        e.origin = (mid, mid);
     }
+    elements.extend(logo_elements(style, qr, canvas));
     elements
+}
+
+/// The glint band's width and slant, as shares of the plate's side.
+pub(crate) const GLINT_BAND: f64 = 0.5;
+pub(crate) const GLINT_SLANT: f64 = 0.3;
+
+/// The logo's layers (SPEC §7.3, §8): the plate with the logo, its
+/// silhouette for the Ink intro, the frame, and the glint band, each
+/// turning about the plate's center.
+pub(crate) fn logo_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
+    let (Some(logo), Some((plate, center))) = (&style.logo, logo_plate(style, qr, canvas)) else {
+        return Vec::new();
+    };
+    #[cfg(feature = "animate")]
+    let (ink, glint) = (
+        style
+            .intro
+            .as_ref()
+            .is_some_and(|i| i.entrance().is_some() && i.logo == crate::animate::LogoIntro::Ink),
+        style.idle.contains(&crate::Idle::LogoGlint),
+    );
+    #[cfg(not(feature = "animate"))]
+    let (ink, glint) = (false, false);
+    let mut out = Vec::new();
+    out.push(Element::new(
+        LayerRole::Logo,
+        Token::LogoBackdrop,
+        false,
+        plate.clone(),
+    ));
+    let p = logo::placement(logo, qr, crate::check::logo_scale(style, qr));
+    if ink {
+        let (window, _) = logo_window(&p, canvas.origin as f64);
+        out.push(Element::new(LayerRole::LogoInk, Token::Fg, false, window));
+    }
+    if let Some(frame) = logo::frame_shape(logo, &p, canvas.origin as f64, &style.modules) {
+        let mut e = Element::new(LayerRole::LogoFrame, Token::LogoFrame, false, frame.path);
+        e.outline = frame.outline;
+        out.push(e);
+    }
+    if glint {
+        let u = |v: f64| math::round(v * UNIT as f64) as i64;
+        let (left, side) = (u(center - p.half), u(2.0 * p.half));
+        let (band, slant) = (u(2.0 * p.half * GLINT_BAND), u(2.0 * p.half * GLINT_SLANT));
+        let mut path = Path::new();
+        path.move_to(left - band, left);
+        path.line_to(left, left);
+        path.line_to(left - slant, left + side);
+        path.line_to(left - band - slant, left + side);
+        path.close();
+        out.push(Element::new(LayerRole::LogoGlint, Token::Bg, false, path));
+    }
+    for e in &mut out {
+        e.origin = (center, center);
+    }
+    out
 }
 
 #[cfg(feature = "animate")]
@@ -349,15 +420,16 @@ pub(crate) fn write<W: Write + ?Sized>(
     let mut stroke_gradients: Vec<Token> = Vec::new();
     let painted = elements
         .iter()
-        .filter(|e| e.role != LayerRole::Shimmer)
+        .filter(|e| !matches!(e.role, LayerRole::Shimmer | LayerRole::LogoGlint))
         .filter(|e| e.role != LayerRole::Logo || backdrop)
         .filter(|e| e.color.is_none())
-        .map(|e| (e.token, e.stroke.is_some()));
-    for (token, stroke) in painted {
+        .map(|e| (e.token, e.stroke.is_some(), e.outline.is_some()));
+    for (token, cells, outline) in painted {
+        // An outline's gradient is in the document's space, like a fill's.
         let (list, token) = match palette.resolve(token) {
-            Paint::Solid(_) if stroke => (&mut stroked, token),
+            Paint::Solid(_) if cells || outline => (&mut stroked, token),
             Paint::Solid(_) => (&mut solids, token),
-            Paint::Gradient(_) if stroke => (&mut stroke_gradients, paint_source(palette, token)),
+            Paint::Gradient(_) if cells => (&mut stroke_gradients, paint_source(palette, token)),
             Paint::Gradient(_) => (&mut gradients, paint_source(palette, token)),
         };
         if !list.contains(&token) {
@@ -465,7 +537,40 @@ pub(crate) fn write<W: Write + ?Sized>(
                 write_pose(out.w, e)?;
                 out.w.write_str("/>")?;
             }
-            LayerRole::Logo => write_logo(&mut out, style, qr, &canvas, &prefix, e)?,
+            LayerRole::Logo => {
+                let ink = elements.iter().any(|e| e.role == LayerRole::LogoInk);
+                write_logo(&mut out, style, qr, &canvas, &prefix, e, ink)?
+            }
+            LayerRole::LogoFrame => write_frame(out.w, palette, e, &prefix)?,
+            LayerRole::LogoInk => {
+                write!(
+                    out.w,
+                    "<mask id=\"{prefix}-logo-ink\" mask-type=\"alpha\"><use href=\"#{prefix}-logo-art\"/></mask><path mask=\"url(#{prefix}-logo-ink)\""
+                )?;
+                write_element_paint(out.w, palette, e, &prefix)?;
+                // Its natural state is invisible: the intro only flashes it.
+                match e.pose {
+                    Some(_) => write_pose(out.w, e)?,
+                    None => out.w.write_str(" opacity=\"0\"")?,
+                }
+                write!(out.w, " d=\"{}\"/>", e.path.data())?;
+            }
+            LayerRole::LogoGlint => {
+                let plate = logo_plate(style, qr, &canvas)
+                    .map(|(p, _)| p)
+                    .unwrap_or_default();
+                write!(
+                    out.w,
+                    "<clipPath id=\"{prefix}-glint-clip\"><path d=\"{}\"/></clipPath><linearGradient id=\"{prefix}-glint\"><stop offset=\"0\" stop-color=\"#fff\" stop-opacity=\"0\"/><stop offset=\".5\" stop-color=\"#fff\" stop-opacity=\".45\"/><stop offset=\"1\" stop-color=\"#fff\" stop-opacity=\"0\"/></linearGradient><g clip-path=\"url(#{prefix}-glint-clip)\"><path",
+                    plate.data()
+                )?;
+                if let Some(n) = e.anim {
+                    write!(out.w, " class=\"{prefix}-e{n}\"")?;
+                }
+                write!(out.w, " fill=\"url(#{prefix}-glint)\"")?;
+                write_pose(out.w, e)?;
+                write!(out.w, " d=\"{}\"/></g>", e.path.data())?;
+            }
             LayerRole::Shimmer => {
                 write!(
                     out.w,
@@ -569,6 +674,71 @@ fn write_subcells<W: Write + ?Sized>(
     Ok(())
 }
 
+/// A logo frame: filled like any path, or stroked along it with its dash
+/// pattern, drawn as far as its pose says.
+fn write_frame<W: Write + ?Sized>(
+    w: &mut W,
+    palette: &Palette,
+    e: &Element,
+    prefix: &str,
+) -> fmt::Result {
+    w.write_str("<path")?;
+    let Some(outline) = &e.outline else {
+        write_element_paint(w, palette, e, prefix)?;
+        if e.evenodd {
+            w.write_str(" fill-rule=\"evenodd\"")?;
+        }
+        write_pose(w, e)?;
+        return write!(w, " d=\"{}\"/>", e.path.data());
+    };
+    match palette.resolve(e.token) {
+        Paint::Solid(color) => {
+            write!(w, " class=\"{prefix}-")?;
+            write_dashed(w, e.token.name())?;
+            w.write_str("-s")?;
+            if let Some(n) = e.anim {
+                write!(w, " {prefix}-e{n}")?;
+            }
+            w.write_str("\" fill=\"none\" stroke=\"")?;
+            write_hex(w, color)?;
+            w.write_char('"')?;
+            write_opacity(w, "stroke-opacity", color)?;
+        }
+        Paint::Gradient(_) => {
+            if let Some(n) = e.anim {
+                write!(w, " class=\"{prefix}-e{n}\"")?;
+            }
+            write!(w, " fill=\"none\" stroke=\"url(#{prefix}-")?;
+            write_dashed(w, paint_source(palette, e.token).name())?;
+            w.write_str(")\"")?;
+        }
+    }
+    let k = |v: f64| math::round(v * 1000.0) as i64;
+    w.write_str(" stroke-width=\"")?;
+    write_scaled(w, outline.width, 3)?;
+    w.write_char('"')?;
+    if !outline.dashes.is_empty() {
+        w.write_str(" stroke-dasharray=\"")?;
+        for (i, &d) in outline.dashes.iter().enumerate() {
+            if i > 0 {
+                w.write_char(' ')?;
+            }
+            write_scaled(w, k(d), 3)?;
+        }
+        w.write_char('"')?;
+    }
+    // Drawing on moves the dashes back from the path's end.
+    let undrawn = e.pose.map_or(0.0, |p| 1.0 - p.draw) * outline.dashes.first().unwrap_or(&0.0);
+    let offset = k(outline.offset + undrawn);
+    if offset != 0 {
+        w.write_str(" stroke-dashoffset=\"")?;
+        write_scaled(w, offset, 3)?;
+        w.write_char('"')?;
+    }
+    write_pose(w, e)?;
+    write!(w, " d=\"{}\"/>", e.path.data())
+}
+
 /// The paint of an element: its token's, or a frame's fixed fill.
 fn write_element_paint<W: Write + ?Sized>(
     w: &mut W,
@@ -597,6 +767,29 @@ fn write_pose<W: Write + ?Sized>(w: &mut W, e: &Element) -> fmt::Result {
         w.write_char('"')?;
     }
     let (s, (tx, ty)) = (pose.scale, pose.translate);
+    if k(pose.rotate) != 0 {
+        // Scale, turn, then translate, about the origin: CSS
+        // `translate(..) rotate(..) scale(..)` with that transform origin.
+        let (ox, oy) = e.origin;
+        let (sin, cos) = math::sin_cos(math::radians(pose.rotate));
+        let (a, b, c, d) = (s * cos, s * sin, -s * sin, s * cos);
+        w.write_str(" transform=\"matrix(")?;
+        let values = [
+            a,
+            b,
+            c,
+            d,
+            ox + tx - a * ox - c * oy,
+            oy + ty - b * ox - d * oy,
+        ];
+        for (i, v) in values.into_iter().enumerate() {
+            if i > 0 {
+                w.write_char(' ')?;
+            }
+            write_scaled(w, k(v), 3)?;
+        }
+        return w.write_str(")\"");
+    }
     if k(s) != 1000 || k(tx) != 0 || k(ty) != 0 {
         // Scale about the origin, then translate: the CSS
         // `translate(..) scale(..)` with that transform origin.
@@ -627,11 +820,12 @@ fn write_logo<W: Write + ?Sized>(
     canvas: &Canvas,
     prefix: &str,
     e: &Element,
+    ink: bool,
 ) -> fmt::Result {
     let Some(logo) = &style.logo else {
         return Ok(());
     };
-    let p = logo::placement(logo, qr, logo.scale);
+    let p = logo::placement(logo, qr, crate::check::logo_scale(style, qr));
     let o = canvas.origin as f64;
     let u = |v: f64| math::round(v * UNIT as f64) as i64;
     let plate = &e.path;
@@ -645,12 +839,14 @@ fn write_logo<W: Write + ?Sized>(
         out.w.write_char('>')?;
         out.line()?;
     }
-    let clip = p.radius > 0.0;
+    // Without a frame the window is the plate itself.
+    let (window, radius) = logo_window(&p, o);
+    let clip = radius > 0.0;
     if clip {
         write!(
             out.w,
             "<clipPath id=\"{prefix}-logo-clip\"><path d=\"{}\"/></clipPath>",
-            plate.data()
+            window.data()
         )?;
         out.line()?;
     }
@@ -679,6 +875,9 @@ fn write_logo<W: Write + ?Sized>(
     match &logo.content {
         Content::Svg(doc) => {
             out.w.write_str("<svg")?;
+            if ink {
+                write!(out.w, " id=\"{prefix}-logo-art\"")?;
+            }
             box_attrs(out.w)?;
             out.w.write_str(" viewBox=\"")?;
             doc.write_view_box(out.w)?;
@@ -688,6 +887,9 @@ fn write_logo<W: Write + ?Sized>(
         }
         Content::Raster { format, data } => {
             out.w.write_str("<image")?;
+            if ink {
+                write!(out.w, " id=\"{prefix}-logo-art\"")?;
+            }
             box_attrs(out.w)?;
             write!(out.w, " href=\"data:{};base64,", format.mime())?;
             logo::base64(out.w, data)?;
@@ -993,6 +1195,11 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
             "{:?}{:?}{}{}{}",
             logo.shape, logo.scale, logo.padding, logo.backdrop, logo.clear_modules
         );
+        // Frames and growth were added later: only hashed when used, so
+        // existing prefixes stay the same.
+        if logo.grow || logo.frame.is_some() {
+            let _ = write!(text, "{}{:?}{:?}", logo.grow, logo.frame, logo.frame_width);
+        }
         text.bytes().for_each(&mut eat);
         match &logo.content {
             Content::Svg(doc) => doc.to_document().bytes().for_each(&mut eat),

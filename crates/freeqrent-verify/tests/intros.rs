@@ -7,8 +7,8 @@ mod common;
 
 use common::{PAYLOADS, assert_scans};
 use freeqrent::{
-    Ecc, Frame, FrameRing, Idle, Intro, Logo, ModuleShape, Palette, Preset, QrCode, QrMatrix,
-    StaggerOrder, Style, Token, Version, Warning,
+    Ecc, Frame, FrameRing, Idle, Intro, Logo, LogoFrame, ModuleShape, Palette, Preset, QrCode,
+    QrMatrix, StaggerOrder, Style, Token, Version, Warning,
 };
 use freeqrent_verify::{Gray, rasterize, scannable_after};
 
@@ -163,6 +163,19 @@ fn intros_scan_before_they_end() {
     }
 }
 
+/// The logo's own idle loops need a logo with a round frame to act on.
+fn for_idle(style: Style, idle: Idle) -> Style {
+    match idle {
+        Idle::LogoGlint | Idle::LogoTurn => style.logo(
+            Logo::svg(r##"<svg viewBox="0 0 4 4"><rect width="4" height="4" fill="#c33"/></svg>"##)
+                .unwrap()
+                .scale(0.1)
+                .frame(LogoFrame::Orbit),
+        ),
+        _ => style,
+    }
+}
+
 fn ink() -> Palette {
     Palette::from_tokens([("bg", "oklch(96% .02 85)"), ("fg", "oklch(30% .12 265)")]).unwrap()
 }
@@ -171,19 +184,23 @@ fn ink() -> Palette {
 fn palette_shifts_and_idle_loops_keep_the_static_state() {
     let plain = Style::new().palette(ink());
     let mut styles = vec![
-        plain.clone().intro(Intro::palette_from(&Palette::new())),
-        plain.clone().theme_transition(600),
+        (
+            plain.clone(),
+            plain.clone().intro(Intro::palette_from(&Palette::new())),
+        ),
+        (plain.clone(), plain.clone().theme_transition(600)),
     ];
     for idle in Idle::ALL {
-        styles.push(plain.clone().idle(idle));
-        styles.push(plain.clone().intro(Preset::Ripple).idle(idle));
+        let base = for_idle(plain.clone(), idle);
+        styles.push((base.clone(), base.clone().idle(idle)));
+        styles.push((base.clone(), base.intro(Preset::Ripple).idle(idle)));
     }
     for &(text, version) in &PAYLOADS[1..3] {
         let qr = code(text, version);
-        for animated in &styles {
+        for (base, animated) in &styles {
             // An idle loop never ends, so its "last frame" is its rest
             // state before it starts: the intro's end.
-            assert_same_picture(&plain, animated, &qr, &format!("{animated:?}"));
+            assert_same_picture(base, animated, &qr, &format!("{animated:?}"));
         }
     }
 }
@@ -237,7 +254,9 @@ fn idle_frames_scan() {
     for idle in Idle::ALL {
         for &(text, version) in &PAYLOADS[1..] {
             let qr = code(text, version);
-            let style = Style::new().intro(Preset::Settle).idle(idle);
+            let style = for_idle(Style::new(), idle)
+                .intro(Preset::Settle)
+                .idle(idle);
             let start = style.plan(&qr).unwrap().total_ms;
             for t in (start..start + 8000).step_by(100) {
                 let svg = style.render_frame(&qr, t).unwrap();

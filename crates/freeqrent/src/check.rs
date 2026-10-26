@@ -92,6 +92,11 @@ pub enum RenderError {
         /// The largest scale, in hundredths, that fits this code.
         max_scale: f32,
     },
+    /// [`Idle::LogoTurn`](crate::Idle::LogoTurn) turns the logo's frame,
+    /// and only a round one stays inside the plate while it turns: the
+    /// frame must be [`LogoFrame::Orbit`](crate::LogoFrame::Orbit) or sit
+    /// on a [`LogoShape::Circle`] plate.
+    TurnNeedsRoundFrame,
     /// The output sink returned an error.
     Write,
 }
@@ -120,6 +125,9 @@ impl fmt::Display for RenderError {
                 f,
                 "cleared modules damage {damaged} codewords of one block; the budget allows {allowed}"
             ),
+            RenderError::TurnNeedsRoundFrame => {
+                f.write_str("the logo-turn idle needs an orbit frame or a frame on a circle plate")
+            }
             RenderError::LogoTooLarge { max_scale } => write!(
                 f,
                 "the logo is too large for this code; at most scale {max_scale:.2} fits"
@@ -274,6 +282,9 @@ pub struct ScanReport {
     /// worst block: damaged codewords over correctable ones (0 when nothing
     /// is cleared). Above [`DAMAGE_BUDGET`] the code isn't rendered.
     pub ecc_budget_used: f32,
+    /// The scale the logo is drawn at, when there is one: its own, or what
+    /// [`LogoSize::Largest`](crate::LogoSize::Largest) grew it to.
+    pub logo_scale: Option<f32>,
     /// How well the modules follow the style's picture, when it has one
     /// (SPEC §7.8).
     #[cfg(feature = "halftone")]
@@ -353,6 +364,9 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         if let LogoShape::Rounded(r) = logo.shape {
             in_range(&mut errors, "LogoShape::Rounded radius", r, 0.0, f32::MAX);
         }
+        if let Some(width) = logo.frame_width {
+            in_range(&mut errors, "Logo.frame_width", width, 0.1, 1.5);
+        }
     }
 
     #[cfg(feature = "halftone")]
@@ -402,6 +416,7 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         warnings,
         min_contrast,
         ecc_budget_used,
+        logo_scale: style.logo.as_ref().map(|_| logo_scale(style, qr)),
         #[cfg(feature = "halftone")]
         steering: steering(style, qr),
     }
@@ -475,6 +490,16 @@ fn check_intro(
     for (token, delta_l) in crate::animate::motion_contrast(style, qr) {
         if delta_l < CONTRAST_FLOOR {
             warnings.push(Warning::MotionContrast { token, delta_l });
+        }
+    }
+    if style.idle.contains(&crate::Idle::LogoTurn) {
+        let round = style.logo.as_ref().is_some_and(|l| match l.frame {
+            Some(crate::LogoFrame::Orbit) => true,
+            Some(_) => l.shape == LogoShape::Circle,
+            None => false,
+        });
+        if !round {
+            errors.push(RenderError::TurnNeedsRoundFrame);
         }
     }
     let Some(intro) = &style.intro else {
@@ -646,7 +671,7 @@ fn budget(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
         let worst = budget.worst(qr, &cleared, Some(&cover.modules));
         (cover.valid && worst <= budget.allowed, worst)
     };
-    let (ok, worst) = fits(logo.scale);
+    let (ok, worst) = fits(logo_scale(style, qr));
     if !ok {
         // Coverage grows with scale, so search the hundredths below it.
         let (mut lo, mut hi) = (0u32, (logo.scale * 100.0) as u32);
@@ -663,6 +688,38 @@ fn budget(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
         });
     }
     share(worst)
+}
+
+/// The scale `style`'s logo is drawn at on `qr`: its own, or with
+/// [`LogoSize::Largest`](crate::LogoSize::Largest) the largest hundredth
+/// up to 0.5 that the budget affords, when its own fits.
+pub(crate) fn logo_scale(style: &Style, qr: &QrMatrix) -> f32 {
+    let Some(logo) = &style.logo else {
+        return 0.0;
+    };
+    if !logo.grow {
+        return logo.scale;
+    }
+    let cleared = scene::cleared(style, qr);
+    let budget = Budget::new(qr, damage_budget(style));
+    let fits = |scale: f32| {
+        let cover = logo::cover(logo, qr, scale);
+        cover.valid && budget.worst(qr, &cleared, Some(&cover.modules)) <= budget.allowed
+    };
+    let mut lo = crate::math::ceil(logo.scale as f64 * 100.0 - 1e-3) as u32;
+    if !fits(logo.scale) || lo > 50 || !fits(lo as f32 / 100.0) {
+        return logo.scale;
+    }
+    let mut hi = 50;
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if fits(mid as f32 / 100.0) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    lo as f32 / 100.0
 }
 
 #[cfg(test)]

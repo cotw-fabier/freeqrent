@@ -62,8 +62,9 @@ mod version;
 
 #[cfg(feature = "animate")]
 pub use animate::{
-    AnimationPlan, CubicBezier, Ease, Fallback, Idle, Intro, Keyframe, PlanLayer, Preset, Property,
-    Reveal, RevealShape, StaggerOrder, Target, Track, Trigger, Value,
+    AnimationPlan, CubicBezier, Ease, Fallback, Idle, Intro, Keyframe, LogoIntro, LogoTiming,
+    PlanLayer, PlanOutline, Preset, Property, Reveal, RevealShape, StaggerOrder, Target, Track,
+    Trigger, Value,
 };
 pub use check::{
     ANIMATED_ELEMENTS, CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, HALFTONE_DAMAGE_BUDGET,
@@ -79,7 +80,7 @@ pub use extract::{
 #[cfg(feature = "halftone")]
 pub use halftone::{Clarity, DEFAULT_BANDS, DEFAULT_CLARITY, Fit, Halftone, Ink, Steering};
 pub use image::{ImageError, Rgba8Image};
-pub use logo::{Logo, LogoError, LogoShape, RasterFormat};
+pub use logo::{Logo, LogoError, LogoFrame, LogoShape, LogoSize, RasterFormat};
 pub use matrix::{CapacityReport, Corner, FinderRing, Mask, ModuleRole, QrMatrix};
 pub use palette::{
     Contrast, Gradient, GradientKind, GradientStop, Paint, Palette, PaletteError, Token,

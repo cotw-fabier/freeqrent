@@ -1,0 +1,257 @@
+//! Logo sizes, frames, and the logo's own intros and idle loops (SPEC §7.3,
+//! §8). Frames sit inside the plate the budget pays for, so the worst case
+//! is the largest logo a code affords with the frame on it: it must scan.
+//! The logo's motion never leaves the plate at rest or while it idles.
+
+mod common;
+
+use freeqrent::{
+    Ecc, Idle, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape,
+    Preset, QrCode, QrMatrix, RenderError, Style, Version,
+};
+use freeqrent_verify::{Gray, Render, rasterize, verify_one, verify_style};
+
+/// The worst case for a scanner: dark, with light stripes, no margin.
+const DARK: &str = r##"<svg viewBox="0 0 10 10"><rect width="10" height="10" fill="#17161c"/><path d="M2 2h6v2h-6zM2 6h6v2h-6z" fill="#fefcf8"/></svg>"##;
+const MARK: &str = r##"<svg viewBox="0 0 10 10"><rect width="10" height="10" rx="2" fill="#c2410c"/><path d="M3 2h4v2h-2v1h2v2h-2v1h-2z" fill="#fefcf8"/></svg>"##;
+const TEXT: &str = "https://example.com/menu";
+const SHAPES: [LogoShape; 3] = [
+    LogoShape::Square,
+    LogoShape::Rounded(1.5),
+    LogoShape::Circle,
+];
+
+fn code(text: &str, version: u8, ecc: Ecc) -> QrMatrix {
+    QrCode::builder()
+        .ecc(ecc)
+        .boost_ecc(false)
+        .version(Version::new(version).unwrap())
+        .encode_text(text)
+        .unwrap()
+}
+
+fn fitted(style: &Style) -> QrMatrix {
+    QrCode::builder().encode_text_for(TEXT, style).unwrap()
+}
+
+fn assert_verifies(style: &Style, qr: &QrMatrix, text: &str, label: &str) {
+    let report = style.check(qr);
+    assert!(report.ok(), "{label}: {report:?}");
+    if let Err(e) = verify_style(style, qr, text) {
+        panic!("{label} v{}: {e}", qr.version().number());
+    }
+}
+
+#[test]
+fn frames_scan_on_the_largest_logo() {
+    for ecc in [Ecc::L, Ecc::M, Ecc::Q, Ecc::H] {
+        for version in [4, 8, 15] {
+            let text = format!("FRAMED {version}");
+            let qr = code(&text, version, ecc);
+            for shape in SHAPES {
+                for frame in LogoFrame::ALL {
+                    for (modules, backdrop) in [
+                        (ModuleShape::SQUARE, true),
+                        (ModuleShape::Dots { size: 0.85 }, false),
+                    ] {
+                        let logo = Logo::svg(DARK)
+                            .unwrap()
+                            .shape(shape)
+                            .backdrop(backdrop)
+                            .frame(frame)
+                            .size(LogoSize::Largest)
+                            .scale(0.05);
+                        let style = Style::new().modules(modules).logo(logo);
+                        let label = format!("{ecc:?} {shape:?} {frame:?} {modules:?}");
+                        let report = style.check(&qr);
+                        if !report.ok() {
+                            // Version 4 at L can't afford a framed plate.
+                            assert!(
+                                matches!(report.errors[..], [RenderError::LogoTooLarge { .. }]),
+                                "{label}: {report:?}"
+                            );
+                            continue;
+                        }
+                        assert!(report.logo_scale.unwrap() >= 0.05, "{label}");
+                        assert_verifies(&style, &qr, &text, &label);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn frames_cost_budget_and_widths_are_checked() {
+    let qr = code(TEXT, 8, Ecc::Q);
+    let used = |logo: Logo| Style::new().logo(logo).check(&qr).ecc_budget_used;
+    let plain = Logo::svg(MARK).unwrap().scale(0.16);
+    for frame in LogoFrame::ALL {
+        assert!(
+            used(plain.clone().frame(frame)) >= used(plain.clone()),
+            "{frame:?}"
+        );
+    }
+    let wide = Style::new().logo(plain.clone().frame(LogoFrame::Ring).frame_width(2.0));
+    assert!(matches!(
+        wide.check(&qr).errors[..],
+        [RenderError::OptionOutOfRange {
+            option: "Logo.frame_width",
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn sizes_scan_and_largest_fills_the_budget() {
+    let mut last = 0.0;
+    for size in LogoSize::ALL {
+        let style = Style::new().logo(Logo::svg(MARK).unwrap().size(size));
+        let qr = fitted(&style);
+        let report = style.check(&qr);
+        let scale = report.logo_scale.unwrap();
+        assert!(scale >= last, "{size:?} {scale}");
+        last = scale;
+        assert_verifies(&style, &qr, TEXT, &format!("{size:?}"));
+        if size == LogoSize::Largest {
+            // One more hundredth would not fit.
+            let over = Style::new().logo(Logo::svg(MARK).unwrap().scale(scale + 0.01));
+            assert!(
+                scale >= 0.5 || !over.check(&qr).ok(),
+                "{scale} isn't the largest"
+            );
+        }
+    }
+}
+
+/// Pixels that differ by more than a rounding step.
+fn differs(a: &Gray, b: &Gray) -> usize {
+    assert_eq!((a.width, a.height), (b.width, b.height));
+    a.pixels
+        .iter()
+        .zip(&b.pixels)
+        .filter(|(p, q)| p.abs_diff(**q) > 2)
+        .count()
+}
+
+#[test]
+fn logo_intros_end_on_the_static_code() {
+    for intro in LogoIntro::ALL {
+        for timing in LogoTiming::ALL {
+            for preset in [
+                Preset::Settle,
+                Preset::LockOn,
+                Preset::Iris,
+                Preset::Develop,
+            ] {
+                for (shape, frame) in [
+                    (LogoShape::Circle, LogoFrame::Ring),
+                    (LogoShape::Square, LogoFrame::Brackets),
+                    (LogoShape::Rounded(1.5), LogoFrame::Beads),
+                ] {
+                    let logo = Logo::svg(MARK).unwrap().shape(shape).frame(frame);
+                    let plain = Style::new().logo(logo);
+                    let animated = plain
+                        .clone()
+                        .intro(Intro::new(preset).logo(intro).logo_timing(timing));
+                    let label = format!("{intro:?} {timing:?} {preset:?} {frame:?}");
+                    let qr = fitted(&plain);
+                    let a = rasterize(&plain.render(&qr).unwrap(), 6.0).unwrap();
+                    let b = rasterize(&animated.render(&qr).unwrap(), 6.0).unwrap();
+                    assert_eq!(differs(&a, &b), 0, "{label}: static picture");
+                    let plan = animated.plan(&qr).unwrap();
+                    assert!(plan.total_ms <= 1200, "{label}: {}", plan.total_ms);
+                    let end = animated.render_frame(&qr, plan.total_ms).unwrap();
+                    let c = rasterize(&end, 6.0).unwrap();
+                    assert_eq!(differs(&b, &c), 0, "{label}: last frame");
+                    assert_verifies(&animated, &qr, TEXT, &label);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn idles_scan_all_the_way_round() {
+    let render = Render {
+        px_per_module: 6,
+        blur: false,
+        noise: false,
+    };
+    for (shape, frame) in [
+        (LogoShape::Circle, LogoFrame::Brackets),
+        (LogoShape::Circle, LogoFrame::Stamp),
+        (LogoShape::Square, LogoFrame::Orbit),
+    ] {
+        let logo = Logo::svg(DARK).unwrap().shape(shape).frame(frame);
+        let style = Style::new()
+            .logo(logo.size(LogoSize::Largest))
+            .intro(Intro::new(Preset::Settle))
+            .idle(Idle::LogoTurn)
+            .idle(Idle::LogoGlint);
+        let qr = fitted(&style);
+        let label = format!("{shape:?} {frame:?}");
+        assert_verifies(&style, &qr, TEXT, &label);
+        // Every eighth of a turn, and the glint at every stage of its pass.
+        let start = style.plan(&qr).unwrap().total_ms;
+        let times = (0..8)
+            .map(|k| start + k * 3000)
+            .chain((0..8).map(|k| start + k * 175));
+        for t in times {
+            let frame = style.render_frame(&qr, t).unwrap();
+            if let Err(e) = verify_one(&frame, TEXT, render, true) {
+                panic!("{label} at {t} ms: {e}");
+            }
+        }
+    }
+}
+
+#[test]
+fn only_round_frames_turn() {
+    let qr = code(TEXT, 8, Ecc::Q);
+    let turn = |logo: Option<Logo>| {
+        let style = Style::new().idle(Idle::LogoTurn);
+        match logo {
+            Some(logo) => style.logo(logo.scale(0.16)),
+            None => style,
+        }
+        .check(&qr)
+        .errors
+    };
+    let mark = || Logo::svg(MARK).unwrap();
+    assert_eq!(turn(None), [RenderError::TurnNeedsRoundFrame]);
+    assert_eq!(turn(Some(mark())), [RenderError::TurnNeedsRoundFrame]);
+    assert_eq!(
+        turn(Some(mark().frame(LogoFrame::Ring))),
+        [RenderError::TurnNeedsRoundFrame]
+    );
+    assert!(turn(Some(mark().frame(LogoFrame::Orbit))).is_empty());
+    assert!(turn(Some(mark().frame(LogoFrame::Ring).shape(LogoShape::Circle))).is_empty());
+}
+
+#[test]
+fn logo_intros_scan_before_they_end() {
+    // ZXing at 6 px per module, every 50 ms (SPEC §8.1).
+    for intro in LogoIntro::ALL {
+        for timing in LogoTiming::ALL {
+            for version in [5, 10] {
+                let logo = Logo::svg(MARK)
+                    .unwrap()
+                    .shape(LogoShape::Circle)
+                    .frame(LogoFrame::Ring)
+                    .scale(0.14);
+                let style = Style::new()
+                    .logo(logo)
+                    .intro(Intro::new(Preset::Settle).logo(intro).logo_timing(timing));
+                let qr = code(TEXT, version, Ecc::Q);
+                let total = style.plan(&qr).unwrap().total_ms;
+                let at = freeqrent_verify::scannable_after(&style, &qr, TEXT, 50).unwrap();
+                println!("{intro:?} {timing:?} v{version}: scannable from {at} ms of {total}");
+                assert!(
+                    at <= total,
+                    "{intro:?} {timing:?} v{version}: {at} > {total}"
+                );
+            }
+        }
+    }
+}

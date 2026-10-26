@@ -8,7 +8,7 @@ use std::fmt::Write;
 use freeqrent::{Ecc, QrBuilder, QrCode, Version};
 
 use crate::StyleArgs;
-use crate::gallery::{FAMILIES, escape, shell_quote};
+use crate::gallery::{FAMILIES, LOGO_FAMILIES, escape, shell_quote};
 
 /// The devices the matrix asks about.
 const DEVICES: [&str; 4] = ["iPhone Camera", "Google Lens", "WeChat", "ZXing app"];
@@ -37,7 +37,8 @@ impl Entry {
 /// The matrix: every gallery family; art mode per grid and ink, and at
 /// each ECC level; pictures with a logo and without steering; and v1 codes
 /// near the contrast warning on off-white backgrounds (ROADMAP,
-/// "lightness-aware contrast warning").
+/// "lightness-aware contrast warning"); then the logo sizes, frames and
+/// logo motion, last so the earlier cards keep their ids.
 fn entries() -> Vec<Entry> {
     let mut out: Vec<Entry> = FAMILIES
         .iter()
@@ -93,6 +94,11 @@ fn entries() -> Vec<Entry> {
             out.push(e);
         }
     }
+    out.extend(
+        LOGO_FAMILIES
+            .iter()
+            .map(|(name, flags)| Entry::new("Logos", *name, flags)),
+    );
     out
 }
 

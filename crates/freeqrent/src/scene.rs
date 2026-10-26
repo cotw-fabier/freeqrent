@@ -174,6 +174,30 @@ pub enum LayerRole {
     /// paint. Its path is in sub-cells of a third of a module, from the
     /// code's top-left corner ([`PlanLayer::cells`](crate::PlanLayer::cells)).
     Halftone,
+    /// The frame on the logo's plate ([`LogoFrame`](crate::LogoFrame)),
+    /// drawn over the logo. Ring and Brackets are stroked
+    /// ([`PlanLayer::outline`](crate::PlanLayer::outline)).
+    LogoFrame,
+    /// The logo's silhouette in `fg` for
+    /// [`LogoIntro::Ink`](crate::LogoIntro::Ink): the plate path, masked by
+    /// the logo's alpha. It rests invisible
+    /// ([`PlanLayer::opacity`](crate::PlanLayer::opacity) 0).
+    LogoInk,
+    /// The highlight band of [`Idle::LogoGlint`](crate::Idle::LogoGlint): a
+    /// white slanted band, 45% opacity at most, clipped to the plate and
+    /// parked left of it.
+    LogoGlint,
+}
+
+impl LayerRole {
+    /// The logo and the layers that belong to it.
+    #[cfg_attr(not(feature = "animate"), allow(dead_code))]
+    pub(crate) fn is_logo(self) -> bool {
+        matches!(
+            self,
+            LayerRole::Logo | LayerRole::LogoFrame | LayerRole::LogoInk | LayerRole::LogoGlint
+        )
+    }
 }
 
 /// What a layer draws.
@@ -333,7 +357,7 @@ fn outline_ring(
 pub(crate) fn removed(style: &Style, qr: &QrMatrix) -> Grid {
     let mut grid = cleared(style, qr);
     if let Some(logo) = style.logo.as_ref().filter(|l| l.clear_modules) {
-        let cover = crate::logo::cover(logo, qr, logo.scale);
+        let cover = crate::logo::cover(logo, qr, crate::check::logo_scale(style, qr));
         for (x, y, _, _) in qr.modules() {
             if cover.modules.get(x as i64, y as i64) {
                 grid.set(x as usize, y as usize);
@@ -347,7 +371,7 @@ pub(crate) fn removed(style: &Style, qr: &QrMatrix) -> Grid {
 pub(crate) fn alignment_centers_drawn(style: &Style, qr: &QrMatrix) -> Vec<(u16, u16)> {
     let mut centers = alignment_centers(qr);
     if let Some(logo) = style.logo.as_ref().filter(|l| l.clear_modules) {
-        let cover = crate::logo::cover(logo, qr, logo.scale);
+        let cover = crate::logo::cover(logo, qr, crate::check::logo_scale(style, qr));
         centers.retain(|c| !cover.alignment.contains(c));
     }
     centers

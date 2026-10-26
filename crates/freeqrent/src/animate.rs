@@ -202,9 +202,94 @@ impl Preset {
     }
 }
 
+/// How the logo and its frame come in (SPEC §8.1), on top of the code's
+/// own intro. Each one stays on the logo's layers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum LogoIntro {
+    /// The logo appears with the code.
+    None,
+    /// The logo and frame scale 0.94 → 1 with a fade (400 ms). The default.
+    Reveal,
+    /// The logo and frame land from 112% (450 ms), opaque a third of the
+    /// way in.
+    Stamp,
+    /// A ring frame draws itself around the plate, then the logo fades in
+    /// (700 ms). Other frames fade in instead of drawing.
+    Draw,
+    /// The frame closes in from 130%, like a viewfinder locking on, then
+    /// the logo fades in (550 ms).
+    Lock,
+    /// The logo shows first as a flat silhouette in `fg`, then blooms into
+    /// its own colors (800 ms).
+    Ink,
+}
+
+impl LogoIntro {
+    /// Every logo intro.
+    pub const ALL: [LogoIntro; 6] = [
+        LogoIntro::None,
+        LogoIntro::Reveal,
+        LogoIntro::Stamp,
+        LogoIntro::Draw,
+        LogoIntro::Lock,
+        LogoIntro::Ink,
+    ];
+
+    /// The intro's lowercase name, as the CLI spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            LogoIntro::None => "none",
+            LogoIntro::Reveal => "reveal",
+            LogoIntro::Stamp => "stamp",
+            LogoIntro::Draw => "draw",
+            LogoIntro::Lock => "lock",
+            LogoIntro::Ink => "ink",
+        }
+    }
+
+    /// Its length, before it is capped to a share of the whole intro.
+    fn ms(self) -> f64 {
+        match self {
+            LogoIntro::None => 0.0,
+            LogoIntro::Reveal => LOGO_MS,
+            LogoIntro::Stamp => 450.0,
+            LogoIntro::Draw => 700.0,
+            LogoIntro::Lock => 550.0,
+            LogoIntro::Ink => 800.0,
+        }
+    }
+}
+
+/// When the logo's intro plays against the code's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum LogoTiming {
+    /// Last: the code finishes halfway through it. The default.
+    After,
+    /// First: the code starts halfway through it.
+    Before,
+    /// In the middle of the code's intro.
+    With,
+}
+
+impl LogoTiming {
+    /// Every timing.
+    pub const ALL: [LogoTiming; 3] = [LogoTiming::After, LogoTiming::Before, LogoTiming::With];
+
+    /// The timing's lowercase name, as the CLI spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            LogoTiming::After => "after",
+            LogoTiming::Before => "before",
+            LogoTiming::With => "with",
+        }
+    }
+}
+
 /// A code's entrance: a preset and its timing. Build one with
 /// [`Intro::new`] or from a [`Preset`].
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Intro {
     pub(crate) preset: Preset,
     /// False for a palette shift alone.
@@ -216,7 +301,34 @@ pub struct Intro {
     pub(crate) stagger: Option<StaggerOrder>,
     pub(crate) groups: u8,
     pub(crate) trigger: Trigger,
-    pub(crate) logo_reveal: bool,
+    pub(crate) logo: LogoIntro,
+    pub(crate) logo_timing: LogoTiming,
+}
+
+// By hand, so the logo's intro shows only when it isn't the default: the
+// SVG writer hashes this text into the document's ID prefix, and codes
+// made before logo intros existed keep theirs.
+impl fmt::Debug for Intro {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut d = f.debug_struct("Intro");
+        d.field("preset", &self.preset)
+            .field("entrance", &self.entrance)
+            .field("palette_from", &self.palette_from)
+            .field("duration_ms", &self.duration_ms)
+            .field("delay_ms", &self.delay_ms)
+            .field("ease", &self.ease)
+            .field("stagger", &self.stagger)
+            .field("groups", &self.groups)
+            .field("trigger", &self.trigger)
+            .field("logo_reveal", &(self.logo != LogoIntro::None));
+        if !matches!(self.logo, LogoIntro::None | LogoIntro::Reveal) {
+            d.field("logo", &self.logo);
+        }
+        if self.logo_timing != LogoTiming::After {
+            d.field("logo_timing", &self.logo_timing);
+        }
+        d.finish()
+    }
 }
 
 impl From<Preset> for Intro {
@@ -240,7 +352,8 @@ impl Intro {
             stagger: None,
             groups: 12,
             trigger: Trigger::Load,
-            logo_reveal: true,
+            logo: LogoIntro::Reveal,
+            logo_timing: LogoTiming::After,
         }
     }
 
@@ -297,10 +410,32 @@ impl Intro {
         self
     }
 
-    /// Whether the logo scales in after the modules (default on).
+    /// Whether the logo scales in after the modules (default on): a
+    /// shorthand for [`LogoIntro::Reveal`] or [`LogoIntro::None`].
     pub fn logo_reveal(mut self, reveal: bool) -> Intro {
-        self.logo_reveal = reveal;
+        self.logo = if reveal {
+            LogoIntro::Reveal
+        } else {
+            LogoIntro::None
+        };
         self
+    }
+
+    /// How the logo and its frame come in (default [`LogoIntro::Reveal`]).
+    pub fn logo(mut self, logo: LogoIntro) -> Intro {
+        self.logo = logo;
+        self
+    }
+
+    /// When the logo's intro plays (default [`LogoTiming::After`]).
+    pub fn logo_timing(mut self, timing: LogoTiming) -> Intro {
+        self.logo_timing = timing;
+        self
+    }
+
+    /// The logo's intro.
+    pub fn logo_intro(&self) -> LogoIntro {
+        self.logo
     }
 
     /// The entrance preset, or `None` for a palette shift.
@@ -358,11 +493,23 @@ pub enum Idle {
     /// The background's lightness drifts 2% away from the ink and back
     /// every 8 s, so contrast only ever grows.
     Breathe,
+    /// A highlight crosses the logo every 7 s, clipped to its plate.
+    LogoGlint,
+    /// The logo's frame turns: an Orbit's moon goes round every 12 s,
+    /// other frames once every 24 s. Only round frames may turn
+    /// ([`RenderError::TurnNeedsRoundFrame`](crate::RenderError::TurnNeedsRoundFrame)).
+    LogoTurn,
 }
 
 impl Idle {
     /// Every idle loop.
-    pub const ALL: [Idle; 3] = [Idle::FinderPulse, Idle::Shimmer, Idle::Breathe];
+    pub const ALL: [Idle; 5] = [
+        Idle::FinderPulse,
+        Idle::Shimmer,
+        Idle::Breathe,
+        Idle::LogoGlint,
+        Idle::LogoTurn,
+    ];
 
     /// The loop's lowercase name, as the CLI spells it.
     pub fn name(self) -> &'static str {
@@ -370,6 +517,8 @@ impl Idle {
             Idle::FinderPulse => "finder-pulse",
             Idle::Shimmer => "shimmer",
             Idle::Breathe => "breathe",
+            Idle::LogoGlint => "logo-glint",
+            Idle::LogoTurn => "logo-turn",
         }
     }
 }
@@ -390,13 +539,18 @@ pub enum Property {
     Fill,
     /// How far the reveal mask has opened, 0–1 (1 shows everything).
     Reveal,
+    /// Clockwise turn about the layer's origin, in degrees.
+    Rotate,
+    /// How much of an outline is drawn from its start, 0–1
+    /// ([`PlanLayer::outline`]).
+    Draw,
 }
 
 impl Property {
     fn is_transform(self) -> bool {
         matches!(
             self,
-            Property::Scale | Property::TranslateX | Property::TranslateY
+            Property::Scale | Property::TranslateX | Property::TranslateY | Property::Rotate
         )
     }
 
@@ -408,6 +562,8 @@ impl Property {
             Property::TranslateY => "translateY",
             Property::Fill => "fill",
             Property::Reveal => "reveal",
+            Property::Rotate => "rotate",
+            Property::Draw => "draw",
         }
     }
 }
@@ -536,6 +692,11 @@ pub struct PlanLayer {
     /// For a picture's sub-cells: the path is horizontal lines, stroked
     /// this wide (in the path's units, butt caps) instead of filled.
     pub stroke: Option<f32>,
+    /// For a stroked logo frame: the path is stroked instead of filled.
+    pub outline: Option<PlanOutline>,
+    /// Its opacity at rest: 1, or 0 for a layer the intro only flashes
+    /// ([`LayerRole::LogoInk`]).
+    pub opacity: f32,
     /// Whether the path uses the even-odd fill rule.
     pub evenodd: bool,
     /// The stagger group, for split layers.
@@ -544,6 +705,20 @@ pub struct PlanLayer {
     pub corner: Option<Corner>,
     /// Scale origin, in viewBox units.
     pub origin: (f32, f32),
+}
+
+/// A logo frame stroked along its path (SPEC §7.3).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlanOutline {
+    /// Stroke width, in viewBox units.
+    pub width: f32,
+    /// The path's length, in viewBox units: what [`Property::Draw`] 1
+    /// draws.
+    pub length: f32,
+    /// Dash and gap lengths (empty for a solid stroke).
+    pub dashes: Vec<f32>,
+    /// Where the dash pattern starts along the path.
+    pub dash_offset: f32,
 }
 
 /// A style's animation as data (SPEC §8.5): the static layers and the
@@ -575,6 +750,8 @@ pub struct AnimationPlan {
 pub(crate) struct Motion {
     pub(crate) tracks: Vec<Track>,
     pub(crate) origins: Vec<(f64, f64)>,
+    /// Each element's dash length, for outlines that draw on.
+    pub(crate) dashes: Vec<Option<f64>>,
     pub(crate) reveal: Option<Reveal>,
     pub(crate) total_ms: u32,
     pub(crate) trigger: Trigger,
@@ -768,17 +945,17 @@ pub(crate) fn element_count(style: &Style, qr: &QrMatrix) -> usize {
     let Some(intro) = &style.intro else {
         return 0;
     };
+    let canvas = scene::canvas(style, qr);
+    let logo = svg::logo_elements(style, qr, &canvas).len();
     if intro.entrance().is_none_or(|p| p.is_reveal()) {
-        return 1 + style.logo.is_some() as usize;
+        return 1 + logo;
     }
     if intro.entrance() == Some(Preset::Develop) {
-        let canvas = scene::canvas(style, qr);
         return svg::static_elements(style, qr, &canvas)
             .iter()
             .filter(|e| e.role != LayerRole::Background)
             .count();
     }
-    let canvas = scene::canvas(style, qr);
     let layers = scene::layers(style, qr);
     let mut seen: Vec<(usize, u8, Option<Corner>)> = pieces(style, qr, &canvas, intro, &layers)
         .iter()
@@ -786,7 +963,7 @@ pub(crate) fn element_count(style: &Style, qr: &QrMatrix) -> usize {
         .collect();
     seen.sort_unstable_by_key(|&(l, g, c)| (l, g, c.map(|c| c as u8)));
     seen.dedup();
-    seen.len() + style.logo.is_some() as usize
+    seen.len() + logo
 }
 
 fn corner_of(unit: &Unit) -> Option<Corner> {
@@ -892,11 +1069,7 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
             elements.push(e);
         }
     }
-    if let Some((plate, center)) = svg::logo_plate(style, qr, canvas) {
-        let mut logo = Element::new(LayerRole::Logo, Token::LogoBackdrop, false, plate);
-        logo.origin = (center, center);
-        elements.push(logo);
-    }
+    elements.extend(svg::logo_elements(style, qr, canvas));
     elements
 }
 
@@ -948,14 +1121,24 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
         return Vec::new();
     };
     let total = intro.duration_ms as f64;
-    let reveal_logo = intro.logo_reveal && style.logo.is_some();
-    let logo_ms = if reveal_logo {
-        LOGO_MS.min(total * 0.4)
+    let logo_intro = if style.logo.is_some() {
+        intro.logo
     } else {
-        0.0
+        LogoIntro::None
     };
-    // The modules finish halfway through the logo's reveal.
-    let window = total - logo_ms / 2.0;
+    let logo_ms = match logo_intro {
+        LogoIntro::None => 0.0,
+        LogoIntro::Reveal => LOGO_MS.min(total * 0.4),
+        other => other.ms().min(total * 0.6),
+    };
+    // The code's own stretch: it overlaps the logo's intro by half.
+    let (code_start, code_end, logo_at) = match intro.logo_timing {
+        _ if logo_ms == 0.0 => (0.0, total, 0.0),
+        LogoTiming::After => (0.0, total - logo_ms / 2.0, total - logo_ms),
+        LogoTiming::Before => (logo_ms / 2.0, total, 0.0),
+        LogoTiming::With => (0.0, total, (total - logo_ms) / 2.0),
+    };
+    let window = code_end - code_start;
     let k = intro.groups.clamp(1, 16) as f64;
     let ease = intro.curve();
     let delay = intro.delay_ms as f64;
@@ -963,7 +1146,8 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
     let track = |target, at: f64, length: f64, keys| Track {
         target,
         delay_ms: ms(delay + at),
-        duration_ms: ms(length),
+        // The end rounded, not the length, so nothing ends past the intro.
+        duration_ms: ms(delay + at + length) - ms(delay + at),
         ease,
         iterations: Some(1),
         keys,
@@ -975,11 +1159,24 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
         ]
     };
 
+    let has_frame = elements.iter().any(|e| e.role == LayerRole::LogoFrame);
+    let logo_track = |i: usize, e: &Element| {
+        let drawable = e.outline.as_ref().is_some_and(|o| o.dashes.is_empty());
+        logo_keys(logo_intro, e.role, has_frame, drawable).map(|(at, length, keys)| {
+            track(
+                Target::Layer(i),
+                logo_at + at * logo_ms,
+                length * logo_ms,
+                keys,
+            )
+        })
+    };
+
     let mut tracks = Vec::new();
     if preset.is_reveal() {
         tracks.push(track(
             Target::Reveal,
-            0.0,
+            code_start,
             window,
             alloc::vec![number(Property::Reveal, 0.0, 0.0)],
         ));
@@ -992,18 +1189,15 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
             role == LayerRole::Halftone
                 || (!pictured && matches!(role, LayerRole::Data | LayerRole::Filler))
         };
-        let faint = window * DEVELOP_FAINT_AT;
+        let faint = code_start + window * DEVELOP_FAINT_AT;
         for (i, e) in elements.iter().enumerate() {
             let target = Target::Layer(i);
             match e.role {
                 LayerRole::Background | LayerRole::Shimmer => {}
-                LayerRole::Logo if reveal_logo => {
-                    tracks.push(track(target, total - logo_ms, logo_ms, fade_scale(0.94)))
-                }
-                LayerRole::Logo => {}
+                role if role.is_logo() => tracks.extend(logo_track(i, e)),
                 role if picture(role) => tracks.push(track(
                     target,
-                    0.0,
+                    code_start,
                     window,
                     alloc::vec![
                         number(Property::Opacity, 0.0, 0.0),
@@ -1013,7 +1207,7 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
                 _ => tracks.push(track(
                     target,
                     faint,
-                    window - faint,
+                    code_end - faint,
                     alloc::vec![number(Property::Opacity, 0.0, 0.0)],
                 )),
             }
@@ -1023,17 +1217,14 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
     // LockOn's finders take the first stretch; the rest settles after.
     let finder_ms = (total * 0.4).min(500.0);
     let (start, span) = match preset {
-        Preset::LockOn => (finder_ms * 0.6, window - finder_ms * 0.6),
-        _ => (0.0, window),
+        Preset::LockOn => (code_start + finder_ms * 0.6, window - finder_ms * 0.6),
+        _ => (code_start, window),
     };
     for (i, e) in elements.iter().enumerate() {
         let target = Target::Layer(i);
         match e.role {
             LayerRole::Background => {}
-            LayerRole::Logo if reveal_logo => {
-                tracks.push(track(target, total - logo_ms, logo_ms, fade_scale(0.94)))
-            }
-            LayerRole::Logo => {}
+            role if role.is_logo() => tracks.extend(logo_track(i, e)),
             _ if preset.is_reveal() => {}
             LayerRole::FinderOuter | LayerRole::FinderEye if preset == Preset::LockOn => {
                 let corner = scene::CORNERS
@@ -1041,11 +1232,16 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
                     .position(|&c| Some(c) == e.corner)
                     .unwrap_or(0) as f64;
                 tracks.push(if e.role == LayerRole::FinderOuter {
-                    track(target, corner * 60.0, finder_ms, fade_scale(1.35))
+                    track(
+                        target,
+                        code_start + corner * 60.0,
+                        finder_ms,
+                        fade_scale(1.35),
+                    )
                 } else {
                     track(
                         target,
-                        150.0 + corner * 60.0,
+                        code_start + 150.0 + corner * 60.0,
                         finder_ms * 0.8,
                         fade_scale(0.0),
                     )
@@ -1073,6 +1269,56 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
     tracks
 }
 
+/// The keyframes a logo layer of `role` gets from `intro`: where its track
+/// starts and how long it runs, as shares of the logo's intro, and its
+/// keys. `drawable` says the layer is an outline that can draw on.
+fn logo_keys(
+    intro: LogoIntro,
+    role: LayerRole,
+    has_frame: bool,
+    drawable: bool,
+) -> Option<(f64, f64, Vec<Keyframe>)> {
+    let fade = |scale: f32| {
+        alloc::vec![
+            number(Property::Opacity, 0.0, 0.0),
+            number(Property::Scale, 0.0, scale),
+        ]
+    };
+    let fade_in = || alloc::vec![number(Property::Opacity, 0.0, 0.0)];
+    let frame = role == LayerRole::LogoFrame;
+    match (intro, role) {
+        (_, LayerRole::LogoGlint) | (LogoIntro::None, _) => None,
+        (LogoIntro::Ink, LayerRole::LogoInk) => Some((
+            0.0,
+            1.0,
+            // Rests at 0: in to full by 30%, then out.
+            alloc::vec![number(Property::Opacity, 0.3, 1.0)],
+        )),
+        (_, LayerRole::LogoInk) => None,
+        (LogoIntro::Reveal, _) => Some((0.0, 1.0, fade(0.94))),
+        (LogoIntro::Stamp, _) => Some((
+            0.0,
+            1.0,
+            alloc::vec![
+                number(Property::Opacity, 0.0, 0.0),
+                number(Property::Opacity, 0.35, 1.0),
+                number(Property::Scale, 0.0, 1.12),
+            ],
+        )),
+        (LogoIntro::Draw, _) if frame && drawable => {
+            Some((0.0, 0.7, alloc::vec![number(Property::Draw, 0.0, 0.0)]))
+        }
+        (LogoIntro::Draw, _) if frame => Some((0.0, 0.6, fade(0.94))),
+        (LogoIntro::Draw, _) if has_frame => Some((0.4, 0.6, fade(0.94))),
+        (LogoIntro::Draw, _) => Some((0.0, 1.0, fade(0.94))),
+        (LogoIntro::Lock, _) if frame => Some((0.0, 0.65, fade(1.3))),
+        (LogoIntro::Lock, _) if has_frame => Some((0.45, 0.55, fade_in())),
+        (LogoIntro::Lock, _) => Some((0.0, 1.0, fade(1.2))),
+        (LogoIntro::Ink, _) if frame => Some((0.0, 0.4, fade(0.94))),
+        (LogoIntro::Ink, _) => Some((0.25, 0.1, fade_in())),
+    }
+}
+
 /// The reveal mask of a wiping preset over `elements`: everything but the
 /// background, and the logo when it has its own reveal.
 fn reveal(style: &Style, intro: &Intro, canvas: &Canvas, elements: &[Element]) -> Option<Reveal> {
@@ -1081,10 +1327,10 @@ fn reveal(style: &Style, intro: &Intro, canvas: &Canvas, elements: &[Element]) -
     let first = elements
         .iter()
         .position(|e| e.role != LayerRole::Background)?;
-    let logo_apart = intro.logo_reveal && style.logo.is_some();
+    let logo_apart = intro.logo != LogoIntro::None && style.logo.is_some();
     let last = elements
         .iter()
-        .rposition(|e| !(e.role == LayerRole::Logo && logo_apart))?;
+        .rposition(|e| !(e.role.is_logo() && logo_apart))?;
     if last < first {
         return None;
     }
@@ -1166,8 +1412,10 @@ fn palette_tracks(style: &Style, intro: &Intro, elements: &[Element]) -> Vec<Tra
     for (i, e) in elements.iter().enumerate() {
         // A picture's strokes take the new palette at once: their paint is
         // a stroke, and fill tracks don't reach it.
-        if e.role == LayerRole::Shimmer
-            || e.role == LayerRole::Halftone
+        if matches!(
+            e.role,
+            LayerRole::Shimmer | LayerRole::Halftone | LayerRole::LogoGlint
+        ) || e.outline.is_some()
             || (e.role == LayerRole::Logo && !backdrop)
         {
             continue;
@@ -1221,8 +1469,20 @@ pub(crate) fn breathe_color(style: &Style) -> Option<Color> {
     (far != bg.opaque_srgb()).then_some(far)
 }
 
+/// How long the logo's glint takes to come round, and the frame to turn
+/// (an Orbit's moon goes faster).
+const GLINT_MS: u32 = 7000;
+const TURN_MS: u32 = 24_000;
+const ORBIT_MS: u32 = 12_000;
+
 /// The idle loops, starting at `start` ms.
-fn idle_tracks(style: &Style, canvas: &Canvas, start: u32, elements: &[Element]) -> Vec<Track> {
+fn idle_tracks(
+    style: &Style,
+    qr: &QrMatrix,
+    canvas: &Canvas,
+    start: u32,
+    elements: &[Element],
+) -> Vec<Track> {
     let mut tracks = Vec::new();
     let endless = |target, ms, ease, keys| Track {
         target,
@@ -1260,6 +1520,36 @@ fn idle_tracks(style: &Style, canvas: &Canvas, start: u32, elements: &[Element])
                     ));
                 }
             }
+            LayerRole::LogoGlint => {
+                // Across the plate in the first fifth, then home unseen.
+                let side =
+                    svg::logo_plate(style, qr, canvas).map_or(0.0, |_| 2.0 * plate_half(style, qr));
+                let across = (side * (1.0 + svg::GLINT_BAND + svg::GLINT_SLANT)) as f32;
+                tracks.push(endless(
+                    target,
+                    GLINT_MS,
+                    CubicBezier::LINEAR,
+                    alloc::vec![
+                        number(Property::TranslateX, 0.2, across),
+                        number(Property::Opacity, 0.2, 1.0),
+                        number(Property::Opacity, 0.21, 0.0),
+                        number(Property::Opacity, 0.99, 0.0),
+                    ],
+                ));
+            }
+            LayerRole::LogoFrame if style.idle.contains(&Idle::LogoTurn) => {
+                let orbit = style
+                    .logo
+                    .as_ref()
+                    .is_some_and(|l| l.frame == Some(crate::LogoFrame::Orbit));
+                tracks.push(endless(
+                    target,
+                    if orbit { ORBIT_MS } else { TURN_MS },
+                    CubicBezier::LINEAR,
+                    // A whole turn back to its own angle.
+                    alloc::vec![number(Property::Rotate, 0.0, -360.0)],
+                ));
+            }
             LayerRole::Shimmer => {
                 // Across in the first quarter, then home unseen.
                 let across = (canvas.side as f64 * (1.0 + SHIMMER_BAND)) as f32;
@@ -1279,6 +1569,13 @@ fn idle_tracks(style: &Style, canvas: &Canvas, start: u32, elements: &[Element])
         }
     }
     tracks
+}
+
+/// Half the side of the logo's plate, in modules.
+fn plate_half(style: &Style, qr: &QrMatrix) -> f64 {
+    style.logo.as_ref().map_or(0.0, |logo| {
+        crate::logo::placement(logo, qr, crate::check::logo_scale(style, qr)).half
+    })
 }
 
 /// The lowest contrast each read token reaches while it animates: along
@@ -1377,7 +1674,7 @@ pub(crate) fn build(
     };
     if entrance == Some(Preset::Ripple) {
         let mid = canvas.side as f64 / 2.0;
-        for e in elements.iter_mut().filter(|e| e.role != LayerRole::Logo) {
+        for e in elements.iter_mut().filter(|e| !e.role.is_logo()) {
             e.origin = (mid, mid);
         }
     }
@@ -1403,9 +1700,24 @@ pub(crate) fn build(
         .filter_map(|t| Some(t.delay_ms + t.duration_ms * t.iterations?))
         .max()
         .unwrap_or(0);
-    tracks.extend(idle_tracks(style, canvas, total_ms, &elements));
+    tracks.extend(idle_tracks(style, qr, canvas, total_ms, &elements));
+    // An outline that draws on gets one dash as long as itself, and a gap
+    // as long: moving the dashes back hides its end.
+    for (i, e) in elements.iter_mut().enumerate() {
+        let draws = tracks.iter().any(|t| {
+            t.target == Target::Layer(i) && t.keys.iter().any(|k| k.property == Property::Draw)
+        });
+        if let Some(outline) = e.outline.as_mut().filter(|_| draws) {
+            let dash = outline.length + 0.01;
+            outline.dashes = alloc::vec![dash, dash];
+        }
+    }
     let motion = Motion {
         origins: elements.iter().map(|e| e.origin).collect(),
+        dashes: elements
+            .iter()
+            .map(|e| e.outline.as_ref().and_then(|o| o.dashes.first().copied()))
+            .collect(),
         reveal: intro.and_then(|i| reveal(style, i, canvas, &elements)),
         tracks,
         total_ms,
@@ -1420,8 +1732,9 @@ pub(crate) fn build(
         match at {
             Some(t) => {
                 let natural = solid(&style.palette, e.token);
-                let pose = pose(mine, natural, t);
-                e.pose = (pose != Pose::NATURAL).then_some(pose);
+                let rest = rest(e.role);
+                let pose = pose(mine, natural, rest, t);
+                e.pose = (pose != rest).then_some(pose);
             }
             None => {
                 if mine.count() > 0 {
@@ -1509,16 +1822,35 @@ fn sample_fill(track: &Track, natural: Color, t: u32) -> Option<Color> {
     Some(Color::srgb(mix(0), mix(1), mix(2)).with_alpha(natural.alpha()))
 }
 
-/// An element's pose at `t` from its tracks; later tracks win, as in a
-/// CSS animation list.
-fn pose<'a>(tracks: impl Iterator<Item = &'a Track>, fill: Option<Color>, t: u32) -> Pose {
-    let mut pose = Pose::NATURAL;
+/// A layer's pose at rest: natural, but invisible for the Ink silhouette.
+fn rest(role: LayerRole) -> Pose {
+    Pose {
+        opacity: if role == LayerRole::LogoInk { 0.0 } else { 1.0 },
+        ..Pose::NATURAL
+    }
+}
+
+/// An element's pose at `t` from its tracks, over its pose at rest; later
+/// tracks win, as in a CSS animation list.
+fn pose<'a>(
+    tracks: impl Iterator<Item = &'a Track>,
+    fill: Option<Color>,
+    rest: Pose,
+    t: u32,
+) -> Pose {
+    let mut pose = rest;
     for track in tracks {
-        if let Some(v) = sample(track, Property::Opacity, 1.0, t) {
+        if let Some(v) = sample(track, Property::Opacity, rest.opacity, t) {
             pose.opacity = v;
         }
         if let Some(v) = sample(track, Property::Scale, 1.0, t) {
             pose.scale = v;
+        }
+        if let Some(v) = sample(track, Property::Rotate, 0.0, t) {
+            pose.rotate = v;
+        }
+        if let Some(v) = sample(track, Property::Draw, 1.0, t) {
+            pose.draw = v;
         }
         if let Some(v) = sample(track, Property::TranslateX, 0.0, t) {
             pose.translate.0 = v;
@@ -1604,6 +1936,12 @@ fn write_keyframes<W: Write + ?Sized>(w: &mut W, keys: &[Keyframe]) -> fmt::Resu
                     w.write_str("fill:")?;
                     c.opaque_srgb().write_opaque(w)?;
                 }
+                // By now a dash offset (see `css_keys`).
+                (Property::Draw, Value::Number(v)) => {
+                    sep(w)?;
+                    w.write_str("stroke-dashoffset:")?;
+                    write_number(w, v as f64)?;
+                }
                 _ => {}
             }
         }
@@ -1622,6 +1960,16 @@ fn write_keyframes<W: Write + ?Sized>(w: &mut W, keys: &[Keyframe]) -> fmt::Resu
                 w.write_str("px,")?;
                 write_number(w, ty)?;
                 w.write_str("px)")?;
+                parts += 1;
+            }
+            let r = num(Property::Rotate, 0.0);
+            if r != 0.0 {
+                if parts > 0 {
+                    w.write_char(' ')?;
+                }
+                w.write_str("rotate(")?;
+                write_number(w, r)?;
+                w.write_str("deg)")?;
                 parts += 1;
             }
             if s != 1.0 || parts == 0 {
@@ -1643,8 +1991,23 @@ fn write_keyframes<W: Write + ?Sized>(w: &mut W, keys: &[Keyframe]) -> fmt::Resu
 type Signature = (usize, u32, [u32; 4], Option<u32>);
 
 /// A track's keyframes as CSS animates them: a reveal's progress becomes
-/// the mask content's transform.
-fn css_keys(track: &Track, reveal: Option<&Reveal>) -> Vec<Keyframe> {
+/// the mask content's transform, and how much of an outline is drawn its
+/// dash offset (the [`Property::Draw`] value then holds the offset).
+fn css_keys(track: &Track, reveal: Option<&Reveal>, dashes: &[Option<f64>]) -> Vec<Keyframe> {
+    if let Target::Layer(i) = track.target
+        && let Some(Some(dash)) = dashes.get(i)
+    {
+        return track
+            .keys
+            .iter()
+            .map(|&k| match (k.property, k.value) {
+                (Property::Draw, Value::Number(v)) => {
+                    number(Property::Draw, k.offset, ((1.0 - v as f64) * dash) as f32)
+                }
+                _ => k,
+            })
+            .collect();
+    }
     let (Target::Reveal, Some(r)) = (track.target, reveal) else {
         return track.keys.clone();
     };
@@ -1705,7 +2068,7 @@ impl Motion {
         let keys: Vec<Vec<Keyframe>> = self
             .tracks
             .iter()
-            .map(|t| css_keys(t, self.reveal.as_ref()))
+            .map(|t| css_keys(t, self.reveal.as_ref(), &self.dashes))
             .collect();
         let mut lists: Vec<&[Keyframe]> = Vec::new();
         let name_of: Vec<usize> = keys
@@ -1976,6 +2339,13 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
                 .stroke
                 .map(|_| (canvas.origin as f32, canvas.origin as f32)),
             stroke: e.stroke.map(f32::from),
+            outline: e.outline.as_ref().map(|o| PlanOutline {
+                width: o.width as f32 / crate::geometry::UNIT as f32,
+                length: o.length as f32,
+                dashes: o.dashes.iter().map(|&d| d as f32).collect(),
+                dash_offset: o.offset as f32,
+            }),
+            opacity: rest(e.role).opacity as f32,
             evenodd: e.evenodd,
             group: e.group,
             corner: e.corner,
@@ -2035,6 +2405,9 @@ fn role_name(role: LayerRole) -> &'static str {
         LayerRole::Logo => "logo",
         LayerRole::Shimmer => "shimmer",
         LayerRole::Halftone => "halftone",
+        LayerRole::LogoFrame => "logo-frame",
+        LayerRole::LogoInk => "logo-ink",
+        LayerRole::LogoGlint => "logo-glint",
     }
 }
 
@@ -2097,6 +2470,26 @@ impl AnimationPlan {
             if let Some(width) = l.stroke {
                 w.write_str(",\"stroke\":")?;
                 json_num(w, width)?;
+            }
+            if let Some(o) = &l.outline {
+                w.write_str(",\"outline\":{\"width\":")?;
+                json_num(w, o.width)?;
+                w.write_str(",\"length\":")?;
+                json_num(w, o.length)?;
+                w.write_str(",\"dashes\":[")?;
+                for (j, &d) in o.dashes.iter().enumerate() {
+                    if j > 0 {
+                        w.write_char(',')?;
+                    }
+                    json_num(w, d)?;
+                }
+                w.write_str("],\"dashOffset\":")?;
+                json_num(w, o.dash_offset)?;
+                w.write_char('}')?;
+            }
+            if l.opacity != 1.0 {
+                w.write_str(",\"opacity\":")?;
+                json_num(w, l.opacity)?;
             }
             if l.evenodd {
                 w.write_str(",\"evenodd\":true")?;
@@ -2461,6 +2854,111 @@ mod tests {
         assert!(!svg.contains(" infinite backwards"));
         // The band rests left of the canvas.
         assert!(svg.contains("fill=\"url(#") && svg.contains("d=\"m-17.4 0h17.4v29h-17.4z\""));
+    }
+
+    fn framed(frame: crate::LogoFrame) -> Style {
+        let logo = crate::Logo::svg(r#"<svg viewBox="0 0 1 1"><rect width="1" height="1"/></svg>"#)
+            .unwrap()
+            .scale(0.12)
+            .shape(crate::LogoShape::Circle)
+            .frame(frame);
+        Style::new().logo(logo)
+    }
+
+    fn framed_code(style: &Style) -> QrMatrix {
+        QrCode::builder()
+            .encode_text_for("https://example.com", style)
+            .unwrap()
+    }
+
+    #[test]
+    fn the_default_logo_intro_keeps_old_prefixes() {
+        // The Debug text is hashed into ID prefixes (svg::id_prefix).
+        let text = alloc::format!("{:?}", Intro::new(Preset::Settle));
+        assert!(text.ends_with("logo_reveal: true }"), "{text}");
+        let off = alloc::format!("{:?}", Intro::new(Preset::Settle).logo_reveal(false));
+        assert!(off.ends_with("logo_reveal: false }"), "{off}");
+        let ink = alloc::format!(
+            "{:?}",
+            Intro::new(Preset::Settle)
+                .logo(LogoIntro::Ink)
+                .logo_timing(LogoTiming::Before)
+        );
+        assert!(ink.ends_with("logo: Ink, logo_timing: Before }"), "{ink}");
+    }
+
+    #[test]
+    fn logo_timings_place_the_logo() {
+        let style = framed(crate::LogoFrame::Ring);
+        let qr = framed_code(&style);
+        let logo_start = |timing| {
+            let plan = style
+                .clone()
+                .intro(
+                    Intro::new(Preset::Settle)
+                        .logo(LogoIntro::Stamp)
+                        .logo_timing(timing),
+                )
+                .plan(&qr)
+                .unwrap();
+            let logo = plan
+                .layers
+                .iter()
+                .position(|l| l.role == LayerRole::Logo)
+                .unwrap();
+            let t = plan
+                .tracks
+                .iter()
+                .find(|t| t.target == Target::Layer(logo))
+                .unwrap();
+            (t.delay_ms, t.delay_ms + t.duration_ms, plan.total_ms)
+        };
+        assert_eq!(logo_start(LogoTiming::After), (750, 1200, 1200));
+        assert_eq!(logo_start(LogoTiming::Before), (0, 450, 1200));
+        assert_eq!(logo_start(LogoTiming::With), (375, 825, 1200));
+    }
+
+    #[test]
+    fn ink_draw_and_turn_reach_the_document() {
+        let ring = framed(crate::LogoFrame::Ring);
+        let qr = framed_code(&ring);
+        let ink = ring
+            .clone()
+            .intro(Intro::new(Preset::Settle).logo(LogoIntro::Ink));
+        let plan = ink.plan(&qr).unwrap();
+        let silhouette = plan
+            .layers
+            .iter()
+            .find(|l| l.role == LayerRole::LogoInk)
+            .unwrap();
+        assert_eq!(silhouette.opacity, 0.0);
+        let svg = ink.render(&qr).unwrap();
+        assert!(svg.contains("mask-type=\"alpha\"") && svg.contains("-logo-art\""));
+        assert!(svg.contains("opacity=\"0\""));
+
+        let draw = ring
+            .clone()
+            .intro(Intro::new(Preset::Settle).logo(LogoIntro::Draw));
+        let svg = draw.render(&qr).unwrap();
+        assert!(svg.contains("stroke-dasharray=") && svg.contains("stroke-dashoffset:"));
+        let plan = draw.plan(&qr).unwrap();
+        let frame = plan
+            .layers
+            .iter()
+            .find(|l| l.role == LayerRole::LogoFrame)
+            .unwrap();
+        let outline = frame.outline.as_ref().unwrap();
+        assert_eq!(outline.dashes.len(), 2);
+        assert!(outline.dashes[0] > outline.length);
+        assert!(plan.to_json().contains("\"outline\":{\"width\":"));
+
+        let turn = ring.idle(Idle::LogoTurn).idle(Idle::LogoGlint);
+        let svg = turn.render(&qr).unwrap();
+        assert!(svg.contains("rotate(-360deg)") && svg.contains("-glint-clip"));
+        // A frame between turns is rotated about the plate's center.
+        let plan = turn.plan(&qr).unwrap();
+        let frame = turn.render_frame(&qr, plan.total_ms + 6000).unwrap();
+        assert!(frame.contains("transform=\"matrix("));
     }
 
     #[test]

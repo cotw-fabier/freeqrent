@@ -197,6 +197,162 @@ pub(crate) const FAMILIES: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
+/// Logo sizes, frames, and the logo's own intros and idles. Kept apart so
+/// the scan sheet adds them after its older cards, whose ids stay put.
+pub(crate) const LOGO_FAMILIES: &[(&str, &[(&str, &str)])] = &[
+    (
+        "Small logo",
+        &[
+            ("logo", "sample"),
+            ("logo-size", "small"),
+            ("shape", "dots:0.85"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
+    (
+        "Largest logo",
+        &[
+            ("logo", "sample"),
+            ("logo-size", "largest"),
+            ("logo-shape", "rounded:1.5"),
+            ("shape", "rounded:0.5"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
+        "Ring frame",
+        &[
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "ring"),
+            ("token", "logo.frame=#c2410c"),
+            ("shape", "dots:0.85"),
+            ("finder", "squircle/circle"),
+        ],
+    ),
+    (
+        "Beads frame",
+        &[
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "beads"),
+            ("shape", "dots:0.9"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
+    (
+        "Stamp frame",
+        &[
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "stamp"),
+            ("shape", "rounded:0.4"),
+            ("bg", "oklch(96% .02 85)"),
+            ("fg", "oklch(28% .05 265)"),
+            ("token", "logo.frame=#8a3b12"),
+        ],
+    ),
+    (
+        "Brackets frame",
+        &[
+            ("logo", "sample"),
+            ("logo-frame", "brackets"),
+            ("logo-shape", "rounded:1"),
+        ],
+    ),
+    (
+        "Orbit frame",
+        &[
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "orbit"),
+            ("shape", "liquid:0.8"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
+        "Stamp logo intro",
+        &[
+            ("intro", "settle"),
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "stamp"),
+            ("logo-intro", "stamp"),
+            ("shape", "dots:0.85"),
+        ],
+    ),
+    (
+        "Draw logo intro",
+        &[
+            ("intro", "ripple"),
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "ring"),
+            ("logo-intro", "draw"),
+            ("shape", "liquid:0.8"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
+        "Lock logo intro",
+        &[
+            ("intro", "lock-on"),
+            ("logo", "sample"),
+            ("logo-frame", "brackets"),
+            ("logo-intro", "lock"),
+            ("shape", "rounded:0.4"),
+        ],
+    ),
+    (
+        "Ink logo intro",
+        &[
+            ("intro", "settle"),
+            ("logo", "sample"),
+            ("logo-shape", "rounded:1.5"),
+            ("logo-frame", "ring"),
+            ("logo-intro", "ink"),
+            ("shape", "dots:0.85"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
+    (
+        "Logo first",
+        &[
+            ("intro", "assemble"),
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "orbit"),
+            ("logo-intro", "stamp"),
+            ("logo-timing", "before"),
+            ("shape", "rounded:0.5"),
+        ],
+    ),
+    (
+        "Logo glint",
+        &[
+            ("intro", "settle"),
+            ("idle", "logo-glint"),
+            ("logo", "sample"),
+            ("logo-shape", "rounded:1.5"),
+            ("logo-frame", "ring"),
+            ("shape", "rounded:0.5"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
+        "Logo turn",
+        &[
+            ("intro", "iris"),
+            ("idle", "logo-turn"),
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "orbit"),
+            ("shape", "dots:0.85"),
+            ("finder", "squircle/circle"),
+        ],
+    ),
+];
+
 pub(crate) fn escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -218,7 +374,7 @@ pub(crate) fn shell_quote(value: &str) -> String {
 
 pub fn page(text: &str, builder: &QrBuilder, pinned: bool, base: &StyleArgs) -> String {
     let mut cards = String::new();
-    for (name, flags) in FAMILIES {
+    for (name, flags) in FAMILIES.iter().chain(LOGO_FAMILIES) {
         let mut args = base.clone();
         let mut command = format!(" {}", shell_quote(text));
         let mut problem = None;
