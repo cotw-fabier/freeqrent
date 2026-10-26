@@ -423,6 +423,19 @@ pub(crate) const LOGO_FAMILIES: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
+/// Dark palettes (SPEC §6.4): a dark-first site keeping its polarity, read
+/// inverted. After the logos, so the scan sheet's earlier ids keep their
+/// cards.
+pub(crate) const DARK_FAMILIES: &[(&str, &[(&str, &str)])] = &[(
+    "Dark site palette",
+    &[
+        ("palette-from-css", "sample-dark"),
+        ("allow-inverted", ""),
+        ("shape", "rounded:0.4"),
+        ("finder", "rounded:2/circle"),
+    ],
+)];
+
 /// Pictures with everything else: art mode, halftones, palettes and
 /// gradients taken from a picture, logos and motion. `{a}` and `{b}` stand
 /// for the pictures given with `--gallery-picture` (`sample` without).
@@ -683,6 +696,15 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("logo-frame", "orbit"),
         ],
     ),
+    (
+        "Dark picture palette",
+        &[
+            ("palette-from-image", "{b}"),
+            ("allow-inverted", ""),
+            ("shape", "dots"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
 ];
 
 /// A family's flag value with `{a}` and `{b}` replaced by the pictures:
@@ -720,13 +742,21 @@ pub fn page(
     pictures: &[String],
 ) -> String {
     let mut cards = String::new();
-    let families = FAMILIES.iter().chain(LOGO_FAMILIES).chain(PICTURE_FAMILIES);
+    let families = FAMILIES
+        .iter()
+        .chain(LOGO_FAMILIES)
+        .chain(DARK_FAMILIES)
+        .chain(PICTURE_FAMILIES);
     for (name, flags) in families {
         let mut args = base.clone();
         let mut command = format!(" {}", shell_quote(text));
         let mut problem = None;
         for (flag, value) in *flags {
             let value = &picture_value(value, pictures);
+            if value.is_empty() && args.set_switch(flag) {
+                let _ = write!(command, " --{flag}");
+                continue;
+            }
             if let Err(e) = args.set(flag, value) {
                 problem = Some(e);
             }

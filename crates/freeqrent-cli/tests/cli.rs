@@ -78,11 +78,13 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 68);
+    assert_eq!(html.matches("<figure>").count(), 70);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 68);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 70);
     // Without pictures the picture cards use the sample.
     assert!(html.contains("--art sample --clarity 0.5"));
+    // The dark cards are read inverted.
+    assert_eq!(html.matches(", read inverted").count(), 2);
 
     // With one, it stands in for both.
     let png = dir.join("brand.png");
@@ -96,7 +98,7 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 68);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 70);
     assert!(!html.contains("--art sample --clarity 0.5"));
     assert!(html.contains("brand.png --clarity 0.5"));
     std::fs::remove_dir_all(&dir).unwrap();
@@ -361,6 +363,63 @@ fn palettes_come_from_images_and_pages() {
 }
 
 #[test]
+fn dark_sources_keep_their_polarity_with_allow_inverted() {
+    let out = freeqrent(&[
+        "HELLO",
+        "--palette-from-css",
+        "sample-dark",
+        "--allow-inverted",
+        "--show-palette",
+        "--verify",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("bg          #12161c"), "{err}");
+    assert!(err.contains("lightened"), "{err}");
+    assert!(err.contains("read inverted"), "{err}");
+    let flags = err
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("as flags: "))
+        .unwrap();
+    assert!(flags.ends_with(" --allow-inverted"), "{flags}");
+
+    // The printed flags reproduce the same document.
+    let mut args = vec!["HELLO".to_string()];
+    for part in flags.split(" --").map(|p| p.trim_start_matches("--")) {
+        match part.split_once(' ') {
+            Some((flag, value)) => {
+                args.push(format!("--{flag}"));
+                args.push(value.trim_matches('\'').to_string());
+            }
+            None => args.push(format!("--{part}")),
+        }
+    }
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let again = freeqrent(&args);
+    let first = freeqrent(&[
+        "HELLO",
+        "--palette-from-css",
+        "sample-dark",
+        "--allow-inverted",
+    ]);
+    assert_eq!(stdout(&again), stdout(&first));
+
+    // Without the flag the same site is dark on light.
+    let out = freeqrent(&[
+        "HELLO",
+        "--palette-from-css",
+        "sample-dark",
+        "--show-palette",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        !stderr(&out).contains("--allow-inverted"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn pictures_build_the_code() {
     let out = freeqrent(&["https://example.com", "--art", "sample", "--check"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
@@ -411,7 +470,7 @@ fn the_scan_sheet_names_every_card() {
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
     let cards = html.matches("<figure data-id=").count();
-    assert_eq!(cards, 66);
+    assert_eq!(cards, 69);
     // Every code renders, and each payload names its card.
     assert!(!html.contains("Refused"));
     assert!(html.contains("https://example.com/scan/S01"));

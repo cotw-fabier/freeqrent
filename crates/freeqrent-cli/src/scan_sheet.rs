@@ -8,7 +8,7 @@ use std::fmt::Write;
 use freeqrent::{Ecc, QrBuilder, QrCode, Version};
 
 use crate::StyleArgs;
-use crate::gallery::{FAMILIES, LOGO_FAMILIES, escape, shell_quote};
+use crate::gallery::{DARK_FAMILIES, FAMILIES, LOGO_FAMILIES, escape, shell_quote};
 
 /// The devices the matrix asks about.
 const DEVICES: [&str; 4] = ["iPhone Camera", "Google Lens", "WeChat", "ZXing app"];
@@ -38,7 +38,8 @@ impl Entry {
 /// each ECC level; pictures with a logo and without steering; and v1 codes
 /// near the contrast warning on off-white backgrounds (ROADMAP,
 /// "lightness-aware contrast warning"); then the logo sizes, frames and
-/// logo motion, last so the earlier cards keep their ids.
+/// logo motion, and dark palettes, last so the earlier cards keep their
+/// ids.
 fn entries() -> Vec<Entry> {
     let mut out: Vec<Entry> = FAMILIES
         .iter()
@@ -99,6 +100,24 @@ fn entries() -> Vec<Entry> {
             .iter()
             .map(|(name, flags)| Entry::new("Logos", *name, flags)),
     );
+    out.extend(
+        DARK_FAMILIES
+            .iter()
+            .map(|(name, flags)| Entry::new("Dark palettes", *name, flags)),
+    );
+    // Inverted v1 codes at the extraction floor, the weakest case measured
+    // (W20261026141235).
+    for bg in [4, 16] {
+        let fg = format!("oklch({}% 0 0)", bg + 70);
+        let mut e = Entry::new("Dark palettes", format!("v1, bg L .{bg:02}, ΔL .70"), &[]);
+        e.flags = vec![
+            ("bg", format!("oklch({bg}% 0 0)")),
+            ("fg", fg),
+            ("allow-inverted", String::new()),
+        ];
+        e.version = Some(1);
+        out.push(e);
+    }
     out
 }
 
@@ -129,7 +148,7 @@ pub fn page(base: &StyleArgs) -> String {
             let _ = write!(command, " --version {v}");
         }
         for (flag, value) in &entry.flags {
-            if *flag == "no-steer" {
+            if value.is_empty() && args.set_switch(flag) {
                 args.set_switch(flag);
                 let _ = write!(command, " --{flag}");
                 continue;

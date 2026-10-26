@@ -167,6 +167,9 @@ pub struct Bar {
     pub degraded: bool,
     /// Also rqrr, on the clean renders.
     pub rqrr: bool,
+    /// Read the renders inverted, as scanners that read light-on-dark
+    /// codes do (most phone cameras; some older scanners can't).
+    pub inverted: bool,
 }
 
 impl Bar {
@@ -174,12 +177,14 @@ impl Bar {
     pub const FULL: Bar = Bar {
         degraded: true,
         rqrr: true,
+        inverted: false,
     };
 
     /// The bar for a style, from its own check. A low-contrast warning
     /// drops the degraded render (that is what the warning means); a
     /// rounded-finder warning drops rqrr, which can't locate rounded rings,
     /// and the degraded render, which round rings miss at large versions.
+    /// An inverted code is read inverted.
     pub fn for_report(report: &ScanReport) -> Bar {
         let warned = |f: fn(&Warning) -> bool| report.warnings.iter().any(f);
         let low_contrast = warned(|w| matches!(w, Warning::LowContrast { .. }));
@@ -187,6 +192,7 @@ impl Bar {
         Bar {
             degraded: !low_contrast && !rounded,
             rqrr: !rounded,
+            inverted: warned(|w| matches!(w, Warning::Inverted { .. })),
         }
     }
 }
@@ -204,7 +210,7 @@ pub fn verify_with(svg: &str, expected: &str, bar: Bar) -> Result<(), VerifyErro
         if degraded && !bar.degraded {
             continue;
         }
-        verify_one(svg, expected, render, bar.rqrr && !degraded)?;
+        check(svg, expected, render, bar.rqrr && !degraded, bar.inverted)?;
     }
     Ok(())
 }
@@ -225,7 +231,20 @@ pub fn verify_one(
     render: Render,
     rqrr: bool,
 ) -> Result<(), VerifyError> {
+    check(svg, expected, render, rqrr, false)
+}
+
+fn check(
+    svg: &str,
+    expected: &str,
+    render: Render,
+    rqrr: bool,
+    inverted: bool,
+) -> Result<(), VerifyError> {
     let mut image = rasterize(svg, render.px_per_module as f32)?;
+    if inverted {
+        image.pixels.iter_mut().for_each(|p| *p = 255 - *p);
+    }
     if render.blur {
         image = box_blur(&image);
     }
@@ -281,8 +300,8 @@ fn add_noise(image: &mut Gray, seed: u64) {
 
 /// When an animated code becomes scannable for good (SPEC §8.1): the
 /// earliest multiple of `step_ms` from which every frame up to the end of
-/// the plan decodes to `expected` with ZXing at 6 px per module. Frames
-/// come from [`Style::render_frame`].
+/// the plan decodes to `expected` with ZXing at 6 px per module (read
+/// inverted for an inverted code). Frames come from [`Style::render_frame`].
 pub fn scannable_after(
     style: &Style,
     qr: &QrMatrix,
@@ -297,6 +316,7 @@ pub fn scannable_after(
         blur: false,
         noise: false,
     };
+    let inverted = Bar::for_report(&style.check(qr)).inverted;
     let step = step_ms.max(1);
     let last = plan.total_ms.div_ceil(step) * step;
     let mut t = last;
@@ -304,7 +324,7 @@ pub fn scannable_after(
         let svg = style
             .render_frame(qr, t)
             .map_err(|e| VerifyError::Render(e.to_string()))?;
-        let result = verify_one(&svg, expected, render, false);
+        let result = check(&svg, expected, render, false, inverted);
         if let Err(e) = result {
             if t == last {
                 return Err(e);

@@ -4,7 +4,10 @@
 mod common;
 
 use common::{PAYLOADS, assert_scans_at};
-use freeqrent::{Ecc, ModuleShape, Palette, PaletteOpts, QrCode, Rgba8Image, Style, Token};
+use freeqrent::{
+    EXTRACT_CONTRAST, Ecc, INVERTED_CONTRAST, ModuleShape, Palette, PaletteOpts, QrCode,
+    Rgba8Image, Style, Token, Warning,
+};
 
 /// Builds a `w × h` image from a function of the pixel position.
 fn image(w: u32, h: u32, f: impl Fn(f64, f64) -> [u8; 4]) -> Rgba8Image {
@@ -262,4 +265,57 @@ fn site_roles_follow_the_markup() {
     // color, the only light swatch.
     let (palette, _) = Palette::from_css(sites()[2].2).unwrap();
     assert!(palette.background().to_oklab()[0] > 0.85);
+}
+
+#[test]
+fn inverted_palettes_pass_and_scan() {
+    // With inverted palettes allowed, dark sources keep their polarity at
+    // INVERTED_CONTRAST, the rest are unchanged, and both scan: inverted
+    // codes are read inverted (`Bar::inverted`).
+    let qr = QrCode::encode("https://example.com/menu", Ecc::M).unwrap();
+    let opts = PaletteOpts::new().allow_inverted(true);
+    let mut found = Vec::new();
+    let images = corpus()
+        .into_iter()
+        .map(|(name, img)| (name, Palette::from_image(&img, opts).unwrap()));
+    let sites = sites().into_iter().map(|(name, html, text)| {
+        let found = if html {
+            Palette::from_html_with(text, opts)
+        } else {
+            Palette::from_css_with(text, opts)
+        };
+        (name, found.unwrap())
+    });
+    for (name, (palette, report)) in images.chain(sites) {
+        println!("{name}: {:?}", report.choices);
+        let inverted = palette.contrast(Token::Fg).inverted;
+        let floor = if inverted {
+            INVERTED_CONTRAST
+        } else {
+            EXTRACT_CONTRAST
+        };
+        for token in [Token::Fg, Token::FinderEye, Token::LogoFrame] {
+            let c = palette.contrast(token);
+            assert!(
+                c.inverted == inverted && c.delta_l >= floor,
+                "{name} {token}: {c:?}"
+            );
+        }
+        let style = Style::new().palette(palette).allow_inverted(true);
+        let check = style.check(&qr);
+        assert!(
+            check.ok()
+                && check
+                    .warnings
+                    .iter()
+                    .all(|w| inverted && matches!(w, Warning::Inverted { .. })),
+            "{name}: {check:?}"
+        );
+        let style = style.modules(ModuleShape::Dots { size: 0.85 });
+        assert_scans_at(&style, name, &PAYLOADS[..3], Ecc::M);
+        if inverted {
+            found.push(name);
+        }
+    }
+    assert_eq!(found, ["dark theme", "dark first"]);
 }

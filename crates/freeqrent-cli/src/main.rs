@@ -46,7 +46,8 @@ Style:
   --palette-from-image FILE
                            take bg, fg, finder.eye and logo.frame from a PNG or
                            JPEG (`sample` for the built-in picture)
-  --palette-from-css FILE  ... from a style sheet (`-` for stdin, `sample`)
+  --palette-from-css FILE  ... from a style sheet (`-` for stdin, `sample`,
+                           `sample-dark`)
   --palette-from-html FILE ... from a page: theme-color, <style>, style attributes
                            (`-` for stdin, e.g. curl -s URL | freeqrent ...)
   --palette-clusters K     colors to cluster an image into, 2-12 (default 6)
@@ -104,7 +105,8 @@ Style:
   --focal X,Y              the point to keep in view, 0-1 each (default 0.5,0.5)
   --priority FILE          where steering matters most: light first, black never
   --no-steer               keep standard padding (no module steering)
-  --allow-inverted         permit light modules on a dark background
+  --allow-inverted         permit light modules on a dark background, and let
+                           --palette-from-* keep a dark source's polarity
   --target-px N            displayed size in device pixels (warns when too small)
   --target-mm N            printed size in millimeters (warns when too small)
 
@@ -217,6 +219,12 @@ enum PaletteSource {
 
 /// The style sheet `--palette-from-css sample` uses.
 const SAMPLE_CSS: &str = ":root { --paper: #f6f1e7; --ink: #23201c; --brand: #c2410c }
+body { background: var(--paper); color: var(--ink) }
+a, .button { color: var(--brand) }";
+
+/// The style sheet `--palette-from-css sample-dark` uses: a dark-first
+/// site, for `--allow-inverted`.
+const SAMPLE_DARK_CSS: &str = ":root { --paper: #12161c; --ink: #e8ecef; --brand: #3fa796 }
 body { background: var(--paper); color: var(--ink) }
 a, .button { color: var(--brand) }";
 
@@ -364,6 +372,7 @@ impl StyleArgs {
             "palette-from-css" => {
                 let css = match value {
                     "sample" => SAMPLE_CSS.to_string(),
+                    "sample-dark" => SAMPLE_DARK_CSS.to_string(),
                     _ => read_text(flag, value)?,
                 };
                 self.palette_source = Some(PaletteSource::Css(css));
@@ -400,10 +409,12 @@ impl StyleArgs {
 
     /// The palette `--palette-from-*` derives, with its report.
     pub fn extract(&self) -> Result<Option<(Palette, PaletteReport)>, String> {
+        // `--allow-inverted` lets a dark source keep its polarity.
+        let base = PaletteOpts::new().allow_inverted(self.allow_inverted);
         let found = match &self.palette_source {
             None => return Ok(None),
             Some(PaletteSource::Image(image)) => {
-                let mut opts = PaletteOpts::new();
+                let mut opts = base;
                 if let Some(k) = self.palette_clusters {
                     opts = opts.clusters(k);
                 }
@@ -412,8 +423,8 @@ impl StyleArgs {
                 }
                 Palette::from_image(image, opts)
             }
-            Some(PaletteSource::Css(css)) => Palette::from_css(css),
-            Some(PaletteSource::Html(html)) => Palette::from_html(html),
+            Some(PaletteSource::Css(css)) => Palette::from_css_with(css, base),
+            Some(PaletteSource::Html(html)) => Palette::from_html_with(html, base),
         };
         found
             .map(Some)
@@ -763,13 +774,21 @@ fn print_palette(out: &mut dyn Write, report: &PaletteReport) -> io::Result<()> 
         )?;
     }
     let mut flags = Vec::new();
+    let dark = report
+        .choices
+        .iter()
+        .any(|c| c.token == Token::Bg && c.color.to_oklab()[0] < 0.5);
+    let tint = if dark { "near-black" } else { "near-white" };
     for c in &report.choices {
         let why = match c.origin {
             Origin::Swatch(i) => format!("color {i}"),
-            Origin::Tinted(Some(i)) => format!("near-white tinted by color {i}"),
+            Origin::Tinted(Some(i)) => format!("{tint} tinted by color {i}"),
             Origin::Tinted(None) => "neutral".to_string(),
             Origin::Darkened { swatch, delta_l } => {
                 format!("color {swatch} darkened from contrast {delta_l:.2}")
+            }
+            Origin::Lightened { swatch, delta_l } => {
+                format!("color {swatch} lightened from contrast {delta_l:.2}")
             }
             _ => "derived".to_string(),
         };
@@ -783,6 +802,9 @@ fn print_palette(out: &mut dyn Write, report: &PaletteReport) -> io::Result<()> 
             Token::Bg | Token::Fg => format!("--{} '{}'", c.token.name(), c.color),
             t => format!("--token '{}={}'", t.name(), c.color),
         });
+    }
+    if dark {
+        flags.push("--allow-inverted".to_string());
     }
     writeln!(out, "  as flags: {}", flags.join(" "))
 }
@@ -833,6 +855,9 @@ fn verify(style: &Style, qr: &QrMatrix, text: &str) -> Result<String, String> {
     } else {
         "decodes with ZXing".to_string()
     };
+    if bar.inverted {
+        verdict.push_str(", read inverted");
+    }
     if style.intro_options().is_some() {
         let total = style.plan(qr).map_err(|e| e.to_string())?.total_ms;
         let at =

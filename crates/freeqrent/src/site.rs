@@ -12,7 +12,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::color::Color;
-use crate::extract::{ExtractError, PaletteReport, Roles, Swatch, assign};
+use crate::extract::{ExtractError, PaletteOpts, PaletteReport, Roles, Swatch, assign};
 use crate::palette::Palette;
 
 /// Block nesting deeper than this is skipped.
@@ -43,10 +43,21 @@ impl Palette {
     /// keeps every painted token at the default minimum contrast; colors
     /// short of it are darkened.
     pub fn from_css(css: &str) -> Result<(Palette, PaletteReport), ExtractError> {
+        Palette::from_css_with(css, PaletteOpts::new())
+    }
+
+    /// [`from_css`](Palette::from_css) with options: the minimum contrast,
+    /// and [`PaletteOpts::allow_inverted`], which lets a dark-first site
+    /// keep its light-on-dark colors. Clusters and seed are for images and
+    /// don't apply.
+    pub fn from_css_with(
+        css: &str,
+        opts: PaletteOpts,
+    ) -> Result<(Palette, PaletteReport), ExtractError> {
         let mut site = Site::default();
         site.collect_vars(css);
         site.colors(css);
-        site.finish()
+        site.finish(opts)
     }
 
     /// [`from_css`](Palette::from_css) for an HTML document: its
@@ -54,6 +65,15 @@ impl Palette {
     /// elements and its `style` attributes. Scripts and comments are
     /// skipped.
     pub fn from_html(html: &str) -> Result<(Palette, PaletteReport), ExtractError> {
+        Palette::from_html_with(html, PaletteOpts::new())
+    }
+
+    /// [`from_html`](Palette::from_html) with options, as
+    /// [`from_css_with`](Palette::from_css_with).
+    pub fn from_html_with(
+        html: &str,
+        opts: PaletteOpts,
+    ) -> Result<(Palette, PaletteReport), ExtractError> {
         let doc = Html::scan(html);
         let mut site = Site::default();
         for css in &doc.sheets {
@@ -72,7 +92,7 @@ impl Palette {
             let selector = Selector::of(tag);
             site.declarations(decls, selector);
         }
-        site.finish()
+        site.finish(opts)
     }
 }
 
@@ -293,7 +313,7 @@ impl Site {
         }
     }
 
-    fn finish(self) -> Result<(Palette, PaletteReport), ExtractError> {
+    fn finish(self, opts: PaletteOpts) -> Result<(Palette, PaletteReport), ExtractError> {
         let total: f32 = self.entries.values().map(|e| e.weight).sum();
         if self.entries.is_empty() || total <= 0.0 {
             return Err(ExtractError::NoColors);
@@ -310,7 +330,7 @@ impl Site {
             })
             .collect();
         let roles: Vec<Roles> = entries.iter().map(|e| e.roles).collect();
-        Ok(assign(swatches, &roles, crate::extract::EXTRACT_CONTRAST))
+        Ok(assign(swatches, &roles, opts))
     }
 }
 

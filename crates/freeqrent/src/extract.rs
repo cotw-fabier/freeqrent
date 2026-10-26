@@ -25,10 +25,19 @@ const BG_SHARE: f32 = 0.10;
 const BG_LIGHTNESS: f32 = 0.85;
 /// The most chroma a background may have: pastels yes, vivid colors no.
 const BG_CHROMA: f32 = 0.12;
+/// The most lightness a dark background may have when inverted palettes
+/// are allowed: darker than this leaves room for an ink
+/// [`INVERTED_CONTRAST`] lighter.
+const BG_DARKNESS: f32 = 0.25;
 /// The default minimum contrast. Measured (W20261026073538): v1 codes on
 /// backgrounds from L 0.80 to 0.95 fail ZXing on the blurred, noisy render
 /// up to ΔL 0.64 and pass from 0.66; near-white backgrounds pass at 0.60.
 pub const EXTRACT_CONTRAST: f32 = 0.66;
+/// The least contrast an inverted palette keeps. Measured
+/// (W20261026141235): v1 codes, light on backgrounds from L 0.04 to 0.28,
+/// read inverted, fail ZXing on the blurred, noisy render at ΔL 0.66 on
+/// some backgrounds and pass on all of them from 0.68.
+pub const INVERTED_CONTRAST: f32 = 0.70;
 /// The share a swatch needs to be drawn with at all; smaller clusters are
 /// mostly anti-aliased edges.
 const INK_SHARE: f32 = 0.02;
@@ -47,6 +56,7 @@ pub struct PaletteOpts {
     clusters: u8,
     seed: u64,
     min_contrast: f32,
+    allow_inverted: bool,
 }
 
 impl Default for PaletteOpts {
@@ -55,6 +65,7 @@ impl Default for PaletteOpts {
             clusters: 6,
             seed: 0,
             min_contrast: EXTRACT_CONTRAST,
+            allow_inverted: false,
         }
     }
 }
@@ -89,6 +100,21 @@ impl PaletteOpts {
         self
     }
 
+    /// Lets a dark source keep its polarity (SPEC §6.4): when its
+    /// background is dark, `bg` is that dark color and the inks are light,
+    /// lightened where needed to at least [`INVERTED_CONTRAST`]. Render the
+    /// result with [`Style::allow_inverted`](crate::Style::allow_inverted).
+    /// Off by default, since some older scanners can't read inverted codes.
+    pub fn allow_inverted(mut self, allow: bool) -> PaletteOpts {
+        self.allow_inverted = allow;
+        self
+    }
+
+    /// Whether inverted palettes are allowed.
+    pub fn inverted_allowed(&self) -> bool {
+        self.allow_inverted
+    }
+
     /// The cluster count.
     pub fn cluster_count(&self) -> u8 {
         self.clusters
@@ -118,13 +144,23 @@ pub enum Origin {
     Swatch(usize),
     /// A tinted near-white made from a swatch's hue (or neutral when
     /// `None`), because no swatch was light and common enough to be a
-    /// background.
+    /// background. For `fg`, the default ink, darkened to pass (lightened
+    /// on a dark `bg`), because the source had nothing but its background.
     Tinted(Option<usize>),
     /// A swatch darkened at constant hue until it had enough contrast.
     Darkened {
         /// The swatch.
         swatch: usize,
         /// Its contrast against `bg` before darkening.
+        delta_l: f32,
+    },
+    /// A swatch lightened at constant hue until it had enough contrast
+    /// against a dark `bg` ([`PaletteOpts::allow_inverted`]).
+    Lightened {
+        /// The swatch.
+        swatch: usize,
+        /// Its contrast against `bg` before lightening (zero when it was
+        /// darker).
         delta_l: f32,
     },
 }
@@ -186,7 +222,7 @@ impl Palette {
             return Err(ExtractError::NoColors);
         }
         let roles = alloc::vec![Roles::default(); swatches.len()];
-        Ok(assign(swatches, &roles, opts.min_contrast))
+        Ok(assign(swatches, &roles, opts))
     }
 }
 
@@ -357,40 +393,67 @@ fn distance(x: Color, y: Color) -> f32 {
     math::sqrt(d as f64) as f32
 }
 
-/// `color`'s contrast against `bg`, or zero when it is lighter.
-fn contrast(bg: Color, color: Color) -> f32 {
+/// `color`'s contrast against `bg`, or zero when it is on the wrong side:
+/// lighter, or darker when `inverted`.
+fn contrast(bg: Color, color: Color, inverted: bool) -> f32 {
     let palette = Palette::new()
         .with(Token::Bg, bg)
         .and_then(|p| p.with(Token::Fg, color))
         .expect("solid colors");
     let c = palette.contrast(Token::Fg);
-    if c.inverted { 0.0 } else { c.delta_l }
+    if c.inverted == inverted {
+        c.delta_l
+    } else {
+        0.0
+    }
 }
 
-/// `color` at the highest OKLCH lightness (same chroma and hue) that has
-/// `min` contrast against `bg`.
-fn darken(bg: Color, color: Color, min: f32) -> Color {
+/// `color` at the OKLCH lightness nearest its own (same chroma and hue)
+/// that has `min` contrast against `bg`: the highest one, or the lowest
+/// when `inverted`.
+fn shade(bg: Color, color: Color, min: f32, inverted: bool) -> Color {
     let [l, a, b] = color.to_oklab();
     let c = math::sqrt((a * a + b * b) as f64) as f32;
     let h = (math::atan2(b as f64, a as f64) * (180.0 / core::f64::consts::PI)) as f32;
     let at = |l: f32| Color::oklch(l, c, h);
-    let (mut lo, mut hi) = (0.0f32, l);
+    // `pass` passes and `fail` doesn't (or is where the search starts).
+    let (mut pass, mut fail) = if inverted { (1.0f32, l) } else { (0.0f32, l) };
     for _ in 0..24 {
-        let mid = (lo + hi) / 2.0;
-        if contrast(bg, at(mid)) >= min {
-            lo = mid;
+        let mid = (pass + fail) / 2.0;
+        if contrast(bg, at(mid), inverted) >= min {
+            pass = mid;
         } else {
-            hi = mid;
+            fail = mid;
         }
     }
-    // Stored lightness is rounded; step down until it passes.
-    let mut out = at(lo);
-    let mut l = lo;
-    while contrast(bg, out) < min && l > 0.0 {
-        l = (l - 0.0005).max(0.0);
+    // Stored lightness is rounded; step away from bg until it passes.
+    let step = if inverted { 0.0005 } else { -0.0005 };
+    let mut out = at(pass);
+    let mut l = pass;
+    while contrast(bg, out, inverted) < min && (0.0..=1.0).contains(&(l + step)) {
+        l += step;
         out = at(l);
     }
     out
+}
+
+/// Whether the source is dark: its most strongly marked low-chroma
+/// background is darker than mid-gray, or, when it marks none, its colors
+/// are on average (by share).
+fn dark_first(swatches: &[Swatch], roles: &[Roles]) -> bool {
+    let lightness = |i: usize| swatches[i].color.to_oklab()[0];
+    let n = swatches.len();
+    match best(
+        (0..n).filter(|&i| roles[i].bg > 0.0 && chroma(swatches[i].color) <= BG_CHROMA),
+        |i| roles[i].bg,
+    ) {
+        Some(i) => lightness(i) < 0.5,
+        None => {
+            let total: f32 = swatches.iter().map(|s| s.share).sum();
+            let mean: f32 = (0..n).map(|i| lightness(i) * swatches[i].share).sum();
+            total > 0.0 && mean / total < 0.5
+        }
+    }
 }
 
 /// How strongly a source marks a swatch for each role: CSS says which
@@ -416,8 +479,22 @@ fn best<K: Fn(usize) -> f32>(items: impl Iterator<Item = usize>, key: K) -> Opti
 
 /// Assigns swatches to tokens (SPEC §6.4). Where `roles` marks swatches
 /// for a role, the most strongly marked eligible one wins; otherwise the
-/// pixel rules apply.
-pub(crate) fn assign(swatches: Vec<Swatch>, roles: &[Roles], min: f32) -> (Palette, PaletteReport) {
+/// pixel rules apply. A dark source, when `opts` allows inverted palettes,
+/// gets the same rules mirrored: a dark `bg` and light inks.
+pub(crate) fn assign(
+    swatches: Vec<Swatch>,
+    roles: &[Roles],
+    opts: PaletteOpts,
+) -> (Palette, PaletteReport) {
+    let inverted = opts.allow_inverted && dark_first(&swatches, roles);
+    let min = if inverted {
+        opts.min_contrast.max(INVERTED_CONTRAST)
+    } else {
+        opts.min_contrast
+    };
+    // Lightness toward the background's end of the scale: high on a light
+    // page, low on a dark one.
+    let toward_bg = |l: f32| if inverted { -l } else { l };
     let n = swatches.len();
     let lightness = |i: usize| swatches[i].color.to_oklab()[0];
     let hue = |i: usize| chroma(swatches[i].color);
@@ -431,15 +508,24 @@ pub(crate) fn assign(swatches: Vec<Swatch>, roles: &[Roles], min: f32) -> (Palet
     let dominant_hue = accent_hint().or_else(|| (0..n).find(|&i| hue(i) >= CHROMATIC && common(i)));
 
     // bg: the background the source names, else the lightest common
-    // swatch, else a near-white tinted by the dominant hue.
-    let light = |i: usize| lightness(i) >= BG_LIGHTNESS && hue(i) <= BG_CHROMA;
+    // swatch (darkest, inverted), else a near-white tinted by the dominant
+    // hue (a near-black, inverted).
+    let light = |i: usize| {
+        let l = lightness(i);
+        hue(i) <= BG_CHROMA
+            && if inverted {
+                l <= BG_DARKNESS
+            } else {
+                l >= BG_LIGHTNESS
+            }
+    };
     let bg_index = best((0..n).filter(|&i| light(i) && roles[i].bg > 0.0), |i| {
         roles[i].bg
     })
     .or_else(|| {
         best(
             (0..n).filter(|&i| light(i) && swatches[i].share >= BG_SHARE),
-            lightness,
+            |i| toward_bg(lightness(i)),
         )
     });
     let (bg, bg_origin) = match bg_index {
@@ -454,7 +540,8 @@ pub(crate) fn assign(swatches: Vec<Swatch>, roles: &[Roles], min: f32) -> (Palet
                 }
                 None => (0.0, 0.0),
             };
-            (Color::oklch(0.97, c, h), Origin::Tinted(dominant_hue))
+            let l = if inverted { 0.16 } else { 0.97 };
+            (Color::oklch(l, c, h), Origin::Tinted(dominant_hue))
         }
     };
 
@@ -462,24 +549,30 @@ pub(crate) fn assign(swatches: Vec<Swatch>, roles: &[Roles], min: f32) -> (Palet
     let ink: Vec<usize> = (0..n)
         .filter(|&i| Some(i) != bg_index && (common(i) || marked(i)))
         .collect();
-    let passes = |i: usize| contrast(bg, swatches[i].color) >= min;
+    let passes = |i: usize| contrast(bg, swatches[i].color, inverted) >= min;
     let settle = |i: usize| {
         let color = swatches[i].color;
-        let delta_l = contrast(bg, color);
+        let delta_l = contrast(bg, color, inverted);
         if delta_l >= min {
             (color, Origin::Swatch(i))
+        } else if inverted {
+            (
+                shade(bg, color, min, true),
+                Origin::Lightened { swatch: i, delta_l },
+            )
         } else {
             (
-                darken(bg, color, min),
+                shade(bg, color, min, false),
                 Origin::Darkened { swatch: i, delta_l },
             )
         }
     };
 
-    // fg: the text color the source names, else the darkest swatch; if
-    // neither passes, the named text color or the dominant hue darkened.
+    // fg: the text color the source names, else the darkest swatch
+    // (lightest, inverted); if neither passes, the named text color or the
+    // dominant hue darkened (lightened).
     let text = |i: usize| roles[i].text;
-    let darkest = best(ink.iter().copied(), |i| -lightness(i));
+    let darkest = best(ink.iter().copied(), |i| -toward_bg(lightness(i)));
     let fg_index = best(
         ink.iter().copied().filter(|&i| text(i) > 0.0 && passes(i)),
         text,
@@ -490,13 +583,14 @@ pub(crate) fn assign(swatches: Vec<Swatch>, roles: &[Roles], min: f32) -> (Palet
     .or(darkest);
     let (fg, fg_origin) = match fg_index {
         Some(i) => settle(i),
-        // Nothing but the background: the default ink, darkened to pass.
+        // Nothing but the background: the default ink (the default
+        // background, inverted), darkened (lightened) to pass.
         None => {
-            let ink = Palette::new().resolve(Token::Fg);
-            let crate::palette::Paint::Solid(c) = ink else {
-                unreachable!("the default fg is solid")
+            let token = if inverted { Token::Bg } else { Token::Fg };
+            let crate::palette::Paint::Solid(c) = Palette::new().resolve(token) else {
+                unreachable!("the default bg and fg are solid")
             };
-            (darken(bg, c, min), Origin::Tinted(None))
+            (shade(bg, c, min, inverted), Origin::Tinted(None))
         }
     };
 
@@ -645,6 +739,60 @@ mod tests {
             Palette::from_image(&empty, PaletteOpts::new()),
             Err(ExtractError::NoColors)
         );
+    }
+
+    #[test]
+    fn dark_sources_keep_their_polarity_when_allowed() {
+        // A near-black page, light gray ink, a cyan accent.
+        let img = stripes(&[
+            ([14, 17, 22, 255], 64),
+            ([228, 230, 232, 255], 24),
+            ([0, 150, 200, 255], 16),
+        ]);
+        let opts = PaletteOpts::new().allow_inverted(true);
+        let (palette, report) = Palette::from_image(&img, opts).unwrap();
+        assert!(matches!(
+            token(&report, Token::Bg).unwrap().origin,
+            Origin::Swatch(0)
+        ));
+        // The light gray is the ink; the cyan is lightened to pass.
+        let fg = token(&report, Token::Fg).unwrap();
+        assert!(matches!(fg.origin, Origin::Swatch(1)), "{report:?}");
+        let eye = token(&report, Token::FinderEye).unwrap();
+        assert!(matches!(eye.origin, Origin::Lightened { swatch: 2, .. }));
+        for t in [Token::Fg, Token::FinderEye, Token::LogoFrame] {
+            let c = palette.contrast(t);
+            assert!(c.inverted && c.delta_l >= INVERTED_CONTRAST, "{t}: {c:?}");
+        }
+        // Without the option, the same image is dark on light.
+        let (palette, _) = Palette::from_image(&img, PaletteOpts::new()).unwrap();
+        assert!(palette.background().to_oklab()[0] > 0.85);
+        assert!(!palette.contrast(Token::Fg).inverted);
+        // A light image is unchanged by it.
+        let light = stripes(&[([250, 248, 244, 255], 64), ([20, 30, 80, 255], 24)]);
+        assert_eq!(
+            Palette::from_image(&light, opts).unwrap(),
+            Palette::from_image(&light, PaletteOpts::new()).unwrap()
+        );
+    }
+
+    #[test]
+    fn dim_sources_get_a_tinted_near_black() {
+        // Mid-dark blues, none dark enough to be a background.
+        let img = stripes(&[
+            ([40, 55, 90, 255], 50),
+            ([70, 90, 130, 255], 30),
+            ([150, 160, 170, 255], 20),
+        ]);
+        let opts = PaletteOpts::new().allow_inverted(true);
+        let (palette, report) = Palette::from_image(&img, opts).unwrap();
+        assert!(matches!(
+            token(&report, Token::Bg).unwrap().origin,
+            Origin::Tinted(Some(_))
+        ));
+        assert!(palette.background().to_oklab()[0] < BG_DARKNESS);
+        let c = palette.contrast(Token::Fg);
+        assert!(c.inverted && c.delta_l >= INVERTED_CONTRAST, "{c:?}");
     }
 
     #[test]

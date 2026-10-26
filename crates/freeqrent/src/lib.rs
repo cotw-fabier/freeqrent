@@ -75,7 +75,8 @@ pub use color::{Color, ColorError};
 pub use error::EncodeError;
 #[cfg(feature = "palette-extract")]
 pub use extract::{
-    Choice, EXTRACT_CONTRAST, ExtractError, Origin, PaletteOpts, PaletteReport, Swatch,
+    Choice, EXTRACT_CONTRAST, ExtractError, INVERTED_CONTRAST, Origin, PaletteOpts, PaletteReport,
+    Swatch,
 };
 #[cfg(feature = "halftone")]
 pub use halftone::{Clarity, DEFAULT_BANDS, DEFAULT_CLARITY, Fit, Halftone, Ink, Steering};
