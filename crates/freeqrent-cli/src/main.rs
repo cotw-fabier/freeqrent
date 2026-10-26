@@ -11,7 +11,7 @@ use std::process::ExitCode;
 
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Corner, Ease, Ecc, Emphasis, EyeShape, FinderStyle, FrameRing,
-    Intro, Logo, LogoShape, ModuleShape, Palette, Preset, QrBuilder, QrCode, QrMatrix,
+    Idle, Intro, Logo, LogoShape, ModuleShape, Palette, Preset, QrBuilder, QrCode, QrMatrix,
     RasterFormat, RingShape, ScanReport, StaggerOrder, Style, TargetSize, TimingStyle, Trigger,
     Version,
 };
@@ -55,6 +55,10 @@ Style:
   --ease EASE              quart, quint, expo, or x1,y1,x2,y2
   --groups N               stagger groups, 2-16 (default 12)
   --trigger TRIGGER        load, hover, class:NAME
+  --from-token NAME=PAINT  cross-fade from these colors instead of an intro
+  --from-fg C, --from-bg C shortcuts for --from-token fg=C, bg=C
+  --idle LOOP              finder-pulse, shimmer, breathe (repeatable)
+  --theme-transition MS    ease re-themes through the --qr-* properties
   --allow-inverted         permit light modules on a dark background
   --target-px N            displayed size in device pixels (warns when too small)
   --target-mm N            printed size in millimeters (warns when too small)
@@ -118,6 +122,9 @@ pub struct StyleArgs {
     ease: Option<Ease>,
     groups: Option<u8>,
     trigger: Option<Trigger>,
+    from_tokens: Vec<(String, String)>,
+    idle: Vec<Idle>,
+    theme_transition: Option<u32>,
 }
 
 /// The mark `--logo sample` uses.
@@ -210,6 +217,18 @@ impl StyleArgs {
                 )
             }
             "trigger" => self.trigger = Some(options::trigger(value)?),
+            "from-token" => self.from_tokens.push(options::token(value)?),
+            "from-fg" | "from-bg" => self
+                .from_tokens
+                .push((flag["from-".len()..].to_string(), value.to_string())),
+            "idle" => self.idle.push(options::idle(value)?),
+            "theme-transition" => {
+                self.theme_transition = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("{value:?} isn't a whole number of ms"))?,
+                )
+            }
             "title" => self.title = Some(value.to_string()),
             "label" => self.label = Some(value.to_string()),
             _ => return Ok(false),
@@ -267,7 +286,28 @@ impl StyleArgs {
             || self.ease.is_some()
             || self.groups.is_some()
             || self.trigger.is_some();
-        if self.intro.is_some() || animated {
+        if !self.from_tokens.is_empty() {
+            if self.intro.is_some() {
+                return Err("--intro and --from-* can't be combined".to_string());
+            }
+            let old = Palette::from_tokens(
+                self.from_tokens
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str())),
+            )
+            .map_err(|e| format!("--from-token: {e}"))?;
+            let mut intro = Intro::palette_from(&old);
+            if let Some(ms) = self.intro_ms {
+                intro = intro.duration_ms(ms);
+            }
+            if let Some(ease) = self.ease {
+                intro = intro.ease(ease);
+            }
+            if let Some(trigger) = &self.trigger {
+                intro = intro.trigger(trigger.clone());
+            }
+            style = style.intro(intro);
+        } else if self.intro.is_some() || animated {
             let mut intro = Intro::new(self.intro.unwrap_or(Preset::Settle));
             if let Some(ms) = self.intro_ms {
                 intro = intro.duration_ms(ms);
@@ -285,6 +325,12 @@ impl StyleArgs {
                 intro = intro.trigger(trigger.clone());
             }
             style = style.intro(intro);
+        }
+        for &idle in &self.idle {
+            style = style.idle(idle);
+        }
+        if let Some(ms) = self.theme_transition {
+            style = style.theme_transition(ms);
         }
         if let Some(title) = &self.title {
             style = style.title(title.clone());

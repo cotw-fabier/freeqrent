@@ -113,6 +113,23 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "Palette shift",
+        &[
+            ("from-bg", "#ffffff"),
+            ("from-fg", "#7a1f10"),
+            ("bg", "oklch(96% .02 85)"),
+            ("fg", "oklch(30% .12 265)"),
+        ],
+    ),
+    (
+        "Finder pulse",
+        &[
+            ("intro", "lock-on"),
+            ("idle", "finder-pulse"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
+    (
         "Mixed corners",
         &[
             ("corner", "top-right=leaf/circle"),

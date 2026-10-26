@@ -303,6 +303,7 @@ pub(crate) fn write<W: Write + ?Sized>(
     let mut gradients: Vec<Token> = Vec::new();
     let painted = elements
         .iter()
+        .filter(|e| e.role != LayerRole::Shimmer)
         .filter(|e| e.role != LayerRole::Logo || backdrop)
         .map(|e| e.token);
     for token in painted {
@@ -349,12 +350,17 @@ pub(crate) fn write<W: Write + ?Sized>(
     }
 
     out.line()?;
+    #[cfg(feature = "animate")]
+    let fade = style.theme_transition;
+    #[cfg(not(feature = "animate"))]
+    let fade = None;
     write_style(
         out.w,
         palette,
         &prefix,
         &solids,
         &gradients,
+        fade,
         motion.as_ref(),
     )?;
 
@@ -415,6 +421,18 @@ pub(crate) fn write<W: Write + ?Sized>(
                 out.w.write_str("/>")?;
             }
             LayerRole::Logo => write_logo(&mut out, style, qr, &canvas, &prefix, e)?,
+            LayerRole::Shimmer => {
+                write!(
+                    out.w,
+                    "<linearGradient id=\"{prefix}-shimmer\"><stop offset=\"0\" stop-color=\"#fff\" stop-opacity=\"0\"/><stop offset=\".5\" stop-color=\"#fff\" stop-opacity=\".18\"/><stop offset=\"1\" stop-color=\"#fff\" stop-opacity=\"0\"/></linearGradient><path"
+                )?;
+                if let Some(n) = e.anim {
+                    write!(out.w, " class=\"{prefix}-e{n}\"")?;
+                }
+                write!(out.w, " fill=\"url(#{prefix}-shimmer)\"")?;
+                write_pose(out.w, e)?;
+                write!(out.w, " d=\"{}\"/>", e.path.data())?;
+            }
             _ => {
                 out.w.write_str("<path")?;
                 write_element_paint(out.w, palette, e, &prefix)?;
@@ -617,6 +635,7 @@ fn write_style<W: Write + ?Sized>(
     prefix: &str,
     solids: &[Token],
     gradients: &[Token],
+    fade: Option<u32>,
     motion: Option<&Motion>,
 ) -> fmt::Result {
     let wide = |c: Color| c.opaque_srgb() != c.opaque();
@@ -642,7 +661,19 @@ fn write_style<W: Write + ?Sized>(
         write_dashed(w, token.name())?;
         w.write_str("{fill:")?;
         write_var_chain(w, palette, token)?;
+        if let Some(ms) = fade {
+            write!(w, ";transition:fill {ms}ms cubic-bezier(.25,1,.5,1)")?;
+        }
         w.write_char('}')?;
+    }
+    if fade.is_some() && !solids.is_empty() {
+        w.write_str("@media (prefers-reduced-motion:reduce){")?;
+        for (i, &token) in solids.iter().enumerate() {
+            w.write_str(if i == 0 { "." } else { ",." })?;
+            write!(w, "{prefix}-")?;
+            write_dashed(w, token.name())?;
+        }
+        w.write_str("{transition:none}}")?;
     }
     for &source in gradients {
         let Some(Paint::Gradient(g)) = palette.get(source) else {
@@ -846,9 +877,13 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
     // An intro adds classes and keyframes, so two animations of one code
     // on a page must not share a prefix either.
     #[cfg(feature = "animate")]
-    if let Some(intro) = &style.intro {
+    if style.intro.is_some() || !style.idle.is_empty() || style.theme_transition.is_some() {
         let mut text = String::new();
-        let _ = write!(text, "{intro:?}");
+        let _ = write!(
+            text,
+            "{:?}{:?}{:?}",
+            style.intro, style.idle, style.theme_transition
+        );
         text.bytes().for_each(&mut eat);
     }
     let mut text = String::new();

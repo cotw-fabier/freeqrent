@@ -2,7 +2,7 @@
 
 Styled and animated SVG QR codes from a zero-dependency, `no_std` Rust core. MIT licensed.
 
-**Status:** early development. The encoder (M0), static styles (M1) and logos, round frames and the Liquid shape (M2) are done; animation (M3) is in progress, with the `Settle` intro, `AnimationPlan` and frame renders landed. See [`SPEC.md`](SPEC.md) for the design, [`docs/waves/LOG.md`](docs/waves/LOG.md) for progress, and [`ROADMAP.md`](ROADMAP.md) for ideas.
+**Status:** early development. The encoder (M0), static styles (M1) logos, round frames and the Liquid shape (M2), and animation (M3) are done; palettes (M4) come next. See [`SPEC.md`](SPEC.md) for the design, [`docs/waves/LOG.md`](docs/waves/LOG.md) for progress, and [`ROADMAP.md`](ROADMAP.md) for ideas.
 
 ```rust
 use freeqrent::{Ecc, ModuleShape, Palette, QrCode, Style};
@@ -28,4 +28,4 @@ let qr = QrCode::builder().ecc(Ecc::Q).encode_text_for("https://example.com", &s
 let svg = style.render(&qr)?;
 ```
 
-From the command line, `freeqrent "https://example.com" --shape dots:0.8 --finder squircle/circle --verify -o code.svg` renders, decodes the result to prove it scans, and writes it. Add `--logo logo.svg` (or `--logo sample`), `--shape liquid` or `--frame circle --frame-ring dashed` for the M2 styles. `--intro settle` adds an entrance animation (CSS keyframes that end on the finished code, off under reduced motion); `--frame-at 400` writes a still of it and `--plan` its animation plan as JSON. `--gallery page.html` previews every style family for a payload.
+From the command line, `freeqrent "https://example.com" --shape dots:0.8 --finder squircle/circle --verify -o code.svg` renders, decodes the result to prove it scans, and writes it. Add `--logo logo.svg` (or `--logo sample`), `--shape liquid` or `--frame circle --frame-ring dashed` for the M2 styles. `--intro ripple` (or settle, lock-on, sweep, raster, iris, assemble) adds an entrance animation: CSS keyframes that end on the finished code and stop under reduced motion. `--from-fg '#7a1f10'` cross-fades from old colors instead, and `--idle finder-pulse` adds a subtle loop. `--frame-at 400` writes a still of the animation, and `--plan` writes its plan as JSON. `--gallery page.html` previews every style family for a payload.

@@ -98,6 +98,20 @@ impl Color {
         }
     }
 
+    /// An opaque OKLab color (L 0–1), stored at the precision `oklab()`
+    /// parses to.
+    #[cfg_attr(not(feature = "animate"), allow(dead_code))]
+    pub(crate) fn from_oklab(l: f64, a: f64, b: f64) -> Color {
+        Color {
+            space: Space::Oklab {
+                l: fixed(l, 10_000.0, 0.0, 10_000.0) as u16,
+                a: fixed(a, 10_000.0, -32_000.0, 32_000.0) as i16,
+                b: fixed(b, 10_000.0, -32_000.0, 32_000.0) as i16,
+            },
+            alpha: 1000,
+        }
+    }
+
     /// The same color with alpha set (0–1, clamped).
     pub fn with_alpha(self, alpha: f32) -> Color {
         Color {

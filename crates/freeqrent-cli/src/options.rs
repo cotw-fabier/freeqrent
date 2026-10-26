@@ -3,7 +3,7 @@
 
 use freeqrent::{
     AlignmentShape, Axis, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape, Frame, FrameRing,
-    LogoShape, ModuleShape, Preset, RingShape, StaggerOrder, TimingStyle, Trigger,
+    Idle, LogoShape, ModuleShape, Preset, RingShape, StaggerOrder, TimingStyle, Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -238,6 +238,14 @@ pub fn preset(value: &str) -> Result<Preset, String> {
         })
 }
 
+/// An idle loop name.
+pub fn idle(value: &str) -> Result<Idle, String> {
+    Idle::ALL
+        .into_iter()
+        .find(|i| i.name() == value)
+        .ok_or_else(|| format!("unknown idle loop {value:?}: try finder-pulse, shimmer or breathe"))
+}
+
 /// `radial`, `linear`, `diagonal`, `random[:seed]`, `polar`.
 pub fn stagger(value: &str) -> Result<StaggerOrder, String> {
     let (name, seed) = match value.split_once(':') {
@@ -401,6 +409,8 @@ mod tests {
         assert!(logo_shape("circle:1").is_err());
         assert_eq!(preset("lock-on").unwrap(), Preset::LockOn);
         assert!(preset("bloom").is_err());
+        assert_eq!(idle("finder-pulse").unwrap(), Idle::FinderPulse);
+        assert!(idle("spin").is_err());
         assert_eq!(stagger("random:7").unwrap(), StaggerOrder::Random(7));
         assert!(stagger("radial:1").is_err());
         assert_eq!(

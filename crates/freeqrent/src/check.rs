@@ -166,6 +166,16 @@ pub enum Warning {
         /// Its length.
         ms: u32,
     },
+    /// During a palette shift or an idle shimmer, a token comes closer to
+    /// the background than [`CONTRAST_FLOOR`] for a moment (a shift between
+    /// palettes of opposite polarity always does). The finished code is
+    /// unaffected.
+    MotionContrast {
+        /// The token.
+        token: Token,
+        /// The lowest OKLab lightness difference on the way.
+        delta_l: f32,
+    },
     /// More elements animate than [`ANIMATED_ELEMENTS`], which slows
     /// browsers. Use fewer stagger groups.
     ManyAnimatedElements {
@@ -218,6 +228,10 @@ impl fmt::Display for Warning {
             Warning::LongIntro { ms } => write!(
                 f,
                 "the intro runs {ms} ms; {LONG_INTRO_MS} ms or less lets people scan sooner"
+            ),
+            Warning::MotionContrast { token, delta_l } => write!(
+                f,
+                "{token} dips to contrast {delta_l:.2} while it animates; the code may not scan for that moment"
             ),
             Warning::ManyAnimatedElements { count } => write!(
                 f,
@@ -375,6 +389,14 @@ fn check_intro(
     errors: &mut Vec<RenderError>,
     warnings: &mut Vec<Warning>,
 ) {
+    if let Some(ms) = style.theme_transition {
+        in_range(errors, "Style.theme_transition", ms as f32, 0.0, 10_000.0);
+    }
+    for (token, delta_l) in crate::animate::motion_contrast(style, qr) {
+        if delta_l < CONTRAST_FLOOR {
+            warnings.push(Warning::MotionContrast { token, delta_l });
+        }
+    }
     let Some(intro) = &style.intro else {
         return;
     };

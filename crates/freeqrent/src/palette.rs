@@ -624,6 +624,25 @@ impl Palette {
             .filter_map(|t| self.get(t).map(|p| (t, p)))
     }
 
+    /// The explicitly set solid tokens as CSS custom properties, e.g.
+    /// `--qr-bg:#fefcf8;--qr-fg:#17161c`, to re-theme an inline code from
+    /// script (`svg.style.cssText = vars`). Values are opaque because the
+    /// document keeps alpha in `fill-opacity`; gradients are left out.
+    pub fn to_css_vars(&self) -> String {
+        let mut out = String::new();
+        for (token, paint) in self.tokens() {
+            if let Paint::Solid(c) = paint {
+                if !out.is_empty() {
+                    out.push(';');
+                }
+                out.push_str(token.css_var());
+                out.push(':');
+                c.write_opaque(&mut out).expect("writing to a String");
+            }
+        }
+        out
+    }
+
     /// The background color.
     pub fn background(&self) -> Color {
         match self.get(Token::Bg) {
@@ -698,6 +717,20 @@ fn premultiplied(c: Color) -> [f64; 3] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn css_vars_list_solid_tokens() {
+        let p = super::Palette::from_tokens([
+            ("fg", "oklch(30% .1 265)"),
+            ("finder.eye", "rgb(200 0 0 / .5)"),
+            ("finder.outer", "linear-gradient(90deg, #000, #333)"),
+        ])
+        .unwrap();
+        assert_eq!(
+            p.to_css_vars(),
+            "--qr-bg:#fefcf8;--qr-fg:oklch(30% .1 265);--qr-finder-eye:#c80000"
+        );
+    }
+
     use super::*;
     use alloc::string::ToString;
 

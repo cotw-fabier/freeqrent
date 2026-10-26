@@ -200,6 +200,9 @@ impl Preset {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Intro {
     pub(crate) preset: Preset,
+    /// False for a palette shift alone.
+    pub(crate) entrance: bool,
+    pub(crate) palette_from: Option<Palette>,
     pub(crate) duration_ms: u32,
     pub(crate) delay_ms: u32,
     pub(crate) ease: Option<Ease>,
@@ -222,6 +225,8 @@ impl Intro {
     pub fn new(preset: Preset) -> Intro {
         Intro {
             preset,
+            entrance: true,
+            palette_from: None,
             duration_ms: 1200,
             delay_ms: 0,
             ease: None,
@@ -229,6 +234,20 @@ impl Intro {
             groups: 12,
             trigger: Trigger::Load,
             logo_reveal: true,
+        }
+    }
+
+    /// A palette shift (SPEC §6.5): every solid token cross-fades from its
+    /// value in `old` to the style's, in OKLab, over 600 ms with ease-out
+    /// quart; the code itself doesn't move. Tokens painted with a gradient
+    /// or a different alpha in either palette switch at once. Under
+    /// reduced motion the swap is instant.
+    pub fn palette_from(old: &Palette) -> Intro {
+        Intro {
+            entrance: false,
+            palette_from: Some(old.clone()),
+            duration_ms: 600,
+            ..Intro::new(Preset::Settle)
         }
     }
 
@@ -277,9 +296,14 @@ impl Intro {
         self
     }
 
-    /// The preset.
-    pub fn preset(&self) -> Preset {
-        self.preset
+    /// The entrance preset, or `None` for a palette shift.
+    pub fn entrance(&self) -> Option<Preset> {
+        self.entrance.then_some(self.preset)
+    }
+
+    /// The palette a palette shift starts from.
+    pub fn palette_shift(&self) -> Option<&Palette> {
+        self.palette_from.as_ref()
     }
 
     /// The whole length, in milliseconds.
@@ -310,6 +334,34 @@ impl Intro {
             Preset::Raster => StaggerOrder::Linear,
             Preset::Settle | Preset::LockOn | Preset::Assemble => StaggerOrder::Random(0),
         })
+    }
+}
+
+/// Idle loops (SPEC §8.3): opt-in, endless, starting when the intro ends,
+/// and off under reduced motion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Idle {
+    /// The finder eyes swell to 106% and back every 4 s.
+    FinderPulse,
+    /// A faint highlight band crosses the code every 6 s.
+    Shimmer,
+    /// The background's lightness drifts 2% away from the ink and back
+    /// every 8 s, so contrast only ever grows.
+    Breathe,
+}
+
+impl Idle {
+    /// Every idle loop.
+    pub const ALL: [Idle; 3] = [Idle::FinderPulse, Idle::Shimmer, Idle::Breathe];
+
+    /// The loop's lowercase name, as the CLI spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Idle::FinderPulse => "finder-pulse",
+            Idle::Shimmer => "shimmer",
+            Idle::Breathe => "breathe",
+        }
     }
 }
 
@@ -694,7 +746,7 @@ pub(crate) fn element_count(style: &Style, qr: &QrMatrix) -> usize {
     let Some(intro) = &style.intro else {
         return 0;
     };
-    if intro.preset.is_reveal() {
+    if intro.entrance().is_none_or(|p| p.is_reveal()) {
         return 1 + style.logo.is_some() as usize;
     }
     let canvas = scene::canvas(style, qr);
@@ -850,6 +902,9 @@ fn scatter(seed: u64, group: u8) -> (f32, f32) {
 
 /// The tracks of `intro` for `elements`.
 fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<Track> {
+    let Some(preset) = intro.entrance() else {
+        return Vec::new();
+    };
     let total = intro.duration_ms as f64;
     let reveal_logo = intro.logo_reveal && style.logo.is_some();
     let logo_ms = if reveal_logo {
@@ -879,7 +934,7 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
     };
 
     let mut tracks = Vec::new();
-    if intro.preset.is_reveal() {
+    if preset.is_reveal() {
         tracks.push(track(
             Target::Reveal,
             0.0,
@@ -889,7 +944,7 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
     }
     // LockOn's finders take the first stretch; the rest settles after.
     let finder_ms = (total * 0.4).min(500.0);
-    let (start, span) = match intro.preset {
+    let (start, span) = match preset {
         Preset::LockOn => (finder_ms * 0.6, window - finder_ms * 0.6),
         _ => (0.0, window),
     };
@@ -901,8 +956,8 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
                 tracks.push(track(target, total - logo_ms, logo_ms, fade_scale(0.94)))
             }
             LayerRole::Logo => {}
-            _ if intro.preset.is_reveal() => {}
-            LayerRole::FinderOuter | LayerRole::FinderEye if intro.preset == Preset::LockOn => {
+            _ if preset.is_reveal() => {}
+            LayerRole::FinderOuter | LayerRole::FinderEye if preset == Preset::LockOn => {
                 let corner = scene::CORNERS
                     .iter()
                     .position(|&c| Some(c) == e.corner)
@@ -921,7 +976,7 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
             _ => {
                 let g = e.group.unwrap_or(0);
                 let (at, length) = stagger(start, span, k, g as f64);
-                let keys = match intro.preset {
+                let keys = match preset {
                     Preset::Ripple => fade_scale(0.8),
                     Preset::Assemble => {
                         let (dx, dy) = scatter(seed, g);
@@ -943,9 +998,7 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
 /// The reveal mask of a wiping preset over `elements`: everything but the
 /// background, and the logo when it has its own reveal.
 fn reveal(style: &Style, intro: &Intro, canvas: &Canvas, elements: &[Element]) -> Option<Reveal> {
-    if !intro.preset.is_reveal() {
-        return None;
-    }
+    let preset = intro.entrance().filter(|p| p.is_reveal())?;
     let s = canvas.side as f32;
     let first = elements
         .iter()
@@ -964,7 +1017,7 @@ fn reveal(style: &Style, intro: &Intro, canvas: &Canvas, elements: &[Element]) -
             ..
         }
     );
-    let (shape, feather) = match intro.preset {
+    let (shape, feather) = match preset {
         Preset::Sweep => (
             RevealShape::Wipe {
                 from: (0.0, 0.0),
@@ -994,6 +1047,225 @@ fn reveal(style: &Style, intro: &Intro, canvas: &Canvas, elements: &[Element]) -
     })
 }
 
+/// The palette fade's keyframe colors: OKLab interpolation sampled at
+/// evenly spaced times through `ease`, so a linear track between them
+/// follows the curve. The end is left out (the element's own value).
+fn fade_stops(old: Color, new: Color, ease: CubicBezier) -> Vec<(f32, Color)> {
+    let (a, b) = (old.to_oklab(), new.to_oklab());
+    (0..FADE_STOPS)
+        .map(|i| {
+            let t = i as f64 / FADE_STOPS as f64;
+            let e = ease.at(t);
+            let mix = |j: usize| a[j] as f64 + (b[j] as f64 - a[j] as f64) * e;
+            (
+                t as f32,
+                Color::from_oklab(mix(0), mix(1), mix(2)).opaque_srgb(),
+            )
+        })
+        .collect()
+}
+
+/// Keyframes per palette fade.
+const FADE_STOPS: usize = 8;
+
+/// A token's solid color in `palette`, if it resolves to one.
+fn solid(palette: &Palette, token: Token) -> Option<Color> {
+    match palette.resolve(token) {
+        crate::Paint::Solid(c) => Some(c),
+        crate::Paint::Gradient(_) => None,
+    }
+}
+
+/// The cross-fades of a palette shift: one linear track per element whose
+/// token changes between two solid colors of the same alpha.
+fn palette_tracks(style: &Style, intro: &Intro, elements: &[Element]) -> Vec<Track> {
+    let Some(old) = &intro.palette_from else {
+        return Vec::new();
+    };
+    let backdrop = style.logo.as_ref().is_some_and(|l| l.backdrop);
+    let ease = intro.curve();
+    let mut tracks = Vec::new();
+    for (i, e) in elements.iter().enumerate() {
+        if e.role == LayerRole::Shimmer || (e.role == LayerRole::Logo && !backdrop) {
+            continue;
+        }
+        let (Some(a), Some(b)) = (solid(old, e.token), solid(&style.palette, e.token)) else {
+            continue;
+        };
+        if a.alpha() != b.alpha() || a.opaque_srgb() == b.opaque_srgb() {
+            continue;
+        }
+        tracks.push(Track {
+            target: Target::Layer(i),
+            delay_ms: intro.delay_ms,
+            duration_ms: intro.duration_ms,
+            ease: CubicBezier::LINEAR,
+            iterations: Some(1),
+            keys: fade_stops(a, b, ease)
+                .into_iter()
+                .map(|(offset, c)| Keyframe {
+                    offset,
+                    property: Property::Fill,
+                    value: Value::Color(c),
+                })
+                .collect(),
+        });
+    }
+    tracks
+}
+
+/// Loops are symmetric, not entrances: ease-in-out sine.
+const LOOP_EASE: CubicBezier = CubicBezier::new(0.37, 0.0, 0.63, 1.0);
+/// The shimmer band's width, as a share of the canvas.
+const SHIMMER_BAND: f64 = 0.6;
+/// The shimmer band's peak opacity.
+pub(crate) const SHIMMER_ALPHA: f64 = 0.18;
+/// How far Breathe moves the background's lightness.
+const BREATHE_L: f64 = 0.02;
+
+/// Breathe's far point: the background 2% lighter (or darker, under
+/// light ink) in OKLab lightness.
+pub(crate) fn breathe_color(style: &Style) -> Option<Color> {
+    let bg = solid(&style.palette, Token::Bg)?;
+    let [l, a, b] = bg.to_oklab();
+    let away = if style.palette.contrast(Token::Fg).inverted {
+        -BREATHE_L
+    } else {
+        BREATHE_L
+    };
+    let far =
+        Color::from_oklab((l as f64 + away).clamp(0.0, 1.0), a as f64, b as f64).opaque_srgb();
+    (far != bg.opaque_srgb()).then_some(far)
+}
+
+/// The idle loops, starting at `start` ms.
+fn idle_tracks(style: &Style, canvas: &Canvas, start: u32, elements: &[Element]) -> Vec<Track> {
+    let mut tracks = Vec::new();
+    let endless = |target, ms, ease, keys| Track {
+        target,
+        delay_ms: start,
+        duration_ms: ms,
+        ease,
+        iterations: None,
+        keys,
+    };
+    for (i, e) in elements.iter().enumerate() {
+        let target = Target::Layer(i);
+        match e.role {
+            LayerRole::FinderEye if style.idle.contains(&Idle::FinderPulse) => {
+                tracks.push(endless(
+                    target,
+                    4000,
+                    LOOP_EASE,
+                    alloc::vec![
+                        number(Property::Scale, 0.075, 1.06),
+                        number(Property::Scale, 0.15, 1.0),
+                    ],
+                ));
+            }
+            LayerRole::Background if style.idle.contains(&Idle::Breathe) => {
+                if let Some(far) = breathe_color(style) {
+                    tracks.push(endless(
+                        target,
+                        8000,
+                        LOOP_EASE,
+                        alloc::vec![Keyframe {
+                            offset: 0.5,
+                            property: Property::Fill,
+                            value: Value::Color(far),
+                        }],
+                    ));
+                }
+            }
+            LayerRole::Shimmer => {
+                // Across in the first quarter, then home unseen.
+                let across = (canvas.side as f64 * (1.0 + SHIMMER_BAND)) as f32;
+                tracks.push(endless(
+                    target,
+                    6000,
+                    CubicBezier::LINEAR,
+                    alloc::vec![
+                        number(Property::TranslateX, 0.25, across),
+                        number(Property::Opacity, 0.25, 1.0),
+                        number(Property::Opacity, 0.26, 0.0),
+                        number(Property::Opacity, 0.99, 0.0),
+                    ],
+                ));
+            }
+            _ => {}
+        }
+    }
+    tracks
+}
+
+/// The lowest contrast each read token reaches while it animates: along
+/// a palette shift (sampled the way browsers interpolate between the
+/// keyframes) and under the shimmer band. Tokens that don't move aren't
+/// listed.
+pub(crate) fn motion_contrast(style: &Style, qr: &QrMatrix) -> Vec<(Token, f32)> {
+    let l = |c: [f64; 3]| crate::color::srgb_to_oklab(c)[0];
+    let read: Vec<Token> = {
+        let mut t: Vec<Token> = scene::layers(style, qr)
+            .iter()
+            .map(|l| l.token)
+            .filter(|t| !matches!(t, Token::Filler | Token::Frame))
+            .collect();
+        t.dedup();
+        t
+    };
+    let mut out: Vec<(Token, f32)> = Vec::new();
+    let mut note = |token: Token, d: f64| match out.iter_mut().find(|(t, _)| *t == token) {
+        Some((_, v)) => *v = v.min(d as f32),
+        None => out.push((token, d as f32)),
+    };
+    let new = &style.palette;
+    if let Some(intro) = style.intro.as_ref()
+        && let Some(old) = &intro.palette_from
+    {
+        // Each token's color at time t, as the keyframes play it.
+        let at = |token: Token, t: f64| -> Option<[f64; 3]> {
+            let (a, b) = (solid(old, token)?, solid(new, token)?);
+            if a.alpha() != b.alpha() {
+                return Some(b.to_srgb());
+            }
+            let mut stops = fade_stops(a, b, intro.curve());
+            stops.push((1.0, b.opaque_srgb()));
+            let i = stops
+                .windows(2)
+                .position(|w| t <= w[1].0 as f64)
+                .unwrap_or(stops.len() - 2);
+            let ((o0, c0), (o1, c1)) = (stops[i], stops[i + 1]);
+            let e = (t - o0 as f64) / (o1 - o0) as f64;
+            let (c0, c1) = (c0.to_srgb(), c1.to_srgb());
+            Some([0, 1, 2].map(|j| c0[j] + (c1[j] - c0[j]) * e))
+        };
+        for &token in &read {
+            if solid(old, token) == solid(new, token)
+                && solid(old, Token::Bg) == solid(new, Token::Bg)
+            {
+                continue;
+            }
+            for k in 0..=96 {
+                let t = k as f64 / 96.0;
+                if let (Some(c), Some(bg)) = (at(token, t), at(Token::Bg, t)) {
+                    note(token, (l(bg) - l(c)).abs());
+                }
+            }
+        }
+    }
+    if style.idle.contains(&Idle::Shimmer) {
+        let lift = |c: [f64; 3]| c.map(|v| v + (1.0 - v) * SHIMMER_ALPHA);
+        if let Some(bg) = solid(new, Token::Bg) {
+            for &token in &read {
+                if let Some(c) = solid(new, token) {
+                    note(token, (l(lift(bg.to_srgb())) - l(lift(c.to_srgb()))).abs());
+                }
+            }
+        }
+    }
+    out
+}
+
 /// The animated layout of `style`, or `None` when it doesn't animate. With
 /// `at`, each element gets its pose at that time instead of a class.
 pub(crate) fn build(
@@ -1002,31 +1274,56 @@ pub(crate) fn build(
     canvas: &Canvas,
     at: Option<u32>,
 ) -> Option<(Vec<Element>, Motion)> {
-    let intro = style.intro.as_ref()?;
-    // A reveal moves one mask, so the layers stay whole.
-    let mut elements = if intro.preset.is_reveal() {
-        svg::static_elements(style, qr, canvas)
-    } else {
-        split(style, qr, canvas, intro)
+    if style.intro.is_none() && style.idle.is_empty() {
+        return None;
+    }
+    let intro = style.intro.as_ref();
+    let entrance = intro.and_then(Intro::entrance);
+    let mut elements = match (intro, entrance) {
+        // A reveal moves one mask, so the layers stay whole.
+        (Some(_), Some(p)) if p.is_reveal() => svg::static_elements(style, qr, canvas),
+        (Some(intro), Some(_)) => split(style, qr, canvas, intro),
+        // Pulsing eyes need a finder per element.
+        _ if style.idle.contains(&Idle::FinderPulse) => {
+            split(style, qr, canvas, &Intro::new(Preset::Settle).groups(1))
+        }
+        _ => svg::static_elements(style, qr, canvas),
     };
-    if intro.preset == Preset::Ripple {
+    if entrance == Some(Preset::Ripple) {
         let mid = canvas.side as f64 / 2.0;
         for e in elements.iter_mut().filter(|e| e.role != LayerRole::Logo) {
             e.origin = (mid, mid);
         }
     }
-    let tracks = tracks(style, intro, scene::seed(style, qr), &elements);
+    if style.idle.contains(&Idle::Shimmer) {
+        let side = canvas.side * crate::geometry::UNIT;
+        let band = (side as f64 * SHIMMER_BAND) as i64;
+        let mut path = Path::new();
+        path.rect(-band, 0, band, side);
+        elements.push(Element::new(LayerRole::Shimmer, Token::Bg, false, path));
+    }
+    let mut tracks = Vec::new();
+    if let Some(intro) = intro {
+        tracks.extend(self::tracks(
+            style,
+            intro,
+            scene::seed(style, qr),
+            &elements,
+        ));
+        tracks.extend(palette_tracks(style, intro, &elements));
+    }
     let total_ms = tracks
         .iter()
         .filter_map(|t| Some(t.delay_ms + t.duration_ms * t.iterations?))
         .max()
         .unwrap_or(0);
+    tracks.extend(idle_tracks(style, canvas, total_ms, &elements));
     let motion = Motion {
         origins: elements.iter().map(|e| e.origin).collect(),
-        reveal: reveal(style, intro, canvas, &elements),
+        reveal: intro.and_then(|i| reveal(style, i, canvas, &elements)),
         tracks,
         total_ms,
-        trigger: intro.trigger.clone(),
+        trigger: intro.map_or(Trigger::Load, |i| i.trigger.clone()),
         at,
     };
     for (i, e) in elements.iter_mut().enumerate() {
@@ -1036,7 +1333,8 @@ pub(crate) fn build(
             .filter(|t| t.target == Target::Layer(i));
         match at {
             Some(t) => {
-                let pose = pose(mine, t);
+                let natural = solid(&style.palette, e.token);
+                let pose = pose(mine, natural, t);
                 e.pose = (pose != Pose::NATURAL).then_some(pose);
             }
             None => {
@@ -1051,37 +1349,28 @@ pub(crate) fn build(
 
 // ----------------------------------------------------------- evaluation
 
-/// The value of `property` on `track` at `t` ms, if the track touches it.
-fn sample(track: &Track, property: Property, natural: f64, t: u32) -> Option<f64> {
+/// Where `track` is at `t` ms, 0–1 within its iteration, or `None` when
+/// it doesn't touch its target then.
+fn progress(track: &Track, t: u32) -> Option<f64> {
     let dur = track.duration_ms.max(1) as f64;
     let local = t as f64 - track.delay_ms as f64;
-    let p = match track.iterations {
-        Some(n) => {
-            if local >= dur * n as f64 {
-                return None;
-            }
-            if local < 0.0 {
-                0.0
-            } else {
-                (local % dur) / dur
-            }
-        }
-        None => {
-            if local < 0.0 {
-                return None;
-            }
-            (local % dur) / dur
-        }
-    };
-    let mut keys: Vec<(f64, f64)> = track
-        .keys
-        .iter()
-        .filter(|k| k.property == property)
-        .filter_map(|k| match k.value {
-            Value::Number(v) => Some((k.offset as f64, v as f64)),
-            Value::Color(_) => None,
-        })
-        .collect();
+    match track.iterations {
+        Some(n) if local >= dur * n as f64 => None,
+        Some(_) if local < 0.0 => Some(0.0),
+        None if local < 0.0 => None,
+        _ => Some((local % dur) / dur),
+    }
+}
+
+/// The keyframes of `property` with the natural value filled in at 0 and
+/// 1, and where in them progress `p` falls: the pair and the eased share
+/// between them.
+fn segment<T: Copy>(
+    track: &Track,
+    mut keys: Vec<(f64, T)>,
+    natural: T,
+    p: f64,
+) -> Option<(T, T, f64)> {
     if keys.is_empty() {
         return None;
     }
@@ -1097,13 +1386,46 @@ fn sample(track: &Track, property: Property, natural: f64, t: u32) -> Option<f64
         .unwrap_or(keys.len() - 2);
     let ((o0, v0), (o1, v1)) = (keys[i], keys[i + 1]);
     let local = if o1 > o0 { (p - o0) / (o1 - o0) } else { 1.0 };
-    let e = track.ease.at(local);
-    Some(v0 + (v1 - v0) * e)
+    Some((v0, v1, track.ease.at(local)))
+}
+
+/// The value of `property` on `track` at `t` ms, if the track touches it.
+fn sample(track: &Track, property: Property, natural: f64, t: u32) -> Option<f64> {
+    let p = progress(track, t)?;
+    let keys = track
+        .keys
+        .iter()
+        .filter(|k| k.property == property)
+        .filter_map(|k| match k.value {
+            Value::Number(v) => Some((k.offset as f64, v as f64)),
+            Value::Color(_) => None,
+        })
+        .collect();
+    let (a, b, e) = segment(track, keys, natural, p)?;
+    Some(a + (b - a) * e)
+}
+
+/// The fill on `track` at `t` ms. Browsers interpolate hex colors in
+/// gamma-encoded sRGB, and so does this.
+fn sample_fill(track: &Track, natural: Color, t: u32) -> Option<Color> {
+    let p = progress(track, t)?;
+    let keys = track
+        .keys
+        .iter()
+        .filter_map(|k| match k.value {
+            Value::Color(c) if k.property == Property::Fill => Some((k.offset as f64, c)),
+            _ => None,
+        })
+        .collect();
+    let (a, b, e) = segment(track, keys, natural, p)?;
+    let (a, b) = (a.to_srgb8(), b.to_srgb8());
+    let mix = |i: usize| math::round(a[i] as f64 + (b[i] as f64 - a[i] as f64) * e) as u8;
+    Some(Color::srgb(mix(0), mix(1), mix(2)).with_alpha(natural.alpha()))
 }
 
 /// An element's pose at `t` from its tracks; later tracks win, as in a
 /// CSS animation list.
-fn pose<'a>(tracks: impl Iterator<Item = &'a Track>, t: u32) -> Pose {
+fn pose<'a>(tracks: impl Iterator<Item = &'a Track>, fill: Option<Color>, t: u32) -> Pose {
     let mut pose = Pose::NATURAL;
     for track in tracks {
         if let Some(v) = sample(track, Property::Opacity, 1.0, t) {
@@ -1117,6 +1439,10 @@ fn pose<'a>(tracks: impl Iterator<Item = &'a Track>, t: u32) -> Pose {
         }
         if let Some(v) = sample(track, Property::TranslateY, 0.0, t) {
             pose.translate.1 = v;
+        }
+        if let Some(c) = fill.and_then(|natural| sample_fill(track, natural, t)) {
+            // At the natural color, the token's own paint stays.
+            pose.fill = (Some(c.opaque_srgb()) != fill.map(Color::opaque_srgb)).then_some(c);
         }
     }
     pose
@@ -1616,6 +1942,7 @@ fn role_name(role: LayerRole) -> &'static str {
         LayerRole::FinderOuter => "finder-outer",
         LayerRole::FinderEye => "finder-eye",
         LayerRole::Logo => "logo",
+        LayerRole::Shimmer => "shimmer",
     }
 }
 
@@ -1942,6 +2269,89 @@ mod tests {
             assert_eq!(scatter(7, g), (dx, dy));
         }
         assert_ne!(scatter(7, 0), scatter(8, 0));
+    }
+
+    #[test]
+    fn palette_shifts_fade_fills_and_end_on_the_tokens() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
+        let old = Palette::from_tokens([("fg", "#7a1f10")]).unwrap();
+        let style = Style::new().intro(Intro::palette_from(&old));
+        let svg = style.render(&qr).unwrap();
+        let css = &svg[..svg.find("</style>").unwrap()];
+        assert!(css.contains("{0%{fill:#7a1f10}12.5%{fill:"));
+        assert!(!css.contains("100%"));
+        // bg didn't change, so it has no track; fg and the fg-colored
+        // finders and timing fade.
+        let plan = style.plan(&qr).unwrap();
+        assert!(plan.tracks.iter().all(|t| {
+            plan.layers[match t.target {
+                Target::Layer(i) => i,
+                Target::Reveal => unreachable!(),
+            }]
+            .token
+                != Token::Bg
+        }));
+        assert_eq!(plan.total_ms, 600);
+        let mid = style.render_frame(&qr, 300).unwrap();
+        assert!(!mid.contains("fill=\"#17161c\"") && !mid.contains("fill=\"#7a1f10\""));
+        assert_eq!(
+            style
+                .render_frame(&qr, 600)
+                .unwrap()
+                .matches("fill=\"#17161c\"")
+                .count(),
+            Style::new()
+                .render(&qr)
+                .unwrap()
+                .matches("fill=\"#17161c\"")
+                .count()
+        );
+    }
+
+    #[test]
+    fn theme_transitions_are_opt_in_and_respect_reduced_motion() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
+        let svg = Style::new().theme_transition(400).render(&qr).unwrap();
+        assert!(svg.contains(";transition:fill 400ms cubic-bezier(.25,1,.5,1)}"));
+        assert!(svg.contains("{transition:none}}"));
+        assert!(!Style::new().render(&qr).unwrap().contains("transition"));
+    }
+
+    #[test]
+    fn breathe_moves_away_from_the_ink() {
+        let light = Style::new().palette(Palette::from_tokens([("bg", "#e8e4dc")]).unwrap());
+        let far = breathe_color(&light).unwrap();
+        assert!(far.to_oklab()[0] > Color::srgb(0xe8, 0xe4, 0xdc).to_oklab()[0]);
+        let dark = Style::new()
+            .allow_inverted(true)
+            .palette(Palette::from_tokens([("bg", "#202024"), ("fg", "#f0f0f0")]).unwrap());
+        let far = breathe_color(&dark).unwrap();
+        assert!(far.to_oklab()[0] < Color::srgb(0x20, 0x20, 0x24).to_oklab()[0]);
+        // Already white: nothing to breathe.
+        let white = Style::new().palette(Palette::from_tokens([("bg", "#fff")]).unwrap());
+        assert_eq!(breathe_color(&white), None);
+    }
+
+    #[test]
+    fn idle_loops_are_endless_and_start_after_the_intro() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
+        let style = Style::new()
+            .intro(Preset::Settle)
+            .idle(Idle::FinderPulse)
+            .idle(Idle::Shimmer);
+        let plan = style.plan(&qr).unwrap();
+        let loops: Vec<&Track> = plan
+            .tracks
+            .iter()
+            .filter(|t| t.iterations.is_none())
+            .collect();
+        assert_eq!(loops.len(), 4, "three eyes and the band");
+        assert!(loops.iter().all(|t| t.delay_ms == plan.total_ms));
+        let svg = style.render(&qr).unwrap();
+        assert!(svg.contains(" infinite"));
+        assert!(!svg.contains(" infinite backwards"));
+        // The band rests left of the canvas.
+        assert!(svg.contains("fill=\"url(#") && svg.contains("d=\"m-17.4 0h17.4v29h-17.4z\""));
     }
 
     #[test]

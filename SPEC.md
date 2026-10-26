@@ -235,9 +235,11 @@ Paint is written at two levels, because renderers disagree about CSS:
 
 ### 6.5 Animated palette change
 
-- `Intro::palette_from(old: &Palette)` emits keyframes that cross-fade each token from its old value to the new one (default 600 ms, ease-out-quart).
-- **Runtime re-theme:** every painted element has `transition: fill 600ms var(--qr-ease)`, so a host page that changes `--qr-fg` on an inline SVG gets a smooth transition for free. The library also exports `palette.to_css_vars()` to make this a one-liner in JS.
-- Each intermediate color must also pass the contrast floor. The library interpolates in OKLab and checks sampled midpoints. If the path dips below the floor, it routes through a darker midpoint so the code stays scannable during the transition.
+*(rev. W20261025235601)*
+
+- `Intro::palette_from(old: &Palette)` cross-fades every solid token from its value in `old` to the style's. The default is 600 ms, ease-out quart. Tokens that use a gradient, or a different alpha, in either palette switch at once. Each fade is eight keyframes sampled in OKLab at evenly spaced times through the curve, played linearly. Browsers interpolate hex between neighboring keyframes in sRGB, so the path stays close to OKLab. Under reduced motion the swap is instant.
+- **Runtime re-theme** is opt-in: `Style::theme_transition(ms)` gives every solid token rule `transition: fill {ms}ms` (ease-out quart). A host page that changes `--qr-fg` on an inline code then gets a smooth change, and reduced motion turns it off. It is opt-in so static output stays the same for everyone else. `palette.to_css_vars()` gives the set tokens as `--qr-bg:#…;--qr-fg:…` for that one-liner in JS (opaque values; the document keeps alpha in `fill-opacity`).
+- **Contrast during the fade.** All tokens share one curve and move linearly in OKLab, so each token's lightness difference from `bg` is a linear blend of its two endpoint values. Two palettes that pass therefore pass at every moment. Measured: four payloads (v1–v25) decoded at every 25 ms frame of a same-polarity shift. `Style::check` samples the path the way browsers play it and raises `Warning::MotionContrast` if a token ever dips below the floor. That always happens between palettes of opposite polarity, which no path can cross while keeping contrast. The draft's "route through a darker midpoint" was dropped: with linear OKLab lightness it is never needed for same-polarity palettes, and it can't help opposite ones.
 
 ---
 
@@ -416,7 +418,7 @@ The **un-animated document state is the finished, scannable code.** Keyframes an
 | `Raster` | A crisp mask wipe (half-module edge) from top to bottom, or left to right for vertical Bars, like a printer head | quart | Bars, Square |
 | `Iris` | A soft-edged circular mask opens from the center | expo | Round frame |
 | `Assemble` | Groups converge from a seeded offset of 1.5–3 modules | expo / random | Dots, Square |
-| `Develop` | For halftone: the image fades in at low contrast, then contrast resolves to full QR bands, like a photo developing | | Halftone only (lands with halftone in M4) |
+| `Develop` | For halftone: the image fades in at low contrast, then contrast resolves to full QR bands, like a photo developing | | Halftone only (lands with halftone in M5) |
 | `LogoReveal` | `Intro::logo_reveal` (default on): the logo scales 0.94 → 1 with a fade in the last 400 ms, while the modules finish | | Any with logo |
 
 `LockOn` scales the rings instead of drawing them on with `stroke-dashoffset`. Our rings are filled shapes, and a stroke or mask that draws them on would have to cover every ring shape exactly to keep the static state intact. A closing reticle reads as "locking on" using `transform` alone. The reveal presets mask everything but the background, and the logo too unless it has its own reveal. The stylesheet applies the mask (`mask:url(#…)` in the `@supports` block), so renderers that skip the block draw the code unmasked, and the mask's own natural state covers the canvas anyway. Measured time to scannable (ZXing, 6 px/module, v1–v25, 1200 ms): Settle 600–800 ms, Ripple 600–900, LockOn 700–850, Sweep 300, Raster 450–700, Iris 200–350, Assemble 650–750.
@@ -432,15 +434,17 @@ The **un-animated document state is the finished, scannable code.** Keyframes an
 | `Glitch` | 2–3 quick horizontal offset slices, then lock (very short, opt-in) |
 | `Typeset` | For multi-code strips: codes reveal left to right one after another |
 
-**Idle loops (opt-in, off by default):**
+**Idle loops (opt-in, off by default):** `Style::idle(Idle::…)`. These loops are endless, start when the intro ends (or at load), use `animation-fill-mode: none`, and stop under reduced motion. They are symmetric rather than entrances, so they ease in and out with a sine curve (`cubic-bezier(.37,0,.63,1)`) instead of the ease-out rule. *(rev. W20261025235601)*
 
-- `FinderPulse`: the finder eye scales 1 → 1.06 → 1 every 4 s
-- `Shimmer`: a low-opacity highlight band sweeps across every 6 s
-- `Breathe`: `bg` lightness drifts ±2% in OKLCH (contrast-checked)
+- `FinderPulse`: each finder eye scales 1 → 1.06 → 1 in the first 600 ms of every 4 s.
+- `Shimmer`: a white band (18% at its peak) crosses the canvas in the first 1.5 s of every 6 s, then returns invisibly. At rest it is parked outside the viewBox. `check` composites it over every read token and warns with `MotionContrast` if a token would dip below the floor.
+- `Breathe`: `bg` lightness drifts 2% in OKLab *away from the ink* and back every 8 s, so contrast only ever grows. The draft's "±2%" could have lowered it.
 
-**Transitions:** `PaletteShift` (§6.5) and `Morph` (v2, cross-fade between two shape styles of the same code).
+Measured: every 100 ms through 8 s of each loop after a Settle intro, three payloads (v5–v25) decoded on every frame.
 
-All presets take `.duration_ms()`, `.delay_ms()`, `.ease(Ease::Quart|Quint|Expo|Custom(..))`, `.stagger(StaggerOrder::Radial|Linear|Diagonal|Random(seed)|Polar)`, and `.trigger(Trigger::Load|Hover|Class("is-visible"))`. The `Class` trigger lets host pages start the intro on scroll-into-view without the SVG containing JS.
+**Transitions:** `Intro::palette_from` (§6.5) and `Morph` (v2, cross-fade between two shape styles of the same code).
+
+All intros take `.duration_ms()` (the whole intro), `.delay_ms()`, `.ease(Ease::Quart|Quint|Expo|Custom(..))`, `.stagger(StaggerOrder::Radial|Linear|Diagonal|Random(seed)|Polar)`, `.groups(2..=16)`, `.logo_reveal(bool)`, and `.trigger(Trigger::Load|Hover|Class("is-visible"))`. Without `ease` or `stagger`, each preset uses its own. The `Class` trigger lets host pages start the intro on scroll-into-view without the SVG containing JS.
 
 ### 8.4 Implementation strategy
 
@@ -596,7 +600,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 | **M0: Encoder** | Versions 1–40, all ECC, auto segmentation, masks, `QrMatrix` + roles, version pinning. Verified against `rqrr`, the ISO 18004 worked examples, and module-for-module against `qrcodegen`. Fuzzing (`cargo fuzz`) on inputs. **Done 2026-10-25.** |
 | **M1: Static styles** | SVG writer, Square/Rounded/Dots/Bars, finder/alignment/timing styles, tokens + contrast checks, quiet zone, `Style::check`, CLI for previewing. Verified with resvg + ZXing (`rxing`) + rqrr. **Done 2026-10-25.** |
 | **M2: Liquid + logo + round** | Contour-traced Liquid, logo excavation with ECC budget, circle frame with filler. **Done 2026-10-25.** |
-| **M3: Animation** | `AnimationPlan`, grouping engine, core intro presets, reduced motion, static-fallback tests, palette transitions. |
+| **M3: Animation** | `AnimationPlan`, grouping engine, core intro presets, reduced motion, static-fallback tests, palette transitions. **Done 2026-10-26** (`Develop` moves to M5 with halftone). |
 | **M4: Palettes** | OKLab k-means extraction, CSS/HTML parsing, `freeqrent-image`. |
 | **M5: Halftone + art mode** | Free-bit solver, module steering, 3×3 halftone, clarity map, tracking grids, `Develop` intro, real-device scan matrix. |
 | **M6: Core 1.0** | API review, docs, preset gallery, `freeqrent` 1.0 on crates.io. |

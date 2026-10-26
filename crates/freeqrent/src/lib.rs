@@ -53,7 +53,7 @@ mod version;
 
 #[cfg(feature = "animate")]
 pub use animate::{
-    AnimationPlan, CubicBezier, Ease, Fallback, Intro, Keyframe, PlanLayer, Preset, Property,
+    AnimationPlan, CubicBezier, Ease, Fallback, Idle, Intro, Keyframe, PlanLayer, Preset, Property,
     Reveal, RevealShape, StaggerOrder, Target, Track, Trigger, Value,
 };
 pub use check::{

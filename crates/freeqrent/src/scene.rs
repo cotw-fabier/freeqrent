@@ -164,6 +164,10 @@ pub enum LayerRole {
     FinderEye,
     /// The logo; its path is the plate.
     Logo,
+    /// The shimmer band ([`Idle::Shimmer`](crate::Idle::Shimmer)): a
+    /// white band fading in and out across its width at 18% opacity at
+    /// most, parked left of the canvas.
+    Shimmer,
 }
 
 /// What a layer draws.

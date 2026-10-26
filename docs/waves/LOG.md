@@ -2,10 +2,20 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## M3 complete · 2026-10-26
+
+Animation done: intros as data (`AnimationPlan`, `to_json`, `render_frame`), CSS keyframes in the `@supports` block that end on the finished code, a grouping engine of whole pieces that keeps the static state pixel-identical, seven presets plus the logo reveal, triggers, reduced motion, palette shifts and theme transitions, and three idle loops. `Develop` moves to M5 with halftone. Waves 20261025233019, 20261025234738, 20261025235601.
+
+## 20261025235601 · M3 · Palette transitions and idle loops
+
+- Landed: `Intro::palette_from(&old)` (an 8-stop OKLab fade per changed solid token, linear between the stops, 600 ms quart), `Style::theme_transition(ms)` (opt-in `transition: fill`, off under reduced motion), `Palette::to_css_vars()`, `Style::idle` with `Idle::{FinderPulse, Shimmer, Breathe}` (endless, fill-mode none, start at the intro's end, sine ease), `LayerRole::Shimmer`, `Warning::MotionContrast`, and fill evaluation in frames (sRGB between the stops, as browsers do). CLI `--from-token`/`--from-fg`/`--from-bg`, `--idle`, `--theme-transition`. Gallery: 21 families, all decode.
+- Decisions: linear OKLab lightness keeps contrast between the endpoints' values, so the draft's darker-midpoint routing was dropped. Opposite-polarity shifts warn instead, since nothing can cross them while keeping contrast. Breathe drifts only away from the ink. The theme transition is opt-in, so static output is unchanged. Tokens with a gradient or a different alpha swap at once (§6.5, §8.3 revised).
+- Checks: 5 new core unit tests (fade CSS and frames, theme transition, Breathe direction, idle timing and band rest position, CSS vars); `tests/intros.rs`: static state pixel-identical for a shift, a theme transition and each loop with and without Ripple; a same-polarity shift scans at every 25 ms frame (v1–v25) with no warnings; an opposite-polarity shift warns; 720 frames through each loop decode. The two intro snapshots changed in their prefix only (the hash now covers idle loops and transitions).
+
 ## 20261025234738 · M3 · The core intro presets
 
 - Landed: `Ripple` (center outward, from 80% about the code's center), `LockOn` (rings close in from 135%, eyes pop at 150 ms, then the rest settles), `Assemble` (seeded 1.5–3 module offsets), and the mask reveals `Sweep` (soft diagonal), `Raster` (crisp top-down, left-right for vertical bars) and `Iris` (soft circle). Plan gains `Target::{Layer, Reveal}`, `Reveal { shape, feather, layers }` and `Property::Reveal`. Each preset has its own default ease and stagger. CLI `--intro` takes every preset. Gallery: 19 families, all decode.
-- Decisions: the stylesheet applies the reveal mask (an attribute mask shifted resvg pixels by up to 2 levels even fully open), so the static state stays exact. LockOn scales its rings instead of the spec's dashoffset draw-on, which can't keep every ring shape exact (§8.3 revised). `Develop` waits for halftone (M4).
+- Decisions: the stylesheet applies the reveal mask (an attribute mask shifted resvg pixels by up to 2 levels even fully open), so the static state stays exact. LockOn scales its rings instead of the spec's dashoffset draw-on, which can't keep every ring shape exact (§8.3 revised). `Develop` waits for halftone (M5).
 - Checks: 3 new unit tests (reveals masked only through CSS, LockOn timeline, Assemble offsets); `tests/intros.rs`: 7 presets × 3 shapes × 2 frames × 2 versions plus logos, pixel-identical to the plain style and to the last frame; 7 presets × 5 shapes scan; time to scannable at 1200 ms, v1–v25: Settle 600–800, Ripple 600–900, LockOn 700–850, Sweep 300, Raster 450–700, Iris 200–350, Assemble 650–750 ms. New snapshot `sweep_reveal_with_logo`. Settle's snapshot changed in its prefix only (the intro's hash input gained the optional ease).
 
 ## 20261025233019 · M3 · AnimationPlan, grouping, Settle

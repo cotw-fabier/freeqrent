@@ -7,8 +7,8 @@ mod common;
 
 use common::{PAYLOADS, assert_scans};
 use freeqrent::{
-    Ecc, Frame, FrameRing, Intro, Logo, ModuleShape, Preset, QrCode, QrMatrix, StaggerOrder, Style,
-    Version,
+    Ecc, Frame, FrameRing, Idle, Intro, Logo, ModuleShape, Palette, Preset, QrCode, QrMatrix,
+    StaggerOrder, Style, Token, Version, Warning,
 };
 use freeqrent_verify::{Gray, rasterize, scannable_after};
 
@@ -159,6 +159,92 @@ fn intros_scan_before_they_end() {
             let at = scannable_after(&style, &qr, text, 50).unwrap();
             println!("{preset:?} v{version}: scannable from {at} ms of {total}");
             assert!(at <= total, "{preset:?} v{version}: {at} > {total}");
+        }
+    }
+}
+
+fn ink() -> Palette {
+    Palette::from_tokens([("bg", "oklch(96% .02 85)"), ("fg", "oklch(30% .12 265)")]).unwrap()
+}
+
+#[test]
+fn palette_shifts_and_idle_loops_keep_the_static_state() {
+    let plain = Style::new().palette(ink());
+    let mut styles = vec![
+        plain.clone().intro(Intro::palette_from(&Palette::new())),
+        plain.clone().theme_transition(600),
+    ];
+    for idle in Idle::ALL {
+        styles.push(plain.clone().idle(idle));
+        styles.push(plain.clone().intro(Preset::Ripple).idle(idle));
+    }
+    for &(text, version) in &PAYLOADS[1..3] {
+        let qr = code(text, version);
+        for animated in &styles {
+            // An idle loop never ends, so its "last frame" is its rest
+            // state before it starts: the intro's end.
+            assert_same_picture(&plain, animated, &qr, &format!("{animated:?}"));
+        }
+    }
+}
+
+#[test]
+fn palette_shifts_stay_scannable_throughout() {
+    // Same polarity: lightness moves linearly in OKLab, so contrast never
+    // drops below the endpoints and the code reads at every frame.
+    let old = Palette::from_tokens([
+        ("bg", "#ffffff"),
+        ("fg", "#7a1f10"),
+        ("finder.eye", "#003a70"),
+    ])
+    .unwrap();
+    for &(text, version) in &PAYLOADS {
+        let qr = code(text, version);
+        let style = Style::new().palette(ink()).intro(Intro::palette_from(&old));
+        assert!(
+            style.check(&qr).warnings.is_empty(),
+            "{:?}",
+            style.check(&qr).warnings
+        );
+        assert_eq!(
+            scannable_after(&style, &qr, text, 25).unwrap(),
+            0,
+            "v{version}"
+        );
+    }
+}
+
+#[test]
+fn opposite_polarity_shifts_warn() {
+    let dark = Palette::from_tokens([("bg", "#101014"), ("fg", "#f4f1ea")]).unwrap();
+    let qr = code(PAYLOADS[1].0, PAYLOADS[1].1);
+    let style = Style::new().intro(Intro::palette_from(&dark));
+    let warned = style.check(&qr).warnings.iter().any(|w| {
+        matches!(
+            w,
+            Warning::MotionContrast {
+                token: Token::Fg,
+                ..
+            }
+        )
+    });
+    assert!(warned);
+}
+
+#[test]
+fn idle_frames_scan() {
+    // Every 100 ms through one cycle of each loop after a Settle intro.
+    for idle in Idle::ALL {
+        for &(text, version) in &PAYLOADS[1..] {
+            let qr = code(text, version);
+            let style = Style::new().intro(Preset::Settle).idle(idle);
+            let start = style.plan(&qr).unwrap().total_ms;
+            for t in (start..start + 8000).step_by(100) {
+                let svg = style.render_frame(&qr, t).unwrap();
+                let result =
+                    freeqrent_verify::verify_one(&svg, text, freeqrent_verify::RENDERS[1], false);
+                assert!(result.is_ok(), "{idle:?} v{version} at {t} ms: {result:?}");
+            }
         }
     }
 }

@@ -3,10 +3,12 @@
 //! [`Style::render`] refuses to draw a code that might not scan.
 
 use alloc::string::String;
+#[cfg(feature = "animate")]
+use alloc::vec::Vec;
 use core::fmt;
 
 #[cfg(feature = "animate")]
-use crate::animate::Intro;
+use crate::animate::{Idle, Intro};
 use crate::check::{self, RenderError, ScanReport};
 use crate::logo::Logo;
 use crate::matrix::QrMatrix;
@@ -139,6 +141,10 @@ pub struct Style {
     pub(crate) logo: Option<Logo>,
     #[cfg(feature = "animate")]
     pub(crate) intro: Option<Intro>,
+    #[cfg(feature = "animate")]
+    pub(crate) idle: Vec<Idle>,
+    #[cfg(feature = "animate")]
+    pub(crate) theme_transition: Option<u32>,
 }
 
 impl Default for Style {
@@ -162,6 +168,10 @@ impl Default for Style {
             logo: None,
             #[cfg(feature = "animate")]
             intro: None,
+            #[cfg(feature = "animate")]
+            idle: Vec::new(),
+            #[cfg(feature = "animate")]
+            theme_transition: None,
         }
     }
 }
@@ -286,6 +296,33 @@ impl Style {
     #[cfg(feature = "animate")]
     pub fn intro(mut self, intro: impl Into<Intro>) -> Style {
         self.intro = Some(intro.into());
+        self
+    }
+
+    /// Adds an idle loop (SPEC §8.3). Loops are endless, start when the
+    /// intro ends, and stop under reduced motion; the static document is
+    /// unchanged.
+    #[cfg(feature = "animate")]
+    pub fn idle(mut self, idle: Idle) -> Style {
+        if !self.idle.contains(&idle) {
+            self.idle.push(idle);
+        }
+        self
+    }
+
+    /// The idle loops.
+    #[cfg(feature = "animate")]
+    pub fn idle_loops(&self) -> &[Idle] {
+        &self.idle
+    }
+
+    /// Gives every solid paint a `transition: fill` of `ms`, so a page
+    /// that changes the token custom properties on an inline code (see
+    /// [`Palette::to_css_vars`](crate::Palette::to_css_vars)) re-themes it
+    /// smoothly (SPEC §6.5). Off under reduced motion; 0–10000 ms.
+    #[cfg(feature = "animate")]
+    pub fn theme_transition(mut self, ms: u32) -> Style {
+        self.theme_transition = Some(ms);
         self
     }
 

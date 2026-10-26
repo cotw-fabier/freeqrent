@@ -33,6 +33,10 @@ Each item says where it came from, so we remember why it's here.
 - **`encode_segments_for` / `encode_bytes_for`:** style-fitting for explicit segments and raw bytes, like `encode_text_for` (W20261025223145).
 - **Steering logo-covered modules:** like art mode's free bits (SPEC §7.8), choose data so modules under the plate are light, which would let a backdrop-plated logo count only dark-covered codewords and grow larger (W20261025223145).
 - **`Morph` transition:** cross-fade between two shape styles of the same code (SPEC §8.3).
+- **Draw-on finder rings for `LockOn`:** a stroke-dashoffset draw-on needs stroke or mask geometry that covers each ring shape exactly; LockOn scales its rings instead (W20261025234738).
+- **Intro plus palette shift together:** today `Intro::palette_from` is its own intro with no entrance (W20261025235601).
+- **Shimmer clipped to the frame:** the band crosses the whole square canvas, including the corners outside a round frame (W20261025235601).
+- **Animated gradient tokens:** palette shifts swap gradients at once; re-themable stops (above) would let them fade (W20261025235601).
 
 ## Bindings
 
