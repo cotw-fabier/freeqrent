@@ -2,6 +2,11 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026100651 · M5 · First device results
+
+- An Android phone read all eight v1 contrast cards of the scan sheet (ΔL 0.60–0.66 on bg L 0.85 and 0.95); the bench's blurred, noisy render had failed six. Decision: no lightness-aware warning in `check`; `EXTRACT_CONTRAST` stays 0.66 until an iPhone result is in (ROADMAP).
+- Still to record: the other 38 cards, and iPhone Camera, WeChat and a ZXing app.
+
 ## 20261026095000 · M5 · Develop intro and the scan sheet
 
 - Landed: `Preset::Develop` (opacity only, whole layers: the picture to 35% by 45% of the intro, then everything resolves; data modules play the picture on plain codes). `--intro develop`, a Develop gallery card (28 families, all decode). `--scan-sheet FILE`: 46 cards (gallery families, art mode per grid, ink and ECC, pictures with a logo and without steering, v1 contrast probes), each payload naming its card, per-device verdicts saved in the browser and exported as Markdown.
