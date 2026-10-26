@@ -4,6 +4,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::Ecc;
 use crate::geometry::Grid;
 #[cfg(feature = "halftone")]
 use crate::halftone::{self, Steering};
@@ -27,14 +28,29 @@ pub const DAMAGE_BUDGET: f32 = 0.60;
 /// clean renders between 4 and 12 px/module; at 0.4, none.
 pub const HALFTONE_DAMAGE_BUDGET: f32 = 0.40;
 
-/// The damage budget that applies to `style`.
-pub(crate) fn damage_budget(style: &Style) -> f32 {
+/// [`DAMAGE_BUDGET`] at ECC H. H's large share of error correction lets a
+/// logo cover much more of the code, and the largest ones started to hide
+/// it from ZXing under blur and noise. Measured (W20261026171519): the
+/// largest logo each code afforded, a striped dark mark on square and
+/// circle plates, framed and not, square and dot modules, light and dark:
+/// at 60%, 10 of 80 codes from v16 to v20 at H weren't found on the
+/// degraded render (logos 0.22–0.35 wide); at 45%, none from v5 to v40.
+pub const DAMAGE_BUDGET_H: f32 = 0.45;
+
+/// The damage budget that applies to `style` on `qr`: the smaller of the
+/// picture's and ECC H's, where they apply.
+pub(crate) fn damage_budget(style: &Style, qr: &QrMatrix) -> f32 {
+    let level = if qr.ecc() == Ecc::H {
+        DAMAGE_BUDGET_H
+    } else {
+        DAMAGE_BUDGET
+    };
     #[cfg(feature = "halftone")]
     if style.halftone.is_some() {
-        return HALFTONE_DAMAGE_BUDGET;
+        return level.min(HALFTONE_DAMAGE_BUDGET);
     }
     let _ = style;
-    DAMAGE_BUDGET
+    level
 }
 
 /// Whether `style`'s logo must leave every alignment pattern uncovered: on
@@ -724,7 +740,7 @@ fn budget(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
     if cleared.is_empty() && style.logo.is_none() {
         return 0.0;
     }
-    let budget = Budget::new(qr, damage_budget(style));
+    let budget = Budget::new(qr, damage_budget(style, qr));
     let share = |damaged: u16| damaged as f32 / budget.correctable as f32;
     let outline = budget.worst(qr, &cleared, None);
     if outline > budget.allowed {
@@ -776,7 +792,7 @@ pub(crate) fn logo_scale(style: &Style, qr: &QrMatrix) -> f32 {
         return logo.scale;
     }
     let cleared = scene::cleared(style, qr);
-    let budget = Budget::new(qr, damage_budget(style));
+    let budget = Budget::new(qr, damage_budget(style, qr));
     let spare = spares_alignment(style);
     let fits = |scale: f32| {
         let cover = logo::cover(logo, qr, scale);

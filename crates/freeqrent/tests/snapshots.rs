@@ -118,7 +118,8 @@ fn circle_logo_on_liquid() {
         r##"<svg viewBox="0 0 10 10"><defs><linearGradient id="g"><stop offset="0" stop-color="#c2410c"/><stop offset="1" stop-color="#7c2d12"/></linearGradient></defs><circle cx="5" cy="5" r="5" fill="url(#g)"/><script>alert(1)</script></svg>"##,
     )
     .unwrap()
-    .scale(0.25)
+    // At most 0.21 here since ECC H got its own budget (W20261026171519).
+    .scale(0.2)
     .shape(LogoShape::Circle);
     let style = Style::new()
         .modules(ModuleShape::Liquid { smoothness: 1.0 })

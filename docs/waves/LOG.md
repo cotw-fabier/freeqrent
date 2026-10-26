@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026171519 · M5 · A smaller logo budget at ECC H; `ModuleShape::Custom` out of 1.0
+
+- Landed: `DAMAGE_BUDGET_H` = 45%: at ECC H, logos and Outline may use 45% of each block's correctable codewords instead of 60%, so `LogoSize::Largest` and fitting take smaller logos there. `ModuleShape::Custom` is dropped from the spec for 1.0 and stays in the ROADMAP as an additive data form.
+- Measured: the largest logo each code afforded (a striped dark mark, square and circle plates, framed and not, square and dot modules, light and dark), budgets 60/55/50/45%: at H, 10 of 80 codes from v16 to v20 went unfound by ZXing on the degraded render at 60%, 9 at 55%, 6 at 50%, none at 45%; v5–v14 and v21–v40 passed at every budget. Through the API at 45%: 0 of 608 from v2 to v40, largest logos 0.12–0.30 wide (up to 0.37 before). At M and Q the misses were scattered and didn't follow the budget (ROADMAP).
+- Decisions: a budget at H rather than a cap on logo scale, which would also shrink the Large size (0.26) at every level. Device baseline for the scan matrix is iOS Camera and Google Lens (recorded in W20261026164853–W20261026171229).
+- Checks: `the_largest_logos_at_h_scan` (v16–20, both polarities); the `circle_logo_on_liquid` snapshot's logo goes from 0.25 to 0.2, since that code (H, v5) now affords 0.21; its diff is the smaller plate and the modules it no longer covers. Scan sheet: the 21 logo cards (S14, S47–S66) are new codes, mostly one or more versions larger (S14 v5 → v6, S48 v5 → v9), since they had fit by boosting to H; their device results (W20261026164853) were taken on the old codes. The gallery's 140 codes all decode.
+
 ## 20261026171229 · M5 · WeChat and ZXing app scans pending
 
 - Decision: the scan matrix's WeChat and ZXing app columns are skipped for now (no device with those apps) and tracked as a pending item in the ROADMAP's Scannability section; SPEC §9 and §12 and the README say so.

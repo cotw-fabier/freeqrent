@@ -150,3 +150,46 @@ fn bytes_and_segments_fitted_for_a_logo_scan() {
         verify_style(&style, &qr, text).unwrap_or_else(|e| panic!("bytes {ecc:?}: {e}"));
     }
 }
+
+#[test]
+fn the_largest_logos_at_h_scan() {
+    // At ECC H logos get DAMAGE_BUDGET_H: at 60%, the largest logos on
+    // v16–20 went unfound by ZXing under blur and noise (W20261026171519).
+    use freeqrent::{DAMAGE_BUDGET_H, LogoFrame, LogoSize, Palette};
+    for version in 16..=20 {
+        let text = format!("LOGO 1234 {version}");
+        let qr = code(&text, version, Ecc::H);
+        for frame in [None, Some(LogoFrame::Ring)] {
+            for shape in [LogoShape::Square, LogoShape::Circle] {
+                for modules in [ModuleShape::SQUARE, ModuleShape::Dots { size: 0.85 }] {
+                    for dark in [false, true] {
+                        let mut logo = Logo::svg(DARK)
+                            .unwrap()
+                            .shape(shape)
+                            .size(LogoSize::Largest)
+                            .scale(0.05);
+                        if let Some(frame) = frame {
+                            logo = logo.frame(frame);
+                        }
+                        let palette = if dark {
+                            Palette::new().dark_twin()
+                        } else {
+                            Palette::new()
+                        };
+                        let style = Style::new()
+                            .modules(modules)
+                            .logo(logo)
+                            .palette(palette)
+                            .allow_inverted(dark);
+                        let label =
+                            format!("v{version} {frame:?} {shape:?} {modules:?} dark={dark}");
+                        let report = style.check(&qr);
+                        assert!(report.ok(), "{label}: {report:?}");
+                        assert!(report.ecc_budget_used <= DAMAGE_BUDGET_H, "{label}");
+                        verify_style(&style, &qr, &text).unwrap_or_else(|e| panic!("{label}: {e}"));
+                    }
+                }
+            }
+        }
+    }
+}

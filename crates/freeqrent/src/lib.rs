@@ -67,8 +67,8 @@ pub use animate::{
     Trigger, Value,
 };
 pub use check::{
-    ANIMATED_ELEMENTS, CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, FRAME_FLOOR,
-    HALFTONE_DAMAGE_BUDGET, LONG_INTRO_MS, RenderError, ScanReport, Warning,
+    ANIMATED_ELEMENTS, CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, DAMAGE_BUDGET_H,
+    FRAME_FLOOR, HALFTONE_DAMAGE_BUDGET, LONG_INTRO_MS, RenderError, ScanReport, Warning,
 };
 pub use code::{QrBuilder, QrCode};
 pub use color::{Color, ColorError};
