@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026151955 · M5 · Halftone logos keep off the alignment patterns
+
+- Landed: on a picture, a logo plate may cover an alignment pattern only when the patterns are outlined and the timing dotted, as art mode draws them; otherwise `RenderError::LogoOverAlignment`, and `encode_text_for` steps past such versions. `freeqrent_verify::verify_at` checks one render against a bar (rqrr, read inverted). The gallery's two halftone logo cards and scan sheet card S37 ("halftone with a logo") move to the standard grid, and "Halftone, logo spin" goes back to ECC M.
+- Measured: the ROADMAP's "framed logos on pictures at odd sizes" wasn't about frames. rqrr misread the lower half of the code: its grid, fitted to the bottom-right alignment pattern and refined by scoring every pattern, including the covered middle one, drifted. On the gallery's halftone cards (two wallpapers and the sunset, light and dark, 4–14 px/module), 13 of 18 with the plate over a pattern missed at 6, 7 or 12 px, unframed ones too; with Outline alone the 9 dark ones still missed at 7; with Outline and dotted timing, and on every art card, none did. Synthetic pictures agree: misses at v9, v11 and v39 (plates over a pattern), none at v15 and v17.
+- Decisions: a rule in the core rather than ECC Q per card (Q still missed on two dark bracket cards) or more sizes in the bar (that would only report the failure). The sparse grid's versions all have a pattern in the middle, so halftone logos there are refused; art mode keeps them.
+- Checks: `logos_on_pictures_scan_at_every_size_in_both_polarities` (halftone and art, four frame options, two pictures, light and dark, 4–14 px), a unit test for the rule, the gallery (140 codes, all decode), and its logo picture cards on the wallpapers at every size from 4 to 14 px. ROADMAP: the three misfiled "Bindings" items moved to Palettes and Scannability; "more sizes in the bar" added.
+
 ## 20261026150957 · M5 · A steady page when the theme flips
 
 - Landed: each gallery card stacks its light and dark versions in one grid cell and hides the inactive one with `visibility` rather than `display`, so a card is always as tall as its taller version and flipping the switch moves nothing.

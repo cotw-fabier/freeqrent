@@ -52,16 +52,16 @@ Each item says where it came from, so we remember why it's here.
 - **`--palette-from-url`:** the CLI fetching a page itself, behind an opt-in feature with a small HTTP client. Dropped from M4 to keep TLS out of the CLI's tree; `curl -s URL | freeqrent … --palette-from-html -` does the same (W20261026074436).
 - **Linked style sheets:** `from_html` reads inline `<style>` only; a caller could pass `<link rel=stylesheet>` targets back in (W20261026074436).
 - **Dark-scheme palettes:** `from_css`/`from_html` skip `@media (prefers-color-scheme: dark)` rules even with `allow_inverted`; reading a light site's dark scheme would give it a dark palette of its own (W20261026141235).
-- **Framed logos on pictures at odd sizes:** with a bracket, ring or orbit frame on a 0.12 logo, light picture codes at ECC M miss rqrr at 7 px per module, and dark color-ink twins at 6–7 px (sometimes 12–13). The bar renders at 4, 6 and 10 px, so most pass it by luck of size. Measured W20261026145847 on the two wallpapers and the sample sunset. Without a frame, every size from 4 to 14 px reads. A wider damage margin for framed plates on pictures, or more render sizes in the bar, would close it.
+- **Lighter auto frame colors:** extraction darkens `logo.frame` to the same 0.66 contrast as the read tokens, so a bright accent (a sunset orange) lands at L 0.31 and turns muddy. The frame sits on the plate and is never read; it could keep more of its lightness (W20261026114047).
+- **Accents from small areas:** a wallpaper's yellow eyes or a single bright sun are too small a share to become an accent, so muted pictures give no `finder.eye` or `logo.frame`; a saliency or chroma-weighted pick could find them (W20261026114047).
 
 ## Scannability
 
 - **Extraction contrast back to 0.60?** `EXTRACT_CONTRAST` is 0.66 because v1 codes on backgrounds of L 0.80–0.95 failed the bench's blurred, noisy render up to ΔL 0.64 (W20261026073538). A Pixel 10 XL's built-in camera read every v1 card on the scan sheet, ΔL 0.60–0.66 on L 0.85 and 0.95 (W20261026100651), so the bench is harsher than that camera and a lightness-aware warning isn't needed. With an iPhone result too, the extraction floor could drop to the warning threshold, 0.60.
+- **More sizes in the bar:** halftone logos over an alignment pattern passed the bar's 4, 6 and 10 px and missed rqrr at 7 or 12 (W20261026151955). The rule that fixed them came from a 4–14 px sweep, which the picture tests now run; an odd size such as 7 px in `RENDERS` would catch the next gap of this kind everywhere, for about a third more verify time.
+- **Art mode tuned for capture:** clarity 0.5–0.6 on the sparse grid decodes six to seven times as often as the defaults under camera-like blur and noise (SPEC §7.7, W20261026115722). Options: make that art mode's default, add a `Clarity::Auto` that picks the least clarity passing the harsh bar, or add the harsh bar to `verify` as a stricter level. Confirm with the scan sheet on phones first.
 
 ## Bindings
 
 - **Native Node build via `napi-rs`**, if WASM performance isn't enough (SPEC §10.2).
 - **Swift, Kotlin, and C# packages** over the C ABI.
-- **Lighter auto frame colors:** extraction darkens `logo.frame` to the same 0.66 contrast as the read tokens, so a bright accent (a sunset orange) lands at L 0.31 and turns muddy. The frame sits on the plate and is never read; it could keep more of its lightness (W20261026114047).
-- **Accents from small areas:** a wallpaper's yellow eyes or a single bright sun are too small a share to become an accent, so muted pictures give no `finder.eye` or `logo.frame`; a saliency or chroma-weighted pick could find them (W20261026114047).
-- **Art mode tuned for capture:** clarity 0.5–0.6 on the sparse grid decodes six to seven times as often as the defaults under camera-like blur and noise (SPEC §7.7, W20261026115722). Options: make that art mode's default, add a `Clarity::Auto` that picks the least clarity passing the harsh bar, or add the harsh bar to `verify` as a stricter level. Confirm with the scan sheet on phones first.

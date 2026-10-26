@@ -234,6 +234,13 @@ pub fn verify_one(
     check(svg, expected, render, rqrr, false)
 }
 
+/// Checks one render against `bar`: ZXing, rqrr when the bar has it, read
+/// inverted when the bar is. The bar's degraded render isn't used; the
+/// render given is the one checked.
+pub fn verify_at(svg: &str, expected: &str, render: Render, bar: Bar) -> Result<(), VerifyError> {
+    check(svg, expected, render, bar.rqrr, bar.inverted)
+}
+
 fn check(
     svg: &str,
     expected: &str,

@@ -68,7 +68,9 @@ fn entries() -> Vec<Entry> {
         "halftone with a logo",
         &[
             ("halftone", "sample"),
-            ("tracking-grid", "sparse"),
+            // A halftone's logo stays off the alignment patterns, which
+            // the sparse grid has in the middle (W20261026151955).
+            ("tracking-grid", "standard"),
             ("logo", "sample"),
             ("logo-scale", "0.15"),
         ],

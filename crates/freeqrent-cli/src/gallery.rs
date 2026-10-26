@@ -622,15 +622,13 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
     (
         "Halftone, logo spin",
         &[
-            // At M, a bracket-framed logo on a picture misses rqrr at
-            // 6–7 px per module (W20261026145847); Q holds at the bar's
-            // sizes in both polarities.
-            ("ecc", "Q"),
             ("intro", "settle"),
             ("idle", "logo-spin"),
             ("halftone", "{b}"),
             ("clarity", "0.5"),
-            ("tracking-grid", "sparse"),
+            // A halftone's logo stays off the alignment patterns, and every
+            // sparse-grid version has one in the middle (SPEC §7.3).
+            ("tracking-grid", "standard"),
             ("ink", "color:6"),
             ("palette-from-image", "{b}"),
             ("logo", "sample"),
@@ -647,7 +645,9 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("idle", "shimmer"),
             ("halftone", "{a}"),
             ("clarity", "0.5"),
-            ("tracking-grid", "sparse"),
+            // A halftone's logo stays off the alignment patterns, and every
+            // sparse-grid version has one in the middle (SPEC §7.3).
+            ("tracking-grid", "standard"),
             ("ink", "mono"),
             ("logo", "sample"),
             ("logo-scale", "0.12"),

@@ -201,7 +201,9 @@ impl QrBuilder {
             !style.check(qr).errors.iter().any(|e| {
                 matches!(
                     e,
-                    RenderError::LogoTooLarge { .. } | RenderError::EccBudgetExceeded { .. }
+                    RenderError::LogoTooLarge { .. }
+                        | RenderError::LogoOverAlignment
+                        | RenderError::EccBudgetExceeded { .. }
                 )
             })
         };

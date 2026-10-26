@@ -37,6 +37,29 @@ pub(crate) fn damage_budget(style: &Style) -> f32 {
     DAMAGE_BUDGET
 }
 
+/// Whether `style`'s logo must leave every alignment pattern uncovered: on
+/// a picture (SPEC §7.3, §7.7), unless the alignment patterns are outlined
+/// and the timing dotted, as in art mode. rqrr fits its grid to the
+/// bottom-right alignment pattern and refines it by scoring every pattern,
+/// covered ones too, and on a halftone that fit drifted across the lower
+/// half of the code. Measured (W20261026151955), on the gallery's
+/// halftone cards with a logo at 0.12 on two wallpapers and the sample
+/// sunset, light and dark, at every size from 4 to 14 px/module: with
+/// the plate over an alignment pattern, 13 of 18 missed rqrr at 6, 7 or
+/// 12 px; with Outline alone, the 9 dark ones still missed at 7; with
+/// Outline and dotted timing, and on art mode, none did; nor did any code
+/// whose plate left the patterns uncovered.
+fn spares_alignment(style: &Style) -> bool {
+    #[cfg(feature = "halftone")]
+    if style.halftone.is_some() && style.logo.is_some() {
+        let art = style.alignment.emphasis == crate::scanbox::Emphasis::Outline
+            && style.timing == crate::scanbox::TimingStyle::Dotted;
+        return !art;
+    }
+    let _ = style;
+    false
+}
+
 /// The difference below which a code renders with a warning: under blur
 /// and sensor noise, ZXing starts missing codes below about 0.6, the
 /// finder eyes first.
@@ -92,6 +115,13 @@ pub enum RenderError {
         /// The largest scale, in hundredths, that fits this code.
         max_scale: f32,
     },
+    /// On a picture, the logo covers an alignment pattern, which some
+    /// decoders then misread the code around (SPEC §7.3). Outline the
+    /// alignment patterns and dot the timing, as
+    /// [`Style::art`](crate::Style::art) does, or use a version whose
+    /// patterns clear the logo (`QrBuilder::encode_text_for` finds one
+    /// when its range allows).
+    LogoOverAlignment,
     /// [`Idle::LogoTurn`](crate::Idle::LogoTurn) turns the logo's frame,
     /// and only a round one stays inside the plate while it turns: the
     /// frame must be [`LogoFrame::Orbit`](crate::LogoFrame::Orbit) or sit
@@ -124,6 +154,9 @@ impl fmt::Display for RenderError {
             RenderError::EccBudgetExceeded { damaged, allowed } => write!(
                 f,
                 "cleared modules damage {damaged} codewords of one block; the budget allows {allowed}"
+            ),
+            RenderError::LogoOverAlignment => f.write_str(
+                "the logo covers an alignment pattern of the picture; outline them and dot the timing, or use a version that clears it",
             ),
             RenderError::TurnNeedsRoundFrame => {
                 f.write_str("the logo-turn idle needs an orbit frame or a frame on a circle plate")
@@ -679,7 +712,11 @@ fn budget(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
         let worst = budget.worst(qr, &cleared, Some(&cover.modules));
         (cover.valid && worst <= budget.allowed, worst)
     };
-    let (ok, worst) = fits(logo_scale(style, qr));
+    let scale = logo_scale(style, qr);
+    let (ok, worst) = fits(scale);
+    if ok && spares_alignment(style) && !logo::cover(logo, qr, scale).alignment.is_empty() {
+        errors.push(RenderError::LogoOverAlignment);
+    }
     if !ok {
         // Coverage grows with scale, so search the hundredths below it.
         let (mut lo, mut hi) = (0u32, (logo.scale * 100.0) as u32);
@@ -710,9 +747,12 @@ pub(crate) fn logo_scale(style: &Style, qr: &QrMatrix) -> f32 {
     }
     let cleared = scene::cleared(style, qr);
     let budget = Budget::new(qr, damage_budget(style));
+    let spare = spares_alignment(style);
     let fits = |scale: f32| {
         let cover = logo::cover(logo, qr, scale);
-        cover.valid && budget.worst(qr, &cleared, Some(&cover.modules)) <= budget.allowed
+        cover.valid
+            && (!spare || cover.alignment.is_empty())
+            && budget.worst(qr, &cleared, Some(&cover.modules)) <= budget.allowed
     };
     let mut lo = crate::math::ceil(logo.scale as f64 * 100.0 - 1e-3) as u32;
     if !fits(logo.scale) || lo > 50 || !fits(lo as f32 / 100.0) {
@@ -750,6 +790,32 @@ mod tests {
             emphasis: Emphasis::Outline,
             ..AlignmentStyle::default()
         })
+    }
+
+    #[cfg(feature = "halftone")]
+    #[test]
+    fn halftone_logos_spare_alignment_patterns() {
+        // Version 7 has a pattern in the middle, under any logo; version 6
+        // has none there. Art mode outlines the patterns and dots the
+        // timing, so its logo may cover one.
+        use crate::{Halftone, Logo, Rgba8Image};
+        let picture = Halftone::new(Rgba8Image::filled(8, 8, [90, 90, 90, 255]).unwrap());
+        let logo = Logo::svg(r#"<svg viewBox="0 0 1 1"/>"#).unwrap().scale(0.1);
+        let halftone = Style::new().halftone(picture.clone()).logo(logo.clone());
+        let report = halftone.check(&qr(7, Ecc::H));
+        assert!(
+            matches!(report.errors[..], [RenderError::LogoOverAlignment]),
+            "{report:?}"
+        );
+        assert!(halftone.check(&qr(6, Ecc::H)).ok());
+        let art = Style::art(picture).logo(logo);
+        let steered = QrCode::builder()
+            .ecc(Ecc::H)
+            .version(Version::new(7).unwrap())
+            .encode_text_for("HELLO", &art)
+            .unwrap();
+        let report = art.check(&steered);
+        assert!(report.ok(), "{report:?}");
     }
 
     #[test]

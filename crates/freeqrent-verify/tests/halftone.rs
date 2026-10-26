@@ -7,10 +7,10 @@ mod common;
 use common::picture;
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Clarity, Ecc, Emphasis, Fit, Frame, FrameRing, Halftone, Ink,
-    Intro, LayerRole, Logo, Palette, Preset, QrCode, QrMatrix, RenderError, Rgba8Image, Style,
-    TimingStyle, Token, Version, Warning,
+    Intro, LayerRole, Logo, LogoFrame, LogoShape, Palette, Preset, QrCode, QrMatrix, RenderError,
+    Rgba8Image, Style, TimingStyle, Token, TrackingGrid, Version, Warning,
 };
-use freeqrent_verify::{Render, rasterize, verify_one, verify_style};
+use freeqrent_verify::{Bar, Render, rasterize, verify_at, verify_one, verify_style};
 
 const TEXT: &str = "https://example.com";
 const PICTURES: [&str; 5] = ["disc", "gradient", "rings", "photo", "logo"];
@@ -121,6 +121,91 @@ fn logos_on_pictures_scan_at_every_size() {
                     }
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn logos_on_pictures_scan_at_every_size_in_both_polarities() {
+    // A halftone's logo stays off the alignment patterns unless they're
+    // outlined and the timing dotted (SPEC §7.3): with the plate over one,
+    // rqrr's grid drifted at 6, 7 and 12 px/module, between the bar's
+    // sizes (W20261026151955). Art mode on the sparse grid covers the
+    // middle pattern and holds. Light and dark, framed and not, every
+    // size from 4 to 14.
+    let logo =
+        Logo::svg(r##"<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="5" fill="#c33"/></svg>"##)
+            .unwrap();
+    let frames = [
+        None,
+        Some(LogoFrame::Ring),
+        Some(LogoFrame::Brackets),
+        Some(LogoFrame::Orbit),
+    ];
+    for frame in frames {
+        for kind in ["photo", "rings"] {
+            for art in [false, true] {
+                for dark in [false, true] {
+                    let picture = Halftone::new(picture(kind, 200))
+                        .ink(Ink::Color { colors: 6 })
+                        .clarity(Clarity::Uniform(0.5));
+                    let mut logo = logo.clone().scale(0.12).shape(LogoShape::Circle);
+                    if let Some(frame) = frame {
+                        logo = logo.frame(frame);
+                    }
+                    let mut style = if art {
+                        Style::art(picture)
+                    } else {
+                        Style::new().halftone(picture)
+                    }
+                    .logo(logo);
+                    if dark {
+                        style = style
+                            .palette(Palette::new().dark_twin())
+                            .allow_inverted(true);
+                    }
+                    let qr = QrCode::builder()
+                        .tracking_grid(TrackingGrid::Sparse)
+                        .encode_text_for(TEXT, &style)
+                        .unwrap();
+                    let label = format!("{frame:?} {kind} art={art} dark={dark}");
+                    let v = qr.version().number();
+                    let report = style.check(&qr);
+                    if art {
+                        assert!(report.ok(), "{label}: {report:?}");
+                    } else {
+                        // The sparse grid (v7–13) has a pattern in the
+                        // middle of every version, so the logo is refused.
+                        assert!(!report.ok(), "{label} v{v}: {report:?}");
+                        style_scans_from(&style, &label);
+                        continue;
+                    }
+                    assert_every_size(&style, &qr, &label);
+                }
+            }
+        }
+    }
+}
+
+/// Fits `style` without a version range and checks every size.
+fn style_scans_from(style: &Style, label: &str) {
+    let qr = fitted(style, 1, Ecc::M);
+    let report = style.check(&qr);
+    assert!(report.ok(), "{label}: {report:?}");
+    assert_every_size(style, &qr, label);
+}
+
+fn assert_every_size(style: &Style, qr: &QrMatrix, label: &str) {
+    let svg = style.render(qr).unwrap();
+    let bar = Bar::for_report(&style.check(qr));
+    for px in 4..=14 {
+        let render = Render {
+            px_per_module: px,
+            blur: false,
+            noise: false,
+        };
+        if let Err(e) = verify_at(&svg, TEXT, render, bar) {
+            panic!("{label} v{}: {e}", qr.version().number());
         }
     }
 }
