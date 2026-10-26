@@ -67,7 +67,7 @@ The encoder is written in-house rather than taken from the `qrcode` crate. That 
 ### 3.1 Scope
 
 - **Versions** 1–40, **ECC** L / M / Q / H.
-- **Modes:** Numeric, Alphanumeric, Byte, Kanji (feature), **ECI** (UTF-8 by default for non-Latin-1 text).
+- **Modes:** Numeric, Alphanumeric, Byte, Kanji (feature), **ECI**. Text is always encoded as UTF-8 bytes. `EciPolicy::Auto` (default) writes ECI 26 (UTF-8) only when the text isn't pure ASCII; `Never` and `Always` override it. *(rev. W20261025204222)*
 - **Automatic segmentation:** minimal-length mixed-mode encoding (dynamic programming over segment boundaries).
 - **Mask selection:** standard 4-rule penalty evaluation, with an option to force a mask.
 - **Free-bit solver (QArt technique):** after the payload and terminator, the remaining data bits in a symbol are ignored by decoders. Reed–Solomon is linear over GF(2), so every module in the data/ECC region is an XOR of data bits. The encoder exposes this linear map and solves it (Gaussian elimination), choosing free bits so that a prioritized set of target modules takes desired values. This is the engine behind §7.7 and §7.8.
@@ -79,11 +79,12 @@ The encoder is written in-house rather than taken from the `qrcode` crate. That 
 ### 3.2 Matrix model
 
 ```rust
-pub struct QrMatrix {
-    pub version: Version,
-    pub ecc: Ecc,
-    pub size: u16,             // modules per side
-    modules: BitVec,           // dark/light
+pub struct QrMatrix {          // fields private; read through accessors
+    version: Version,
+    ecc: Ecc,
+    mask: Mask,
+    size: u16,                 // modules per side
+    modules: Vec<bool>,        // dark/light, row-major, (x, y) = (column, row)
     roles: Vec<ModuleRole>,    // per-module classification
 }
 
@@ -94,18 +95,22 @@ pub enum ModuleRole {
     Alignment { center: (u16, u16) },
     Format,
     Version,
+    DarkModule,                // the single fixed dark module
     Data,
     Ecc,
+    Remainder,                 // 0–7 leftover bits after the last codeword
 }
 ```
+
+Accessors: `version()`, `ecc()`, `mask()`, `size()`, `is_dark(x, y)`, `role(x, y)`, `modules()` (iterator of `(x, y, dark, role)`). `ModuleRole::is_function()` is false only for `Data`, `Ecc` and `Remainder`. *(rev. W20261025204222)*
 
 The styling layer uses `roles` to render finders, alignment, and timing patterns separately from data modules. It also uses them to know which modules can be sacrificed for logos and imagery. Function patterns are never sacrificed.
 
 ### 3.3 Helpers
 
 - `QrCode::encode(text, Ecc) -> Result<QrMatrix>`
-- `QrCode::builder()` with `.min_version()`, `.max_version()`, `.ecc()`, `.boost_ecc(true)` (raise ECC as long as the version doesn't grow), `.mask()`, `.segments()`.
-- `matrix.capacity_report()` returns data bits used and available, ECC codewords, and the theoretical max damage tolerance. The logo and halftone budgets use this.
+- `QrCode::builder()` with `.min_version()`, `.max_version()`, `.version()` (pin), `.ecc()` (minimum, default M), `.boost_ecc(bool)` (raise ECC as long as the version doesn't grow; default `true`), `.mask()`, `.eci()`. It finishes with `.encode_text(&str)`, `.encode_bytes(&[u8])` or `.encode_segments(&[Segment])`. *(rev. W20261025204222)*
+- `matrix.capacity_report()` returns data bits used and available, data/ECC/total codewords, block count, correctable codewords (net of the small-version misdecode reserve), and `damage_tolerance_permille()`. The logo and halftone budgets use this.
 
 ---
 

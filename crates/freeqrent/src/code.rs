@@ -1,0 +1,310 @@
+use alloc::vec::Vec;
+
+use crate::bits::BitBuffer;
+use crate::error::EncodeError;
+use crate::gf;
+use crate::matrix::{Mask, QrMatrix};
+use crate::segment::{self, EciPolicy, Segment};
+use crate::version::{BlockLayout, Ecc, Version};
+
+/// Entry point for encoding.
+///
+/// ```
+/// use freeqrent::{Ecc, QrCode};
+///
+/// let qr = QrCode::encode("https://example.com", Ecc::M).unwrap();
+/// assert_eq!(qr.version().number(), 2);
+/// ```
+#[derive(Clone, Copy, Debug)]
+pub struct QrCode;
+
+impl QrCode {
+    /// Encodes text with the given minimum ECC level and default options.
+    pub fn encode(text: &str, ecc: Ecc) -> Result<QrMatrix, EncodeError> {
+        QrCode::builder().ecc(ecc).encode_text(text)
+    }
+
+    /// Options for version range, ECC, mask, and ECI.
+    pub fn builder() -> QrBuilder {
+        QrBuilder::default()
+    }
+}
+
+/// Encoding options. Plain data; build one with [`QrCode::builder`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QrBuilder {
+    ecc: Ecc,
+    min_version: Version,
+    max_version: Version,
+    boost_ecc: bool,
+    mask: Option<Mask>,
+    eci: EciPolicy,
+}
+
+impl Default for QrBuilder {
+    fn default() -> QrBuilder {
+        QrBuilder {
+            ecc: Ecc::M,
+            min_version: Version::MIN,
+            max_version: Version::MAX,
+            boost_ecc: true,
+            mask: None,
+            eci: EciPolicy::Auto,
+        }
+    }
+}
+
+impl QrBuilder {
+    /// Minimum ECC level (default `M`).
+    pub fn ecc(mut self, ecc: Ecc) -> QrBuilder {
+        self.ecc = ecc;
+        self
+    }
+
+    /// Smallest version to use. Set it equal to `max_version` to pin the size.
+    pub fn min_version(mut self, version: Version) -> QrBuilder {
+        self.min_version = version;
+        self
+    }
+
+    /// Largest version to use (default 40).
+    pub fn max_version(mut self, version: Version) -> QrBuilder {
+        self.max_version = version;
+        self
+    }
+
+    /// Use exactly this version.
+    pub fn version(self, version: Version) -> QrBuilder {
+        self.min_version(version).max_version(version)
+    }
+
+    /// Raise the ECC level as far as it goes without growing the version
+    /// (default `true`).
+    pub fn boost_ecc(mut self, boost: bool) -> QrBuilder {
+        self.boost_ecc = boost;
+        self
+    }
+
+    /// Force a mask instead of picking the lowest-penalty one.
+    pub fn mask(mut self, mask: Mask) -> QrBuilder {
+        self.mask = Some(mask);
+        self
+    }
+
+    /// ECI header policy for [`encode_text`](Self::encode_text) (default `Auto`).
+    pub fn eci(mut self, eci: EciPolicy) -> QrBuilder {
+        self.eci = eci;
+        self
+    }
+
+    /// Encodes UTF-8 text.
+    pub fn encode_text(&self, text: &str) -> Result<QrMatrix, EncodeError> {
+        self.encode_segments(&Segment::from_text(text, self.eci))
+    }
+
+    /// Encodes raw bytes in byte mode, without an ECI header.
+    pub fn encode_bytes(&self, bytes: &[u8]) -> Result<QrMatrix, EncodeError> {
+        self.encode_segments(&[Segment::bytes(bytes)])
+    }
+
+    /// Encodes explicit segments, in order.
+    pub fn encode_segments(&self, segments: &[Segment]) -> Result<QrMatrix, EncodeError> {
+        if self.min_version > self.max_version {
+            return Err(EncodeError::InvalidVersionRange {
+                min: self.min_version,
+                max: self.max_version,
+            });
+        }
+
+        let capacity = |v: Version, ecc: Ecc| BlockLayout::new(v, ecc).data_codewords() * 8;
+        let fits = |v: Version, ecc: Ecc| {
+            segment::total_bits(segments, v).is_some_and(|bits| bits <= capacity(v, ecc))
+        };
+
+        let Some(version) = Version::all()
+            .filter(|&v| v >= self.min_version && v <= self.max_version)
+            .find(|&v| fits(v, self.ecc))
+        else {
+            let v = self.max_version;
+            return Err(EncodeError::DataTooLong {
+                bits_needed: segment::total_bits(segments, v).unwrap_or(usize::MAX),
+                bits_available: capacity(v, self.ecc),
+                max_version: v,
+                ecc: self.ecc,
+            });
+        };
+
+        let mut ecc = self.ecc;
+        if self.boost_ecc {
+            while let Some(higher) = ecc.higher().filter(|&e| fits(version, e)) {
+                ecc = higher;
+            }
+        }
+
+        let layout = BlockLayout::new(version, ecc);
+        let mut bits = BitBuffer::new();
+        for s in segments {
+            s.write(&mut bits, version);
+        }
+        let payload_bits = bits.len();
+
+        // Terminator, byte alignment, then alternating pad codewords.
+        let capacity_bits = layout.data_codewords() * 8;
+        bits.push(0, (capacity_bits - bits.len()).min(4) as u8);
+        bits.push(0, ((8 - bits.len() % 8) % 8) as u8);
+        for pad in [0xEC, 0x11].into_iter().cycle() {
+            if bits.len() >= capacity_bits {
+                break;
+            }
+            bits.push(pad, 8);
+        }
+
+        let codewords = interleave_with_ecc(&bits.to_bytes(), &layout);
+        Ok(QrMatrix::build(
+            version,
+            ecc,
+            payload_bits,
+            &codewords,
+            layout.data_codewords(),
+            self.mask,
+        ))
+    }
+}
+
+/// Splits data into blocks, appends each block's ECC, and interleaves:
+/// data codewords column by column, then ECC codewords column by column.
+fn interleave_with_ecc(data: &[u8], layout: &BlockLayout) -> Vec<u8> {
+    let short = layout.num_short_blocks();
+    let short_len = layout.short_block_data_len();
+    let generator = gf::generator(layout.ecc_per_block);
+
+    let mut blocks: Vec<(&[u8], Vec<u8>)> = Vec::with_capacity(layout.num_blocks);
+    let mut rest = data;
+    for i in 0..layout.num_blocks {
+        let len = short_len + usize::from(i >= short);
+        let (block, tail) = rest.split_at(len);
+        blocks.push((block, gf::remainder(block, &generator)));
+        rest = tail;
+    }
+
+    let mut out = Vec::with_capacity(layout.total_codewords);
+    for i in 0..=short_len {
+        for (block, _) in &blocks {
+            if let Some(&b) = block.get(i) {
+                out.push(b);
+            }
+        }
+    }
+    for i in 0..layout.ecc_per_block {
+        for (_, ecc) in &blocks {
+            out.push(ecc[i]);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ModuleRole;
+
+    #[test]
+    fn version_grows_with_payload() {
+        let small = QrCode::encode("hi", Ecc::L).unwrap();
+        assert_eq!(small.version().number(), 1);
+        let text: alloc::string::String = core::iter::repeat_n('x', 500).collect();
+        let big = QrCode::encode(&text, Ecc::L).unwrap();
+        assert!(big.version().number() > 10);
+    }
+
+    #[test]
+    fn boost_raises_ecc_without_growing() {
+        let boosted = QrCode::encode("1", Ecc::L).unwrap();
+        assert_eq!((boosted.version().number(), boosted.ecc()), (1, Ecc::H));
+        let plain = QrCode::builder()
+            .ecc(Ecc::L)
+            .boost_ecc(false)
+            .encode_text("1")
+            .unwrap();
+        assert_eq!(plain.ecc(), Ecc::L);
+    }
+
+    #[test]
+    fn pinned_version_and_mask_are_honored() {
+        let v = Version::new(14).unwrap();
+        let m = Mask::new(5).unwrap();
+        let qr = QrCode::builder()
+            .version(v)
+            .mask(m)
+            .encode_text("https://example.com")
+            .unwrap();
+        assert_eq!((qr.version(), qr.mask(), qr.size()), (v, m, 73));
+    }
+
+    #[test]
+    fn too_long_reports_the_budget() {
+        let max = Version::new(1).unwrap();
+        let err = QrCode::builder()
+            .ecc(Ecc::H)
+            .max_version(max)
+            .encode_bytes(&[0; 20])
+            .unwrap_err();
+        assert_eq!(
+            err,
+            EncodeError::DataTooLong {
+                bits_needed: 4 + 8 + 160,
+                bits_available: 72,
+                max_version: max,
+                ecc: Ecc::H,
+            }
+        );
+    }
+
+    #[test]
+    fn inverted_range_is_rejected() {
+        let err = QrCode::builder()
+            .min_version(Version::new(5).unwrap())
+            .max_version(Version::new(4).unwrap())
+            .encode_text("x")
+            .unwrap_err();
+        assert!(matches!(err, EncodeError::InvalidVersionRange { .. }));
+    }
+
+    #[test]
+    fn capacity_report_counts() {
+        let qr = QrCode::builder()
+            .ecc(Ecc::M)
+            .boost_ecc(false)
+            .encode_text("01234567")
+            .unwrap();
+        let r = qr.capacity_report();
+        assert_eq!(r.data_bits_used, 41);
+        assert_eq!(r.data_bits_available, 128);
+        assert_eq!(
+            (r.data_codewords, r.ecc_codewords, r.total_codewords),
+            (16, 10, 26)
+        );
+        assert_eq!(r.correctable_codewords, 4);
+        assert_eq!(r.damage_tolerance_permille(), 153);
+    }
+
+    #[test]
+    fn iso_annex_example_codewords_land_in_data_region() {
+        // "01234567" at 1-M is the ISO 18004 Annex I example.
+        let qr = QrCode::builder()
+            .ecc(Ecc::M)
+            .boost_ecc(false)
+            .encode_text("01234567")
+            .unwrap();
+        let data = qr.modules().filter(|m| m.3 == ModuleRole::Data).count();
+        let ecc = qr.modules().filter(|m| m.3 == ModuleRole::Ecc).count();
+        assert_eq!((data, ecc), (128, 80));
+    }
+
+    #[test]
+    fn output_is_deterministic() {
+        let a = QrCode::encode("determinism", Ecc::Q).unwrap();
+        let b = QrCode::encode("determinism", Ecc::Q).unwrap();
+        assert_eq!(a, b);
+    }
+}

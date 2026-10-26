@@ -1,0 +1,25 @@
+[package]
+name = "freeqrent"
+description = "Styled and animated SVG QR codes, with zero dependencies"
+keywords = ["qr", "qrcode", "svg", "no_std"]
+categories = ["encoding", "multimedia::images", "no-std"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["std"]
+# `std::error::Error` impls (and later the `std::io::Write` sink).
+std = []
+
+[dependencies]
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+rqrr = "0.11.0"
