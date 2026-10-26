@@ -30,3 +30,10 @@ path = "fuzz_targets/encode_segments.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "color_parse"
+path = "fuzz_targets/color_parse.rs"
+test = false
+doc = false
+bench = false

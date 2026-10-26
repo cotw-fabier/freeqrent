@@ -180,8 +180,8 @@ let report = style.check(&qr);   // ScanReport { ok, warnings, ecc_budget_used, 
 
 | Token | Applies to | Default |
 |---|---|---|
-| `bg` | Canvas background (can be `transparent`) | `#ffffff`-ish warm white |
-| `fg` | Data modules | near-black |
+| `bg` | Canvas background (can be `transparent`; solid colors only) | `#fefcf8` (warm white) |
+| `fg` | Data modules | `#17161c` (near-black) |
 | `finder.outer` | Finder outer ring | `fg` |
 | `finder.eye` | Finder 3×3 center | `fg` |
 | `alignment` | Alignment patterns | `finder.outer` |
@@ -189,8 +189,11 @@ let report = style.check(&qr);   // ScanReport { ok, warnings, ecc_budget_used, 
 | `filler` | Decorative modules (round frame) | `fg` at 0.35 opacity |
 | `logo.backdrop` | Plate behind logo | `bg` |
 | `frame` | Frame stroke/ring | `fg` |
+| `finder.top-left.outer`, `finder.top-right.eye`, … | One finder's ring or eye (per-corner override, §7.2) | `finder.outer` / `finder.eye` |
 
-Values can be any CSS color: hex, `rgb()`, `hsl()`, or **`oklch()`**. The library parses all of these internally, so it can do contrast math. `fg` and `finder.*` also accept **gradients** (`linear`/`radial`, with angle and stops).
+Values can be any CSS color: hex (`#rgb[a]`, `#rrggbb[aa]`), `rgb()`/`rgba()`, `hsl()`/`hsla()` (legacy comma and modern space/slash syntax), **`oklch()`**, `oklab()`, the CSS named colors, or `transparent`. The library parses all of these internally, so it can do contrast math. `fg` and `finder.*` also accept **gradients**: `linear-gradient(<angle> | to <side>, stops…)` and `radial-gradient(stops…)`, where each stop is a color with an optional percentage (CSS fix-up rules fill in missing positions). Gradients span the whole code, not each module. *(rev. W20261025211731)*
+
+Parsed values are **re-serialized**, never copied: each color keeps the space it was written in (hex, `oklch()`, `oklab()`) at fixed precision and is written back in a canonical short form (`oklch(32% .08 265)`). Nothing from the input string reaches the SVG verbatim. OKLCH/OKLab colors outside sRGB are gamut-mapped by reducing chroma at constant lightness and hue, for the literal fallback and the contrast math. The core implements its own `pow`/`cbrt`/`sin`/`cos` on `f64` (stable `core` has none), so color math is identical on every platform. *(rev. W20261025211731)*
 
 ### 6.2 Output form
 
@@ -205,7 +208,7 @@ with **literal fallback** fills for renderers that don't support CSS variables (
 
 ### 6.3 Scannability rules for color
 
-- **Contrast floor:** the luminance difference between `fg` and `bg` (computed in OKLab L) must be ≥ 0.40 to render. Values below 0.55 produce a warning. For gradients, the check uses the **worst** stop.
+- **Contrast floor:** the luminance difference between `fg` and `bg` (computed in OKLab L) must be ≥ 0.40 to render. Values below 0.55 produce a warning. Translucent paints are composited over `bg` first (a translucent `bg` is judged over white). For gradients, the check uses the **worst point**: renderers interpolate in premultiplied sRGB, which can drift from the stops, so each span is sampled at 9 points. A gradient that crosses the background's lightness has zero contrast. *(rev. W20261025211731)*
 - **Polarity:** dark-on-light is the default. Inverted codes (light modules on dark) are allowed with `.allow_inverted(true)` and a warning, because some older scanners fail on them.
 - Finder colors may vary in hue but must meet the same contrast floor.
 
@@ -563,7 +566,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 
 - Unit tests per stage. **Snapshot tests** (`insta`, dev-dep) on SVG output; determinism makes these reliable.
 - Round-trip scan tests (§9) in CI.
-- `cargo fuzz` targets: encoder, CSS color parser, CSS/HTML palette parser, logo SVG sanitizer.
+- `cargo fuzz` targets: encoder (`encode_text`, `encode_segments`), CSS color/gradient parser (`color_parse`: no panics, canonical output re-parses to the same value), CSS/HTML palette parser, logo SVG sanitizer.
 - Benchmarks: target < 1 ms to render a v10 styled static code, and < 5 ms with Liquid + animation, on a modern laptop.
 - WASM size check in CI (§2).
 - `cargo deny` for licenses, advisories and sources; `scripts/check-core-deps.sh` keeps the core's dependency tree empty.
