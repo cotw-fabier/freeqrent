@@ -161,11 +161,16 @@ pub enum Preset {
     Iris,
     /// Groups converge from seeded offsets of up to 3 modules.
     Assemble,
+    /// Like a photo developing: the picture fades in faint, then its
+    /// contrast resolves while the finders and boxes come in. Made for
+    /// codes with a picture (SPEC §7.7); on others the data modules play
+    /// the picture.
+    Develop,
 }
 
 impl Preset {
     /// Every preset, in documentation order.
-    pub const ALL: [Preset; 7] = [
+    pub const ALL: [Preset; 8] = [
         Preset::Settle,
         Preset::Ripple,
         Preset::LockOn,
@@ -173,6 +178,7 @@ impl Preset {
         Preset::Raster,
         Preset::Iris,
         Preset::Assemble,
+        Preset::Develop,
     ];
 
     /// Whether the preset reveals the code through a moving mask instead
@@ -191,6 +197,7 @@ impl Preset {
             Preset::Raster => "raster",
             Preset::Iris => "iris",
             Preset::Assemble => "assemble",
+            Preset::Develop => "develop",
         }
     }
 }
@@ -320,7 +327,7 @@ impl Intro {
     pub fn curve(&self) -> CubicBezier {
         self.ease
             .unwrap_or(match self.preset {
-                Preset::Settle | Preset::Sweep | Preset::Raster => Ease::Quart,
+                Preset::Settle | Preset::Sweep | Preset::Raster | Preset::Develop => Ease::Quart,
                 Preset::Ripple => Ease::Quint,
                 Preset::LockOn | Preset::Iris | Preset::Assemble => Ease::Expo,
             })
@@ -332,7 +339,9 @@ impl Intro {
             Preset::Ripple | Preset::Iris => StaggerOrder::Radial,
             Preset::Sweep => StaggerOrder::Diagonal,
             Preset::Raster => StaggerOrder::Linear,
-            Preset::Settle | Preset::LockOn | Preset::Assemble => StaggerOrder::Random(0),
+            Preset::Settle | Preset::LockOn | Preset::Assemble | Preset::Develop => {
+                StaggerOrder::Random(0)
+            }
         })
     }
 }
@@ -762,6 +771,13 @@ pub(crate) fn element_count(style: &Style, qr: &QrMatrix) -> usize {
     if intro.entrance().is_none_or(|p| p.is_reveal()) {
         return 1 + style.logo.is_some() as usize;
     }
+    if intro.entrance() == Some(Preset::Develop) {
+        let canvas = scene::canvas(style, qr);
+        return svg::static_elements(style, qr, &canvas)
+            .iter()
+            .filter(|e| e.role != LayerRole::Background)
+            .count();
+    }
     let canvas = scene::canvas(style, qr);
     let layers = scene::layers(style, qr);
     let mut seen: Vec<(usize, u8, Option<Corner>)> = pieces(style, qr, &canvas, intro, &layers)
@@ -888,6 +904,10 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
 
 /// Longest time one element animates.
 const MAX_ELEMENT_MS: f64 = 800.0;
+/// Develop: how faint the picture is when the rest starts coming in, and
+/// when that is, as a share of the intro.
+const DEVELOP_FAINT: f32 = 0.35;
+const DEVELOP_FAINT_AT: f64 = 0.45;
 /// The logo's reveal, at most.
 const LOGO_MS: f64 = 400.0;
 
@@ -963,6 +983,42 @@ fn tracks(style: &Style, intro: &Intro, seed: u64, elements: &[Element]) -> Vec<
             window,
             alloc::vec![number(Property::Reveal, 0.0, 0.0)],
         ));
+    }
+    if preset == Preset::Develop {
+        // The picture: the halftone, or the data modules of a code without
+        // one.
+        let pictured = elements.iter().any(|e| e.role == LayerRole::Halftone);
+        let picture = |role| {
+            role == LayerRole::Halftone
+                || (!pictured && matches!(role, LayerRole::Data | LayerRole::Filler))
+        };
+        let faint = window * DEVELOP_FAINT_AT;
+        for (i, e) in elements.iter().enumerate() {
+            let target = Target::Layer(i);
+            match e.role {
+                LayerRole::Background | LayerRole::Shimmer => {}
+                LayerRole::Logo if reveal_logo => {
+                    tracks.push(track(target, total - logo_ms, logo_ms, fade_scale(0.94)))
+                }
+                LayerRole::Logo => {}
+                role if picture(role) => tracks.push(track(
+                    target,
+                    0.0,
+                    window,
+                    alloc::vec![
+                        number(Property::Opacity, 0.0, 0.0),
+                        number(Property::Opacity, DEVELOP_FAINT_AT as f32, DEVELOP_FAINT),
+                    ],
+                )),
+                _ => tracks.push(track(
+                    target,
+                    faint,
+                    window - faint,
+                    alloc::vec![number(Property::Opacity, 0.0, 0.0)],
+                )),
+            }
+        }
+        return tracks;
     }
     // LockOn's finders take the first stretch; the rest settles after.
     let finder_ms = (total * 0.4).min(500.0);
@@ -1307,8 +1363,11 @@ pub(crate) fn build(
     let intro = style.intro.as_ref();
     let entrance = intro.and_then(Intro::entrance);
     let mut elements = match (intro, entrance) {
-        // A reveal moves one mask, so the layers stay whole.
-        (Some(_), Some(p)) if p.is_reveal() => svg::static_elements(style, qr, canvas),
+        // A reveal moves one mask and Develop fades whole layers, so the
+        // layers stay whole.
+        (Some(_), Some(p)) if p.is_reveal() || p == Preset::Develop => {
+            svg::static_elements(style, qr, canvas)
+        }
         (Some(intro), Some(_)) => split(style, qr, canvas, intro),
         // Pulsing eyes need a finder per element.
         _ if style.idle.contains(&Idle::FinderPulse) => {

@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026095000 · M5 · Develop intro and the scan sheet
+
+- Landed: `Preset::Develop` (opacity only, whole layers: the picture to 35% by 45% of the intro, then everything resolves; data modules play the picture on plain codes). `--intro develop`, a Develop gallery card (28 families, all decode). `--scan-sheet FILE`: 46 cards (gallery families, art mode per grid, ink and ECC, pictures with a logo and without steering, v1 contrast probes), each payload naming its card, per-device verdicts saved in the browser and exported as Markdown.
+- Measured: Develop is scannable from 650 ms of 1200 everywhere tested (plain v5–v25, halftone, art on standard and dense grids). Bench verdicts on the sheet's v1 contrast cards: on L 0.85 none passes the degraded render up to ΔL 0.66; on L 0.95 from 0.64.
+- Not done: the device scans themselves. They need a person with phones; until they're recorded M5 isn't closed.
+- Checks: Develop joins every preset loop (static state, last frame, scannable before the end, halftone intros); a CLI test for the sheet.
+
 ## 20261026093447 · M5 · Art mode, tracking grids, CLI
 
 - Landed: `TrackingGrid::{Sparse, Standard, Dense}` and `QrBuilder::tracking_grid` (a version range; `encode_text_for` picks the smallest that affords the style); `Style::art(halftone)` (picture, Outline, dotted timing). CLI: `--halftone`, `--art`, `--ink`, `--bands`, `--clarity`, `--clarity-map`, `--fit`, `--focal`, `--priority`, `--no-steer`, `--tracking-grid`; `--check` prints steering; a procedural `sample` picture; Halftone and Art mode gallery cards (27 families, all decode).

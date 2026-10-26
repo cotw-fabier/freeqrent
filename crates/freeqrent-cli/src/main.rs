@@ -4,6 +4,7 @@
 mod gallery;
 mod options;
 mod sample;
+mod scan_sheet;
 
 use std::fs;
 use std::io::{self, Write};
@@ -61,7 +62,8 @@ Style:
   --logo-padding N         modules between logo and code (default 0.5)
   --no-logo-backdrop       no plate behind the logo
   --keep-modules           draw the modules under the logo
-  --intro PRESET           settle, ripple, lock-on, sweep, raster, iris, assemble
+  --intro PRESET           settle, ripple, lock-on, sweep, raster, iris, assemble,
+                           develop (for pictures)
   --intro-ms N             whole intro length (default 1200)
   --stagger ORDER          radial, linear, diagonal, random[:seed], polar
   --ease EASE              quart, quint, expo, or x1,y1,x2,y2
@@ -98,6 +100,8 @@ Output:
   --show-palette           print what --palette-from-* found, as flags
   --verify                 rasterize and decode the result before writing it
   --gallery FILE           write an HTML page of style families for TEXT
+  --scan-sheet FILE        write the real-device scan matrix as an HTML page
+                           (TEXT is ignored: each code names its own card)
   -h, --help               show this help
 ";
 
@@ -222,6 +226,20 @@ fn load_logo(source: &str) -> Result<Logo, String> {
 }
 
 impl StyleArgs {
+    /// Applies a flag without a value. Returns `false` when `flag` isn't
+    /// one.
+    pub fn set_switch(&mut self, flag: &str) -> bool {
+        match flag {
+            "pretty" => self.pretty = true,
+            "allow-inverted" => self.allow_inverted = true,
+            "no-logo-backdrop" => self.no_logo_backdrop = true,
+            "keep-modules" => self.keep_modules = true,
+            "no-steer" => self.no_steer = true,
+            _ => return false,
+        }
+        true
+    }
+
     /// Applies `--flag value`. Returns `Ok(false)` when `flag` isn't a
     /// style flag.
     pub fn set(&mut self, flag: &str, value: &str) -> Result<bool, String> {
@@ -551,6 +569,7 @@ struct Args {
     style: StyleArgs,
     output: Option<PathBuf>,
     gallery: Option<PathBuf>,
+    scan_sheet: Option<PathBuf>,
     check: bool,
     verify: bool,
     frame_at: Option<u32>,
@@ -567,6 +586,7 @@ fn parse_args() -> Result<Option<Args>, Failure> {
     let mut version = None;
     let mut style = StyleArgs::default();
     let (mut output, mut gallery, mut check, mut verify) = (None, None, false, false);
+    let mut scan_sheet = None;
     let (mut frame_at, mut plan, mut show_palette) = (None, false, false);
     while let Some(arg) = parser.next()? {
         match arg {
@@ -586,11 +606,8 @@ fn parse_args() -> Result<Option<Args>, Failure> {
                     Failure::Usage(format!("--frame-at: {v:?} isn't a whole number of ms"))
                 })?);
             }
-            Long("pretty") => style.pretty = true,
-            Long("allow-inverted") => style.allow_inverted = true,
-            Long("no-logo-backdrop") => style.no_logo_backdrop = true,
-            Long("keep-modules") => style.keep_modules = true,
-            Long("no-steer") => style.no_steer = true,
+            Long("scan-sheet") => scan_sheet = Some(PathBuf::from(parser.value()?)),
+            Long(flag) if style.set_switch(flag) => {}
             Long("ecc") => {
                 ecc = options::ecc(&parser.value()?.string()?).map_err(Failure::Usage)?
             }
@@ -617,7 +634,11 @@ fn parse_args() -> Result<Option<Args>, Failure> {
             _ => return Err(arg.unexpected().into()),
         }
     }
-    let text = text.ok_or_else(|| Failure::Usage("missing TEXT; see --help".to_string()))?;
+    let text = match (text, &scan_sheet) {
+        (Some(t), _) => t,
+        (None, Some(_)) => String::new(),
+        (None, None) => return Err(Failure::Usage("missing TEXT; see --help".to_string())),
+    };
     let mut builder = QrCode::builder().ecc(ecc);
     if let Some(v) = version {
         builder = builder.version(v);
@@ -629,6 +650,7 @@ fn parse_args() -> Result<Option<Args>, Failure> {
         style,
         output,
         gallery,
+        scan_sheet,
         check,
         verify,
         frame_at,
@@ -737,6 +759,10 @@ fn run() -> Result<(), Failure> {
     let Some(args) = parse_args()? else {
         return Ok(());
     };
+    if let Some(path) = &args.scan_sheet {
+        return fs::write(path, scan_sheet::page(&args.style))
+            .map_err(|e| Failure::Failed(format!("{}: {e}", path.display())));
+    }
     if let Some(path) = &args.gallery {
         let page = gallery::page(&args.text, &args.builder, args.pinned, &args.style);
         return fs::write(path, page)

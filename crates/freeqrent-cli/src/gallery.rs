@@ -8,7 +8,7 @@ use freeqrent::QrBuilder;
 use crate::StyleArgs;
 
 /// Style families: a name and the flags that make it.
-const FAMILIES: &[(&str, &[(&str, &str)])] = &[
+pub(crate) const FAMILIES: &[(&str, &[(&str, &str)])] = &[
     ("Classic", &[]),
     ("Rounded", &[("shape", "rounded:0.4")]),
     ("Gapped squares", &[("shape", "square:0.15")]),
@@ -181,6 +181,14 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "Develop intro",
+        &[
+            ("intro", "develop"),
+            ("halftone", "sample"),
+            ("tracking-grid", "sparse"),
+        ],
+    ),
+    (
         "Mixed corners",
         &[
             ("corner", "top-right=leaf/circle"),
@@ -189,7 +197,7 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
-fn escape(text: &str) -> String {
+pub(crate) fn escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -197,7 +205,7 @@ fn escape(text: &str) -> String {
 }
 
 /// Quotes a flag value for a shell when it needs it.
-fn shell_quote(value: &str) -> String {
+pub(crate) fn shell_quote(value: &str) -> String {
     if value
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "-_.:/=#".contains(c))

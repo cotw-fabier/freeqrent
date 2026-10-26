@@ -78,9 +78,9 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 27);
+    assert_eq!(html.matches("<figure>").count(), 28);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 27);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 28);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -241,4 +241,22 @@ fn pictures_build_the_code() {
         let out = freeqrent(bad);
         assert_eq!(out.status.code(), Some(2), "{bad:?}: {}", stderr(&out));
     }
+}
+
+#[test]
+fn the_scan_sheet_names_every_card() {
+    let dir = std::env::temp_dir().join(format!("freeqrent-sheet-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("sheet.html");
+    let out = freeqrent(&["--scan-sheet", path.to_str().unwrap()]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let html = std::fs::read_to_string(&path).unwrap();
+    let cards = html.matches("<figure data-id=").count();
+    assert_eq!(cards, 46);
+    // Every code renders, and each payload names its card.
+    assert!(!html.contains("Refused"));
+    assert!(html.contains("https://example.com/scan/S01"));
+    assert!(html.contains("FQ-S46"));
+    assert_eq!(html.matches("<select data-device=").count(), cards * 4);
+    std::fs::remove_dir_all(&dir).unwrap();
 }

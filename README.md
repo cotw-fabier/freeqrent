@@ -2,7 +2,7 @@
 
 Styled and animated SVG QR codes from a zero-dependency, `no_std` Rust core. MIT licensed.
 
-**Status:** early development. The encoder (M0), static styles (M1) logos, round frames and the Liquid shape (M2), animation (M3), and palettes from images and sites (M4) are done; halftone and art mode (M5) are in progress: steering, halftone sub-cells and art mode have landed; the `Develop` intro and the device scan matrix are next. See [`SPEC.md`](SPEC.md) for the design, [`docs/waves/LOG.md`](docs/waves/LOG.md) for progress, and [`ROADMAP.md`](ROADMAP.md) for ideas.
+**Status:** early development. The encoder (M0), static styles (M1) logos, round frames and the Liquid shape (M2), animation (M3), and palettes from images and sites (M4) are done; halftone and art mode (M5) are in progress: steering, halftone sub-cells and art mode have landed; so has the `Develop` intro. What's left is scanning the device matrix (`freeqrent --scan-sheet sheet.html`) with real phones. See [`SPEC.md`](SPEC.md) for the design, [`docs/waves/LOG.md`](docs/waves/LOG.md) for progress, and [`ROADMAP.md`](ROADMAP.md) for ideas.
 
 ```rust
 use freeqrent::{Ecc, ModuleShape, Palette, QrCode, Style};

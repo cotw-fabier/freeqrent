@@ -49,7 +49,7 @@ Each item says where it came from, so we remember why it's here.
 
 ## Scannability
 
-- **Lightness-aware contrast warning:** `check` warns below ΔL 0.60, but v1 codes on backgrounds between L 0.80 and 0.95 fail the blurred, noisy ZXing render up to ΔL 0.64 (W20261026073538). Only v1 failed, so the rule should be measured across versions before `check` changes; the synthetic noise clips at white, which favors near-white backgrounds, so a real-camera check (M5's device matrix) should set it.
+- **Lightness-aware contrast warning:** `check` warns below ΔL 0.60, but v1 codes on backgrounds between L 0.80 and 0.95 fail the blurred, noisy ZXing render up to ΔL 0.64 (W20261026073538). Only v1 failed, so the rule should be measured across versions before `check` changes; the synthetic noise clips at white, which favors near-white backgrounds, so a real-camera check (M5's device matrix) should set it. The scan sheet carries v1 cards at ΔL 0.60–0.66 on L 0.85 and 0.95 for this; on the bench only L 0.95 from ΔL 0.64 passed the degraded render (W20261026095000).
 
 ## Bindings
 
