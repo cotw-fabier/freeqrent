@@ -3,8 +3,8 @@
 //! `cargo insta review` and say why in the wave log.
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Axis, Corner, Ecc, Emphasis, EyeShape, FinderStyle,
-    ModuleShape, Palette, QrCode, QrMatrix, RingShape, Style, TimingStyle, Version,
+    AlignmentShape, AlignmentStyle, Axis, Corner, Ecc, Emphasis, EyeShape, FinderStyle, Frame,
+    FrameRing, ModuleShape, Palette, QrCode, QrMatrix, RingShape, Style, TimingStyle, Version,
 };
 
 fn code(version: u8) -> QrMatrix {
@@ -96,5 +96,17 @@ fn liquid_with_rounded_finders() {
     let style = Style::new()
         .modules(ModuleShape::Liquid { smoothness: 0.8 })
         .finders(FinderStyle::new(RingShape::Rounded(2.0), EyeShape::Circle));
+    insta::assert_snapshot!(render(style, 1));
+}
+
+#[test]
+fn round_frame_with_dashed_ring() {
+    let style = Style::new()
+        .modules(ModuleShape::Dots { size: 0.85 })
+        .quiet_zone(2)
+        .frame(Frame::Circle {
+            filler_density: 0.5,
+            ring: FrameRing::Dashed,
+        });
     insta::assert_snapshot!(render(style, 1));
 }

@@ -10,9 +10,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Corner, Ecc, Emphasis, EyeShape, FinderStyle, ModuleShape,
-    Palette, QrBuilder, QrCode, QrMatrix, RingShape, ScanReport, Style, TargetSize, TimingStyle,
-    Version,
+    AlignmentShape, AlignmentStyle, Corner, Ecc, Emphasis, EyeShape, FinderStyle, FrameRing,
+    ModuleShape, Palette, QrBuilder, QrCode, QrMatrix, RingShape, ScanReport, Style, TargetSize,
+    TimingStyle, Version,
 };
 
 const HELP: &str = "\
@@ -38,6 +38,9 @@ Style:
   --token NAME=PAINT       any color token, e.g. finder.eye=oklch(55% .2 30)
                            or fg=\"linear-gradient(135deg, #123, #456)\"
   --quiet-zone N           modules of margin (default 4)
+  --frame FRAME            square, rounded[:r], circle[:filler density], none
+  --frame-ring RING        none, solid, dashed (circle frames)
+  --seed N                 seed for decorative choices (default: from the code)
   --allow-inverted         permit light modules on a dark background
   --target-px N            displayed size in device pixels (warns when too small)
   --target-mm N            printed size in millimeters (warns when too small)
@@ -84,6 +87,9 @@ pub struct StyleArgs {
     title: Option<String>,
     label: Option<String>,
     target: Option<TargetSize>,
+    frame: Option<String>,
+    frame_ring: Option<FrameRing>,
+    seed: Option<u64>,
 }
 
 impl StyleArgs {
@@ -119,6 +125,18 @@ impl StyleArgs {
                         format!("{value:?} isn't a size in millimeters")
                     })?))
             }
+            "frame" => {
+                options::frame(value, FrameRing::None)?;
+                self.frame = Some(value.to_string());
+            }
+            "frame-ring" => self.frame_ring = Some(options::frame_ring(value)?),
+            "seed" => {
+                self.seed = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("seed {value:?} isn't a whole number"))?,
+                )
+            }
             "title" => self.title = Some(value.to_string()),
             "label" => self.label = Some(value.to_string()),
             _ => return Ok(false),
@@ -149,6 +167,13 @@ impl StyleArgs {
             .quiet_zone(self.quiet_zone.unwrap_or(4))
             .allow_inverted(self.allow_inverted)
             .minify(!self.pretty);
+        if let Some(frame) = &self.frame {
+            let ring = self.frame_ring.unwrap_or_default();
+            style = style.frame(options::frame(frame, ring)?);
+        }
+        if let Some(seed) = self.seed {
+            style = style.seed(seed);
+        }
         if let Some(title) = &self.title {
             style = style.title(title.clone());
         }

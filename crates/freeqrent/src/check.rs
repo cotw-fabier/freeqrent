@@ -8,7 +8,7 @@ use crate::matrix::{QrMatrix, misdecode_protection};
 use crate::palette::Token;
 use crate::scanbox::{AlignmentShape, EyeShape, RingShape};
 use crate::scene;
-use crate::style::{ModuleShape, Style, TargetSize};
+use crate::style::{Frame, ModuleShape, Style, TargetSize};
 use crate::version::BlockLayout;
 
 /// The OKLab lightness difference below which a code isn't rendered. At
@@ -256,6 +256,24 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         _ => {}
     }
 
+    match style.frame {
+        Frame::RoundedSquare(r) => in_range(
+            &mut errors,
+            "Frame::RoundedSquare radius",
+            r,
+            0.0,
+            style.quiet_zone as f32,
+        ),
+        Frame::Circle { filler_density, .. } => in_range(
+            &mut errors,
+            "Frame::Circle filler_density",
+            filler_density,
+            0.0,
+            1.0,
+        ),
+        Frame::Square | Frame::None => {}
+    }
+
     check_scan_boxes(style, &mut errors, &mut warnings);
     check_target(style, qr, &mut errors, &mut warnings);
     let ecc_budget_used = damage(style, qr, &mut errors);
@@ -265,7 +283,12 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         warnings.push(Warning::TranslucentBackground);
     }
     let mut min_contrast = f32::INFINITY;
-    for layer in scene::layers(style, qr) {
+    // Filler and the frame ring are decoration outside the quiet zone, so
+    // they may be as faint as the design wants.
+    let read = scene::layers(style, qr)
+        .into_iter()
+        .filter(|l| !matches!(l.token, Token::Filler | Token::Frame));
+    for layer in read {
         let token = layer.token;
         let contrast = palette.contrast(token);
         min_contrast = min_contrast.min(contrast.delta_l);
@@ -307,7 +330,7 @@ fn check_target(
     errors: &mut Vec<RenderError>,
     warnings: &mut Vec<Warning>,
 ) {
-    let modules = (qr.size() as u32 + 2 * style.quiet_zone as u32) as f32;
+    let modules = scene::canvas(style, qr).side as f32;
     match style.target {
         None => {}
         Some(TargetSize::Pixels(px)) => {

@@ -78,8 +78,8 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 13);
+    assert_eq!(html.matches("<figure>").count(), 14);
     // All but Outline, which version 2 can't afford.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 12);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 13);
     std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -68,6 +68,42 @@ impl Default for ModuleShape {
     }
 }
 
+/// The outer shape of the code (SPEC §7.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Frame {
+    /// A square background, the default.
+    #[default]
+    Square,
+    /// A square background with rounded corners; the radius is 0 to the
+    /// quiet zone width, in modules.
+    RoundedSquare(f32),
+    /// A round code: the quiet-zone square inscribed in a circle, the
+    /// space between them filled with decorative modules in the `filler`
+    /// token.
+    Circle {
+        /// The share of filler cells drawn, 0–1. Cells are picked by the
+        /// seeded generator (`Style::seed`).
+        filler_density: f32,
+        /// A ring around the circle in the `frame` token.
+        ring: FrameRing,
+    },
+    /// No background element: the host page shows through. Contrast is
+    /// still judged against `bg`.
+    None,
+}
+
+/// The ring around [`Frame::Circle`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum FrameRing {
+    /// No ring.
+    #[default]
+    None,
+    /// A solid ring half a module wide.
+    Solid,
+    /// A dashed ring half a module wide.
+    Dashed,
+}
+
 /// How large a code will be displayed, across the whole symbol including
 /// the quiet zone.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -95,6 +131,8 @@ pub struct Style {
     pub(crate) label: Option<String>,
     pub(crate) id_prefix: Option<String>,
     pub(crate) target: Option<TargetSize>,
+    pub(crate) frame: Frame,
+    pub(crate) seed: Option<u64>,
 }
 
 impl Default for Style {
@@ -113,6 +151,8 @@ impl Default for Style {
             label: None,
             id_prefix: None,
             target: None,
+            frame: Frame::Square,
+            seed: None,
         }
     }
 }
@@ -206,6 +246,26 @@ impl Style {
     pub fn target_size(mut self, size: TargetSize) -> Style {
         self.target = Some(size);
         self
+    }
+
+    /// Sets the frame: square (default), rounded, round with filler, or
+    /// none (SPEC §7.4).
+    pub fn frame(mut self, frame: Frame) -> Style {
+        self.frame = frame;
+        self
+    }
+
+    /// Seeds the generator behind decorative choices such as filler
+    /// modules. By default the seed is a hash of the code's modules, so
+    /// the same payload and options always give the same output.
+    pub fn seed(mut self, seed: u64) -> Style {
+        self.seed = Some(seed);
+        self
+    }
+
+    /// The frame.
+    pub fn frame_style(&self) -> Frame {
+        self.frame
     }
 
     /// The data module shape.

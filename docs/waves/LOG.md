@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261025222326 · M2 · Frames and round codes
+
+- Landed: `Frame::{Square, RoundedSquare(r), Circle { filler_density, ring }, None}`, `FrameRing::{None, Solid, Dashed}`, `Style::seed` with SplitMix64 (default seed: FNV-1a of the modules). A canvas layout every stage reads from. Round codes: the quiet-zone square inscribed in a circle, seeded filler in the cells between (whole cells only, 2-module halo beyond the finders' quiet zones), a filled annulus or dashed ring, a background disc. CLI `--frame`, `--frame-ring`, `--seed`; gallery "Round".
+- Decisions (measured): the quiet zone is the code–filler gap, so §7.6 holds; filler as dark as data at density 1 with qz 2 passed the full bar on 60 codes (v1–40), so filler and ring aren't contrast-checked. Square frames leave the prefix hash alone (no output change for M1 styles).
+- Checks: 4 scene + 1 writer + 1 rng (reference sequence) unit tests; `tests/frames.rs` (3 densities × 3 rings × 3 shapes × qz 2/4, dark filler, rounded square, none) on the payload set; new snapshot `round_frame_with_dashed_ring`, existing snapshots unchanged.
+
 ## 20261025221811 · M2 · Liquid modules
 
 - Landed: `ModuleShape::Liquid { smoothness }` (0–1): contour tracing on the module lattice (dark on the right, so holes wind backwards and nonzero fill suffices; diagonal touches turn right and stay separate blobs), each corner cut by a quadratic with the vertex as control, which rounds convex corners and fills concave ones. `Path::quad_to`. CLI `--shape liquid[:s]` (default 0.8) and a gallery family.

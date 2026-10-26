@@ -18,15 +18,18 @@ use crate::matrix::{Corner, QrMatrix};
 use crate::num::write_scaled;
 use crate::palette::{Gradient, GradientKind, Paint, Palette, Token};
 use crate::scanbox::{self, AlignmentShape};
-use crate::scene::{self, Part};
-use crate::style::Style;
+use crate::scene::{self, Canvas, Part, Round};
+use crate::style::{Frame, Style};
 
 /// The paths to draw, one per (token, fill rule), in paint order.
-fn build_paths(style: &Style, qr: &QrMatrix) -> Vec<(Token, bool, Path)> {
-    let origin = style.quiet_zone as i64 * UNIT;
+fn build_paths(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<(Token, bool, Path)> {
+    let origin = canvas.origin * UNIT;
     let mut paths: Vec<(Token, bool, Path)> = Vec::new();
     for layer in scene::layers(style, qr) {
-        let evenodd = matches!(layer.part, Part::FinderOuter(_) | Part::Alignment(_));
+        let evenodd = matches!(
+            layer.part,
+            Part::FinderOuter(_) | Part::Alignment(_) | Part::Ring
+        );
         let i = match paths
             .iter()
             .position(|(t, e, _)| *t == layer.token && *e == evenodd)
@@ -46,6 +49,12 @@ fn build_paths(style: &Style, qr: &QrMatrix) -> Vec<(Token, bool, Path)> {
             )
         };
         match &layer.part {
+            Part::Ring => {
+                if let Some(round) = &canvas.round {
+                    draw_ring(path, round, canvas.side * UNIT / 2);
+                }
+            }
+            Part::Filler(grid) => geometry::draw_modules(&style.modules, grid, 0, path),
             Part::Modules(grid) => geometry::draw_modules(&style.modules, grid, origin, path),
             Part::Timing(grid) => {
                 for (x, y, _, _) in qr.modules() {
@@ -92,12 +101,45 @@ fn build_paths(style: &Style, qr: &QrMatrix) -> Vec<(Token, bool, Path)> {
     paths
 }
 
+/// A round frame's ring, centered at `c` path units: an annulus, or
+/// dashes as annular sectors, all filled (no strokes, so the paint form
+/// stays the same as everywhere else).
+fn draw_ring(path: &mut Path, round: &Round, c: i64) {
+    let Some((inner, outer)) = round.ring else {
+        return;
+    };
+    let u = |v: f64| math::round(v * UNIT as f64) as i64;
+    if !round.dashed {
+        path.circle(c, c, u(outer));
+        path.circle(c, c, u(inner));
+        return;
+    }
+    // Dashes about 1.2 modules long with 0.8 gaps, starting at the top.
+    let mid = (inner + outer) / 2.0;
+    let count = math::round(2.0 * core::f64::consts::PI * mid / 2.0).max(4.0);
+    let step = 2.0 * core::f64::consts::PI / count;
+    let at = |r: f64, a: f64| {
+        let (sin, cos) = math::sin_cos(a - core::f64::consts::FRAC_PI_2);
+        (c + u(r * cos), c + u(r * sin))
+    };
+    for i in 0..count as i64 {
+        let (a0, a1) = (i as f64 * step, (i as f64 + 0.6) * step);
+        let (p0, p1, p2, p3) = (at(outer, a0), at(outer, a1), at(inner, a1), at(inner, a0));
+        path.move_to(p0.0, p0.1);
+        path.arc_to(u(outer), false, true, p1.0, p1.1);
+        path.line_to(p2.0, p2.1);
+        path.arc_to(u(inner), false, false, p3.0, p3.1);
+        path.close();
+    }
+}
+
 pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) -> fmt::Result {
     let palette = &style.palette;
-    let paths = build_paths(style, qr);
-    let n = qr.size() as i64 + 2 * style.quiet_zone as i64;
+    let canvas = scene::canvas(style, qr);
+    let paths = build_paths(style, qr, &canvas);
+    let n = canvas.side;
     let prefix = id_prefix(style, qr);
-    let draw_bg = palette.background().alpha() > 0.0;
+    let draw_bg = palette.background().alpha() > 0.0 && style.frame != Frame::None;
 
     // Solid tokens that get a class, and the gradients to define.
     let mut solids: Vec<Token> = Vec::new();
@@ -151,7 +193,7 @@ pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) 
                 unreachable!("gradient sources hold gradients");
             };
             out.nested_line()?;
-            write_gradient(out.w, g, &prefix, source, style.quiet_zone, qr.size())?;
+            write_gradient(out.w, g, &prefix, source, canvas.origin, qr.size())?;
         }
         out.line()?;
         out.w.write_str("</defs>")?;
@@ -159,7 +201,23 @@ pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) 
 
     if draw_bg {
         out.line()?;
-        write!(out.w, "<rect width=\"{n}\" height=\"{n}\"")?;
+        match (&canvas.round, style.frame) {
+            (Some(round), _) => {
+                out.w.write_str("<circle cx=\"")?;
+                write_scaled(out.w, n * UNIT / 2, 3)?;
+                out.w.write_str("\" cy=\"")?;
+                write_scaled(out.w, n * UNIT / 2, 3)?;
+                out.w.write_str("\" r=\"")?;
+                write_scaled(out.w, math::round(round.radius * UNIT as f64) as i64, 3)?;
+                out.w.write_char('"')?;
+            }
+            (None, Frame::RoundedSquare(r)) if geometry::units(r) > 0 => {
+                write!(out.w, "<rect width=\"{n}\" height=\"{n}\" rx=\"")?;
+                write_scaled(out.w, geometry::units(r), 3)?;
+                out.w.write_char('"')?;
+            }
+            _ => write!(out.w, "<rect width=\"{n}\" height=\"{n}\"")?,
+        }
         write_paint(out.w, palette, Token::Bg, &prefix)?;
         out.w.write_str("/>")?;
     }
@@ -331,12 +389,12 @@ fn write_gradient<W: Write + ?Sized>(
     gradient: &Gradient,
     prefix: &str,
     source: Token,
-    quiet_zone: u8,
+    origin: i64,
     size: u16,
 ) -> fmt::Result {
     // Gradients span the code area, not the quiet zone.
     let side = size as f64;
-    let c = quiet_zone as f64 + side / 2.0;
+    let c = origin as f64 + side / 2.0;
     let attr = |w: &mut W, name: &str, v: f64| -> fmt::Result {
         write!(w, " {name}=\"")?;
         write_scaled(w, math::round(v * UNIT as f64) as i64, 3)?;
@@ -408,6 +466,14 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
         hash = hash.wrapping_mul(0x0100_0000_01b3);
     };
     eat(style.quiet_zone);
+    // Frames move the code on the canvas, and gradients with it. The
+    // square frame adds nothing, so existing prefixes stay the same.
+    if style.frame != Frame::Square {
+        let canvas = scene::canvas(style, qr);
+        for b in canvas.side.to_le_bytes() {
+            eat(b);
+        }
+    }
     for (_, _, dark, _) in qr.modules() {
         eat(dark as u8);
     }
@@ -571,6 +637,33 @@ mod tests {
             .render(&qr())
             .unwrap();
         assert!(fixed.contains("id=\"qr9x-fg\""));
+    }
+
+    #[test]
+    fn frames_change_the_background() {
+        use crate::{Frame, FrameRing};
+        let svg = |frame| Style::new().frame(frame).render(&qr()).unwrap();
+        assert!(!svg(Frame::None).contains("<rect"));
+        assert!(
+            svg(Frame::RoundedSquare(2.5)).contains("<rect width=\"29\" height=\"29\" rx=\"2.5\"")
+        );
+        let round = svg(Frame::Circle {
+            filler_density: 0.5,
+            ring: FrameRing::Solid,
+        });
+        assert!(round.contains("<circle cx="));
+        assert!(!round.contains("<rect"));
+        let p = prefix_of(&round);
+        assert!(round.contains(&alloc::format!("<path class=\"{p}-frame\"")));
+        assert!(round.contains(&alloc::format!(
+            "class=\"{p}-filler\" fill=\"#17161c\" fill-opacity=\".35\""
+        )));
+        // A round frame moves the code, so it gets its own prefix.
+        assert_ne!(p, prefix_of(&svg(Frame::Square)));
+        assert_eq!(
+            prefix_of(&svg(Frame::Square)),
+            prefix_of(&Style::new().render(&qr()).unwrap())
+        );
     }
 
     #[test]

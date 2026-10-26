@@ -2,7 +2,8 @@
 //! text after the flag, e.g. `dots:0.8` for `--shape`.
 
 use freeqrent::{
-    AlignmentShape, Axis, Corner, Ecc, Emphasis, EyeShape, ModuleShape, RingShape, TimingStyle,
+    AlignmentShape, Axis, Corner, Ecc, Emphasis, EyeShape, Frame, FrameRing, ModuleShape,
+    RingShape, TimingStyle,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -183,6 +184,36 @@ pub fn timing(value: &str) -> Result<TimingStyle, String> {
     }
 }
 
+/// `square`, `rounded[:radius]`, `circle[:density]`, `none`. The ring of
+/// a circle frame comes from `--frame-ring`.
+pub fn frame(value: &str, ring: FrameRing) -> Result<Frame, String> {
+    let (name, param) = named(value)?;
+    match name {
+        "square" => no_param(name, param).map(|()| Frame::Square),
+        "rounded" => Ok(Frame::RoundedSquare(param.unwrap_or(2.0))),
+        "circle" => Ok(Frame::Circle {
+            filler_density: param.unwrap_or(0.5),
+            ring,
+        }),
+        "none" => no_param(name, param).map(|()| Frame::None),
+        _ => Err(format!(
+            "unknown frame {name:?}: try square, rounded, circle or none"
+        )),
+    }
+}
+
+/// `none`, `solid`, `dashed`.
+pub fn frame_ring(value: &str) -> Result<FrameRing, String> {
+    match value {
+        "none" => Ok(FrameRing::None),
+        "solid" => Ok(FrameRing::Solid),
+        "dashed" => Ok(FrameRing::Dashed),
+        _ => Err(format!(
+            "unknown frame ring {value:?}: try none, solid or dashed"
+        )),
+    }
+}
+
 /// `L`, `M`, `Q`, `H` (either case).
 pub fn ecc(value: &str) -> Result<Ecc, String> {
     match value.to_ascii_uppercase().as_str() {
@@ -260,6 +291,19 @@ mod tests {
         assert_eq!(emphasis("outline").unwrap(), Emphasis::Outline);
         assert_eq!(timing("dotted").unwrap(), TimingStyle::Dotted);
         assert_eq!(ecc("q").unwrap(), Ecc::Q);
+        assert_eq!(
+            frame("circle:0.4", FrameRing::Dashed).unwrap(),
+            Frame::Circle {
+                filler_density: 0.4,
+                ring: FrameRing::Dashed
+            }
+        );
+        assert_eq!(
+            frame("rounded", FrameRing::None).unwrap(),
+            Frame::RoundedSquare(2.0)
+        );
+        assert!(frame("none:1", FrameRing::None).is_err());
+        assert!(frame_ring("dotted").is_err());
         assert_eq!(
             token("fg=oklch(32% .08 265)").unwrap(),
             ("fg".to_string(), "oklch(32% .08 265)".to_string())

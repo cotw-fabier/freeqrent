@@ -6,16 +6,149 @@
 use alloc::vec::Vec;
 
 use crate::geometry::Grid;
+use crate::math;
 use crate::matrix::{Corner, ModuleRole, QrMatrix};
 use crate::palette::Token;
+use crate::rng::SplitMix64;
 use crate::scanbox::{Emphasis, TimingStyle, Toward};
-use crate::style::Style;
+use crate::style::{Frame, FrameRing, Style};
 
 pub(crate) const CORNERS: [Corner; 3] = [Corner::TopLeft, Corner::TopRight, Corner::BottomLeft];
+
+/// Where the code sits (SPEC §4 step 1). Lengths are in modules.
+#[derive(Clone, Debug)]
+pub(crate) struct Canvas {
+    /// The side of the square viewBox.
+    pub(crate) side: i64,
+    /// The code's top-left module, on both axes.
+    pub(crate) origin: i64,
+    /// The circle of a round frame.
+    pub(crate) round: Option<Round>,
+}
+
+/// The geometry of [`Frame::Circle`], centered on the canvas.
+#[derive(Clone, Debug)]
+pub(crate) struct Round {
+    /// The background disc's radius.
+    pub(crate) radius: f64,
+    /// The ring's inner and outer radius, if drawn.
+    pub(crate) ring: Option<(f64, f64)>,
+    /// Whether the ring is dashed.
+    pub(crate) dashed: bool,
+    /// Filler cells lie inside this circle: the quiet-zone square's
+    /// circumcircle, as `(2r)²` so the test is exact on integers.
+    filler_r2: i64,
+}
+
+/// Room between the filler circle and the edge of the disc, with and
+/// without a ring. The ring is half a module wide, one module out.
+const ROUND_MARGIN: f64 = 1.0;
+const RING_GAP: f64 = 1.0;
+const RING_WIDTH: f64 = 0.5;
+
+/// Lays out the canvas for `style`'s frame.
+pub(crate) fn canvas(style: &Style, qr: &QrMatrix) -> Canvas {
+    let n = qr.size() as i64;
+    let q = style.quiet_zone as i64;
+    let Frame::Circle {
+        ring: ring_style, ..
+    } = style.frame
+    else {
+        return Canvas {
+            side: n + 2 * q,
+            origin: q,
+            round: None,
+        };
+    };
+    // The quiet-zone square, inscribed: its circumradius is side / √2.
+    let square = n + 2 * q;
+    let filler_radius = square as f64 / core::f64::consts::SQRT_2;
+    let ring = (ring_style != FrameRing::None).then(|| {
+        let inner = filler_radius + RING_GAP;
+        (inner, inner + RING_WIDTH)
+    });
+    let radius = ring.map_or(filler_radius, |(_, outer)| outer) + ROUND_MARGIN;
+    // Same parity as the code, so the code sits on whole modules.
+    let mut side = math::ceil(2.0 * radius) as i64;
+    if (side - n) % 2 != 0 {
+        side += 1;
+    }
+    Canvas {
+        side,
+        origin: (side - n) / 2,
+        round: Some(Round {
+            radius,
+            ring,
+            dashed: ring_style == FrameRing::Dashed,
+            filler_r2: 2 * square * square,
+        }),
+    }
+}
+
+/// The seed for decorative choices: `Style::seed`, or a hash (FNV-1a) of
+/// the modules.
+pub(crate) fn seed(style: &Style, qr: &QrMatrix) -> u64 {
+    if let Some(seed) = style.seed {
+        return seed;
+    }
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for (_, _, dark, _) in qr.modules() {
+        hash ^= dark as u64;
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    hash
+}
+
+/// Filler cells beyond the quiet zone stay this far from each finder's
+/// quiet zone, so a finder's surroundings stay clean.
+const FINDER_HALO: i64 = 2;
+
+/// The decorative modules of a round frame, in canvas coordinates: cells
+/// fully inside the filler circle and outside the quiet-zone square, away
+/// from the finders, each kept with probability `filler_density`.
+pub(crate) fn filler(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Grid {
+    let side = canvas.side;
+    let mut grid = Grid::new(side as usize);
+    let (Some(round), Frame::Circle { filler_density, .. }) = (&canvas.round, style.frame) else {
+        return grid;
+    };
+    let (n, q, o) = (qr.size() as i64, style.quiet_zone as i64, canvas.origin);
+    let finders = CORNERS.map(|c| {
+        let (x, y) = finder_origin(c, qr.size());
+        (o + x, o + y)
+    });
+    let mut rng = SplitMix64::new(seed(style, qr));
+    for y in 0..side {
+        for x in 0..side {
+            let in_quiet_square =
+                (o - q..o + n + q).contains(&x) && (o - q..o + n + q).contains(&y);
+            // The farthest corner from the center, in half-modules.
+            let far = |i: i64| (2 * i - side).abs().max((2 * i + 2 - side).abs());
+            let inside = far(x).pow(2) + far(y).pow(2) <= round.filler_r2;
+            let near_finder = finders.iter().any(|&(fx, fy)| {
+                let gap = |i: i64, f: i64| (f - (i + 1)).max(i - (f + 7)).max(0);
+                gap(x, fx).max(gap(y, fy)) < q + FINDER_HALO
+            });
+            if in_quiet_square || !inside || near_finder {
+                continue;
+            }
+            // Drawn for every candidate, so density changes keep the
+            // same cells in the same order.
+            if rng.next_f64() < filler_density as f64 {
+                grid.set(x as usize, y as usize);
+            }
+        }
+    }
+    grid
+}
 
 /// What a layer draws.
 #[derive(Clone, Debug)]
 pub(crate) enum Part {
+    /// The ring of a round frame.
+    Ring,
+    /// Decorative filler, in canvas coordinates.
+    Filler(Grid),
     /// Modules in the style's module shape.
     Modules(Grid),
     /// Timing modules in a non-plain timing style.
@@ -100,10 +233,25 @@ pub(crate) fn cleared(style: &Style, qr: &QrMatrix) -> Grid {
     grid
 }
 
-/// The layers in paint order: data, timing, alignment, finder rings, eyes.
-/// Empty layers are left out.
+/// The layers in paint order: frame ring, filler, data, timing,
+/// alignment, finder rings, eyes. Empty layers are left out.
 pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
     let size = qr.size() as usize;
+    let canvas = canvas(style, qr);
+    let mut layers = Vec::new();
+    if canvas.round.as_ref().is_some_and(|r| r.ring.is_some()) {
+        layers.push(Layer {
+            token: Token::Frame,
+            part: Part::Ring,
+        });
+    }
+    let filler = filler(style, qr, &canvas);
+    if !filler.is_empty() {
+        layers.push(Layer {
+            token: Token::Filler,
+            part: Part::Filler(filler),
+        });
+    }
     let cleared = cleared(style, qr);
     let mut data = Grid::new(size);
     let mut timing = Grid::new(size);
@@ -119,7 +267,6 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
         }
     }
 
-    let mut layers = Vec::new();
     if !data.is_empty() {
         layers.push(Layer {
             token: Token::Fg,
@@ -175,4 +322,89 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
         }
     }
     layers
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Ecc, QrCode};
+
+    fn round(density: f32, ring: FrameRing) -> Style {
+        Style::new().frame(Frame::Circle {
+            filler_density: density,
+            ring,
+        })
+    }
+
+    #[test]
+    fn square_frames_keep_the_quiet_zone_layout() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
+        let c = canvas(&Style::new().quiet_zone(3), &qr);
+        assert_eq!((c.side, c.origin), (27, 3));
+        assert!(c.round.is_none());
+    }
+
+    #[test]
+    fn round_frames_circumscribe_the_quiet_zone() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap(); // 21 modules
+        for ring in [FrameRing::None, FrameRing::Solid] {
+            let c = canvas(&round(0.5, ring), &qr);
+            let r = c.round.as_ref().unwrap();
+            // 29 / √2 ≈ 20.5, plus the margin (and the ring).
+            assert!(r.radius >= 29.0 / core::f64::consts::SQRT_2 + ROUND_MARGIN);
+            assert!(c.side as f64 >= 2.0 * r.radius);
+            assert_eq!((c.side - 21) % 2, 0);
+            assert_eq!(c.origin * 2 + 21, c.side);
+        }
+    }
+
+    #[test]
+    fn filler_stays_outside_the_quiet_zone_and_inside_the_circle() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
+        let style = round(1.0, FrameRing::None);
+        let c = canvas(&style, &qr);
+        let grid = filler(&style, &qr, &c);
+        let (o, q, n) = (c.origin, 4, 21);
+        let half = c.side as f64 / 2.0;
+        let mut count = 0;
+        for y in 0..c.side {
+            for x in 0..c.side {
+                if !grid.get(x, y) {
+                    continue;
+                }
+                count += 1;
+                let quiet = (o - q..o + n + q).contains(&x) && (o - q..o + n + q).contains(&y);
+                assert!(!quiet, "({x}, {y})");
+                for (cx, cy) in [(x, y), (x + 1, y), (x, y + 1), (x + 1, y + 1)] {
+                    let (dx, dy) = (cx as f64 - half, cy as f64 - half);
+                    assert!(dx * dx + dy * dy <= 29.0 * 29.0 / 2.0 + 1e-9);
+                }
+            }
+        }
+        assert!(count > 0);
+    }
+
+    #[test]
+    fn filler_is_seeded() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
+        let cells = |style: &Style| {
+            let c = canvas(style, &qr);
+            let g = filler(style, &qr, &c);
+            (0..c.side)
+                .flat_map(|y| (0..c.side).map(move |x| (x, y)))
+                .filter(|&(x, y)| g.get(x, y))
+                .collect::<Vec<_>>()
+        };
+        let style = round(0.5, FrameRing::None);
+        assert_eq!(cells(&style), cells(&style));
+        assert_ne!(cells(&style.clone().seed(1)), cells(&style.clone().seed(2)));
+        assert!(cells(&round(0.0, FrameRing::None)).is_empty());
+        let other = QrCode::encode("WORLD", Ecc::M).unwrap();
+        let c = canvas(&style, &other);
+        let g = filler(&style, &other, &c);
+        let differs = (0..c.side)
+            .flat_map(|y| (0..c.side).map(move |x| (x, y)))
+            .any(|(x, y)| g.get(x, y) != cells(&style).contains(&(x, y)));
+        assert!(differs, "the default seed follows the code");
+    }
 }

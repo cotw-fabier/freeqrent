@@ -132,7 +132,7 @@ payload ─▶ encode ─▶ QrMatrix ─▶ Layout ─▶ Geometry ─▶ Paint
 
 ### 4.1 Output guarantees
 
-- **Deterministic:** the same inputs and the same library version produce byte-identical output. Any randomness comes from a seeded internal PRNG (SplitMix64), with the seed defaulting to a hash of the payload.
+- **Deterministic:** the same inputs and the same library version produce byte-identical output. Any randomness comes from a seeded internal PRNG (SplitMix64). `Style::seed` sets the seed; by default it's an FNV-1a hash of the modules, which stands in for the payload since `QrMatrix` doesn't keep it. *(rev. W20261025222326)*
 - Coordinates are in **module units** (`viewBox="0 0 N N"`), numbers are written with ≤ 3 decimals, and there are no redundant attributes.
 - Output is valid SVG 1.1 with CSS. It contains no `<script>`, no `<foreignObject>`, and no external references (logos/images are inlined as `data:` URIs or nested SVG).
 - Optional `<title>`/`<desc>` and `role="img"` + `aria-label`. `QrMatrix` doesn't keep the payload, so the label defaults to "QR code" and `Style::label` sets it; the CLI passes the URL for link codes. *(rev. W20261025212852)*
@@ -143,14 +143,14 @@ payload ─▶ encode ─▶ QrMatrix ─▶ Layout ─▶ Geometry ─▶ Paint
 ## 5. Public API Sketch
 
 ```rust
-use freeqrent::{QrCode, Ecc, Style, ModuleShape, FinderStyle, RingShape, EyeShape, Frame, Palette, Logo, Intro};
+use freeqrent::{QrCode, Ecc, Style, ModuleShape, FinderStyle, RingShape, EyeShape, Frame, FrameRing, Palette, Logo, Intro};
 
 let qr = QrCode::encode("https://example.com", Ecc::Q)?;
 
 let svg: String = Style::new()
     .modules(ModuleShape::Liquid { smoothness: 0.8 })
     .finders(FinderStyle::new(RingShape::Squircle, EyeShape::Circle))
-    .frame(Frame::Circle { filler_density: 0.5 })
+    .frame(Frame::Circle { filler_density: 0.5, ring: FrameRing::None })
     .palette(Palette::from_tokens([
         ("bg", "#f7f3ec"),
         ("fg", "oklch(32% 0.08 265)"),
@@ -295,10 +295,13 @@ Timing styles (`TimingStyle`): `Plain` (data module shape), `Dotted` (0.8 circle
 
 ### 7.4 Round QR codes (feature 3)
 
-- `Frame::Circle { filler_density, ring }`: the square code is inscribed in a circle, and the area between the square and the circle is filled with **decorative filler modules** in the same shape style (seeded random, `filler` token).
-- A **quiet gap** of ≥ 1 module separates the real code from the filler so decoders don't confuse them. Filler near the finders is suppressed in a 2-module halo.
-- Optional `ring`: a solid or dashed outer circle stroke in the `frame` token.
-- Other frames: `Square` (default), `RoundedSquare(r)`, `None`.
+- `Frame::Circle { filler_density, ring }`: the quiet-zone square (code plus `quiet_zone` on each side) is inscribed in a circle, and the cells between the square and the circle are filled with **decorative filler modules** in the same shape style, in the `filler` token. A cell is a candidate when it lies wholly inside the circle and outside the quiet-zone square; each candidate is kept with probability `filler_density` (0–1), drawn from the seeded generator (§4.1) in row-major order.
+- The quiet zone is the gap between code and filler, so §7.6 holds unchanged: filler never enters it. Filler is also kept out of a **2-module halo** beyond each finder's quiet zone. Measured: with that halo, filler as dark as the data at density 1 and a 2-module quiet zone passed the full bar (rqrr and the degraded render) at every tested version, so filler is decoration and isn't contrast-checked; nor is the ring.
+- Optional `ring` (`FrameRing::None | Solid | Dashed`): a half-module ring one module outside the filler circle, in the `frame` token, drawn as filled geometry (an annulus, or annular-sector dashes about 1.2 modules long) so it takes the same paint form as everything else. The background is a disc one module beyond the circle (or the ring), and the canvas is the smallest square around it whose side has the code's parity, so the code stays on whole modules.
+- Other frames: `Square` (default), `RoundedSquare(r)` (corner radius 0 up to the quiet-zone width), `None` (no background element; contrast is still judged against `bg`).
+- A non-square frame moves the code on the canvas, so it feeds the class/ID prefix hash (§6.2); `Square` doesn't, which keeps existing prefixes stable.
+
+*(rev. W20261025222326)*
 
 ### 7.5 Gradients & texture
 
@@ -307,7 +310,7 @@ Timing styles (`TimingStyle`): `Plain` (data module shape), `Dotted` (0.8 circle
 
 ### 7.6 Quiet zone
 
-- Default is 4 modules (spec minimum). This can be reduced to 2 with a warning, since many modern scanners cope with that. Frames and filler never intrude on it.
+- Default is 4 modules (spec minimum). This can be reduced to 2 with a warning, since many modern scanners cope with that. Frames and filler never intrude on it; in a round frame it is the gap between code and filler (§7.4).
 
 ### 7.7 Image-embedded QR / halftone (feature 6b) — `halftone`
 
@@ -525,7 +528,7 @@ Errors cross the boundary as a structured `{ code, message, detail }` value and 
 
 `freeqrent "https://x.y" --shape dots:0.8 --finder squircle/circle --fg "oklch(32% .08 265)" --verify -o code.svg`
 
-Built in M1 (crate `freeqrent-cli`, binary `freeqrent`, arguments via `lexopt`). Style flags mirror `Style`: `--shape`, `--finder RING[/EYE]`, `--corner CORNER=RING[/EYE]`, `--alignment`, `--emphasis`, `--timing`, `--token NAME=PAINT` (plus `--fg`/`--bg`), `--quiet-zone`, `--allow-inverted`, `--target-px`/`--target-mm`; encoding with `--ecc` and `--version`; output with `-o`, `--pretty`, `--title`, `--label` (defaults to the payload when it's an http(s) URL). `--check` prints the `ScanReport`; `--verify` decodes the render against the style's own bar (feature `verify`, on by default, uses `freeqrent-verify`); `--gallery FILE` writes an HTML page of twelve style families for the payload, each with the command that reproduces it and its verdict. Exit codes: 0 ok, 1 refused or failed verification, 2 bad arguments. Later milestones add `--logo`, `--frame`, `--palette-from-image` and `--intro`. *(rev. W20261025215711)*
+Built in M1 (crate `freeqrent-cli`, binary `freeqrent`, arguments via `lexopt`). Style flags mirror `Style`: `--shape`, `--finder RING[/EYE]`, `--corner CORNER=RING[/EYE]`, `--alignment`, `--emphasis`, `--timing`, `--token NAME=PAINT` (plus `--fg`/`--bg`), `--quiet-zone`, `--allow-inverted`, `--target-px`/`--target-mm`; encoding with `--ecc` and `--version`; output with `-o`, `--pretty`, `--title`, `--label` (defaults to the payload when it's an http(s) URL). `--check` prints the `ScanReport`; `--verify` decodes the render against the style's own bar (feature `verify`, on by default, uses `freeqrent-verify`); `--gallery FILE` writes an HTML page of style families for the payload (fourteen as of M2), each with the command that reproduces it and its verdict. Exit codes: 0 ok, 1 refused or failed verification, 2 bad arguments. `--frame square|rounded[:r]|circle[:density]|none`, `--frame-ring none|solid|dashed` and `--seed N` came with M2 frames. Later milestones add `--logo`, `--palette-from-image` and `--intro`. *(rev. W20261025215711, W20261025222326)*
 
 Phase 1: `cargo install` and GitHub releases. Phase 2: also an npm `bin` (WASM, so it works anywhere Node runs).
 

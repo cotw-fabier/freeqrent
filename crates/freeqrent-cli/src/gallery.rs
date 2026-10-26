@@ -31,6 +31,16 @@ const FAMILIES: &[(&str, &[(&str, &str)])] = &[
     ),
     ("Leaf", &[("shape", "rounded:0.5"), ("finder", "leaf")]),
     (
+        "Round",
+        &[
+            ("shape", "liquid:1"),
+            ("finder", "rounded:2/rounded:1"),
+            ("frame", "circle:0.6"),
+            ("frame-ring", "dashed"),
+            ("quiet-zone", "2"),
+        ],
+    ),
+    (
         "Ink on paper",
         &[
             ("bg", "oklch(96% .02 85)"),

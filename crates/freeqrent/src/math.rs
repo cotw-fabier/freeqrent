@@ -11,6 +11,11 @@ pub(crate) fn floor(x: f64) -> f64 {
     if t > x { t - 1.0 } else { t }
 }
 
+/// Smallest integer ≥ `x`, for `|x| < 2^52`.
+pub(crate) fn ceil(x: f64) -> f64 {
+    -floor(-x)
+}
+
 /// Nearest integer, halves away from zero, for `|x| < 2^52`.
 pub(crate) fn round(x: f64) -> f64 {
     if x < 0.0 {
