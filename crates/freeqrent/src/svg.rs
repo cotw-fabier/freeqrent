@@ -150,7 +150,7 @@ pub(crate) fn write<W: Write + ?Sized>(style: &Style, qr: &QrMatrix, w: &mut W) 
             let Some(Paint::Gradient(g)) = palette.get(source) else {
                 unreachable!("gradient sources hold gradients");
             };
-            out.line()?;
+            out.nested_line()?;
             write_gradient(out.w, g, &prefix, source, style.quiet_zone, qr.size())?;
         }
         out.line()?;
@@ -192,6 +192,14 @@ impl<W: Write + ?Sized> Out<'_, W> {
     fn line(&mut self) -> fmt::Result {
         if self.pretty {
             self.w.write_str("\n  ")?;
+        }
+        Ok(())
+    }
+
+    /// Starts a grandchild's line (inside `<defs>`) in pretty mode.
+    fn nested_line(&mut self) -> fmt::Result {
+        if self.pretty {
+            self.w.write_str("\n    ")?;
         }
         Ok(())
     }

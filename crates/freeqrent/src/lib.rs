@@ -60,5 +60,5 @@ pub use scanbox::{
     AlignmentShape, AlignmentStyle, Emphasis, EyeShape, FinderStyle, RingShape, TimingStyle,
 };
 pub use segment::{ECI_UTF8, EciPolicy, Mode, Segment};
-pub use style::{Axis, ModuleShape, Style};
+pub use style::{Axis, ModuleShape, Style, TargetSize};
 pub use version::{Ecc, Version};

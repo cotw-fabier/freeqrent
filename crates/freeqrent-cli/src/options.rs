@@ -1,0 +1,261 @@
+//! Turning command-line values into style options. Each parser takes the
+//! text after the flag, e.g. `dots:0.8` for `--shape`.
+
+use freeqrent::{
+    AlignmentShape, Axis, Corner, Ecc, Emphasis, EyeShape, ModuleShape, RingShape, TimingStyle,
+};
+
+/// Splits `name:param` and parses the parameter as a number.
+fn named(value: &str) -> Result<(&str, Option<f32>), String> {
+    match value.split_once(':') {
+        None => Ok((value, None)),
+        Some((name, param)) => {
+            let number = param
+                .parse::<f32>()
+                .map_err(|_| format!("{param:?} in {value:?} isn't a number"))?;
+            Ok((name, Some(number)))
+        }
+    }
+}
+
+fn no_param(name: &str, param: Option<f32>) -> Result<(), String> {
+    match param {
+        None => Ok(()),
+        Some(_) => Err(format!("{name} takes no parameter")),
+    }
+}
+
+/// `square[:gap]`, `rounded[:radius]`, `dots[:size]`, `bars-v[:radius]`,
+/// `bars-h[:radius]`.
+pub fn shape(value: &str) -> Result<ModuleShape, String> {
+    let (name, param) = named(value)?;
+    Ok(match name {
+        "square" => ModuleShape::Square {
+            gap: param.unwrap_or(0.0),
+        },
+        "rounded" => ModuleShape::Rounded {
+            radius: param.unwrap_or(0.35),
+        },
+        "dots" => ModuleShape::Dots {
+            size: param.unwrap_or(0.85),
+        },
+        "bars-v" | "bars-h" => ModuleShape::Bars {
+            axis: if name == "bars-v" {
+                Axis::Vertical
+            } else {
+                Axis::Horizontal
+            },
+            radius: param.unwrap_or(0.5),
+        },
+        _ => {
+            return Err(format!(
+                "unknown shape {name:?}: try square, rounded, dots, bars-v or bars-h"
+            ));
+        }
+    })
+}
+
+/// `square`, `rounded[:radius]`, `squircle`, `leaf`.
+pub fn ring(value: &str) -> Result<RingShape, String> {
+    let (name, param) = named(value)?;
+    Ok(match name {
+        "square" => {
+            no_param(name, param)?;
+            RingShape::Square
+        }
+        "rounded" => RingShape::Rounded(param.unwrap_or(1.5)),
+        "squircle" => {
+            no_param(name, param)?;
+            RingShape::Squircle
+        }
+        "leaf" => {
+            no_param(name, param)?;
+            RingShape::Leaf
+        }
+        _ => {
+            return Err(format!(
+                "unknown ring {name:?}: try square, rounded, squircle or leaf"
+            ));
+        }
+    })
+}
+
+/// `square`, `rounded[:radius]`, `circle`, `squircle`, `leaf`.
+pub fn eye(value: &str) -> Result<EyeShape, String> {
+    let (name, param) = named(value)?;
+    let plain = |shape| no_param(name, param).map(|()| shape);
+    match name {
+        "square" => plain(EyeShape::Square),
+        "rounded" => Ok(EyeShape::Rounded(param.unwrap_or(0.75))),
+        "circle" => plain(EyeShape::Circle),
+        "squircle" => plain(EyeShape::Squircle),
+        "leaf" => plain(EyeShape::Leaf),
+        _ => Err(format!(
+            "unknown eye {name:?}: try square, rounded, circle, squircle or leaf"
+        )),
+    }
+}
+
+/// The eye that goes with a ring when only the ring is given.
+fn matching_eye(ring: RingShape) -> EyeShape {
+    match ring {
+        RingShape::Square => EyeShape::Square,
+        RingShape::Rounded(r) => EyeShape::Rounded((r / 2.0).min(1.5)),
+        RingShape::Squircle => EyeShape::Squircle,
+        RingShape::Leaf => EyeShape::Leaf,
+    }
+}
+
+/// `RING[/EYE]`, e.g. `rounded:2/circle`.
+pub fn finder(value: &str) -> Result<(RingShape, EyeShape), String> {
+    match value.split_once('/') {
+        None => {
+            let r = ring(value)?;
+            Ok((r, matching_eye(r)))
+        }
+        Some((r, e)) => Ok((ring(r)?, eye(e)?)),
+    }
+}
+
+/// `CORNER=RING[/EYE]` with CORNER one of `top-left`, `top-right`,
+/// `bottom-left`.
+pub fn corner(value: &str) -> Result<(Corner, RingShape, EyeShape), String> {
+    let (name, shapes) = value
+        .split_once('=')
+        .ok_or_else(|| format!("expected CORNER=RING[/EYE], got {value:?}"))?;
+    let corner = match name {
+        "top-left" => Corner::TopLeft,
+        "top-right" => Corner::TopRight,
+        "bottom-left" => Corner::BottomLeft,
+        _ => {
+            return Err(format!(
+                "unknown corner {name:?}: try top-left, top-right or bottom-left"
+            ));
+        }
+    };
+    let (ring, eye) = finder(shapes)?;
+    Ok((corner, ring, eye))
+}
+
+/// `match` or `RING[/EYE]` with alignment-sized radii.
+pub fn alignment(value: &str) -> Result<AlignmentShape, String> {
+    if value == "match" {
+        return Ok(AlignmentShape::Match);
+    }
+    let (outer, eye) = match value.split_once('/') {
+        None => {
+            let r = ring(value)?;
+            let e = match r {
+                RingShape::Rounded(_) => EyeShape::Circle,
+                other => matching_eye(other),
+            };
+            (r, e)
+        }
+        Some((r, e)) => (ring(r)?, eye(e)?),
+    };
+    Ok(AlignmentShape::Own { outer, eye })
+}
+
+/// `none`, `accent`, `outline`.
+pub fn emphasis(value: &str) -> Result<Emphasis, String> {
+    match value {
+        "none" => Ok(Emphasis::None),
+        "accent" => Ok(Emphasis::Accent),
+        "outline" => Ok(Emphasis::Outline),
+        _ => Err(format!(
+            "unknown emphasis {value:?}: try none, accent or outline"
+        )),
+    }
+}
+
+/// `plain`, `dotted`, `dashed`.
+pub fn timing(value: &str) -> Result<TimingStyle, String> {
+    match value {
+        "plain" => Ok(TimingStyle::Plain),
+        "dotted" => Ok(TimingStyle::Dotted),
+        "dashed" => Ok(TimingStyle::Dashed),
+        _ => Err(format!(
+            "unknown timing {value:?}: try plain, dotted or dashed"
+        )),
+    }
+}
+
+/// `L`, `M`, `Q`, `H` (either case).
+pub fn ecc(value: &str) -> Result<Ecc, String> {
+    match value.to_ascii_uppercase().as_str() {
+        "L" => Ok(Ecc::L),
+        "M" => Ok(Ecc::M),
+        "Q" => Ok(Ecc::Q),
+        "H" => Ok(Ecc::H),
+        _ => Err(format!("unknown ECC level {value:?}: try L, M, Q or H")),
+    }
+}
+
+/// `NAME=VALUE`, split at the first `=`.
+pub fn token(value: &str) -> Result<(String, String), String> {
+    value
+        .split_once('=')
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .ok_or_else(|| format!("expected NAME=VALUE, got {value:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shapes() {
+        assert_eq!(shape("square").unwrap(), ModuleShape::SQUARE);
+        assert_eq!(shape("dots:0.7").unwrap(), ModuleShape::Dots { size: 0.7 });
+        assert_eq!(
+            shape("bars-v").unwrap(),
+            ModuleShape::Bars {
+                axis: Axis::Vertical,
+                radius: 0.5
+            }
+        );
+        assert!(shape("dots:big").is_err());
+        assert!(shape("hex").is_err());
+    }
+
+    #[test]
+    fn finders_and_corners() {
+        assert_eq!(
+            finder("rounded:2/circle").unwrap(),
+            (RingShape::Rounded(2.0), EyeShape::Circle)
+        );
+        assert_eq!(
+            finder("squircle").unwrap(),
+            (RingShape::Squircle, EyeShape::Squircle)
+        );
+        assert_eq!(
+            finder("rounded:2").unwrap(),
+            (RingShape::Rounded(2.0), EyeShape::Rounded(1.0))
+        );
+        assert!(finder("leaf:2").is_err());
+        assert_eq!(
+            corner("top-right=leaf/circle").unwrap(),
+            (Corner::TopRight, RingShape::Leaf, EyeShape::Circle)
+        );
+        assert!(corner("middle=square").is_err());
+    }
+
+    #[test]
+    fn the_rest() {
+        assert_eq!(alignment("match").unwrap(), AlignmentShape::Match);
+        assert_eq!(
+            alignment("rounded:2.5").unwrap(),
+            AlignmentShape::Own {
+                outer: RingShape::Rounded(2.5),
+                eye: EyeShape::Circle
+            }
+        );
+        assert_eq!(emphasis("outline").unwrap(), Emphasis::Outline);
+        assert_eq!(timing("dotted").unwrap(), TimingStyle::Dotted);
+        assert_eq!(ecc("q").unwrap(), Ecc::Q);
+        assert_eq!(
+            token("fg=oklch(32% .08 265)").unwrap(),
+            ("fg".to_string(), "oklch(32% .08 265)".to_string())
+        );
+    }
+}

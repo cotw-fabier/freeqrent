@@ -25,6 +25,7 @@ jobs:
         run: |
           cargo build -p freeqrent --no-default-features --target thumbv7em-none-eabihf
           cargo build -p freeqrent --no-default-features --features kanji --target thumbv7em-none-eabihf
+      - run: cargo build -p freeqrent-cli --no-default-features
       - run: scripts/check-core-deps.sh
 
   msrv:

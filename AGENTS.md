@@ -15,7 +15,7 @@ A zero-dependency Rust library for styled and animated SVG QR codes. `SPEC.md` i
 - **Phase 1 is the Rust core only.** Don't build language bindings until Phase 2 (SPEC §2, §12). Do keep the core binding-friendly: options are plain data, there are no callbacks on hot paths, and errors are structured.
 - **The core crate has zero dependencies** and is `no_std` + `alloc`, with `#![forbid(unsafe_code)]`. Dev-dependencies (`rqrr`, `insta`, `resvg`) are fine. Anything else needs a spec change first.
 - **Output is deterministic.** The same input produces byte-identical SVG. All randomness comes from the seeded PRNG.
-- **Scannability is a hard constraint.** A style that can't be verified to scan doesn't ship. Round-trip decode tests cover every new style option.
+- **Scannability is a hard constraint.** A style that can't be verified to scan doesn't ship. Round-trip decode tests cover every new style option: render it, then `freeqrent_verify::verify_style` (resvg + ZXing + rqrr, held to the bar the style's own `ScanReport` implies). Limits and warnings come from measurements, recorded in the spec and the wave log.
 - **The static state is the finished code.** Animation only plays *into* it (SPEC §8.2).
 - **The spec moves with the code.** If a wave changes behavior described in `SPEC.md`, update the spec in the same wave. Ideas that come up but aren't built go in `ROADMAP.md`.
 - **Every W wave ends with a `LOG.md` entry.**
@@ -30,6 +30,8 @@ cargo build -p freeqrent --no-default-features   # no_std build
 scripts/check-core-deps.sh                        # core stays dependency-free
 cargo deny check
 ```
+
+Snapshot changes (`crates/freeqrent/tests/snapshots/`) are output changes: review them with `cargo insta review` and say why in the wave log. Preview styles with `cargo run -p freeqrent-cli -- "https://example.com" --gallery gallery.html`.
 
 CI (`.github/workflows/ci.yml`) also builds for a bare-metal target, checks the MSRV (1.92), and runs each fuzz target for 60 s. Fuzz locally with `cd fuzz && cargo +nightly fuzz run encode_text`.
 

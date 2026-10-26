@@ -21,6 +21,16 @@ One short entry per W wave, newest first. The protocol is in `README.md`.
 - Decisions: color strings are parsed and re-serialized in canonical form, never copied into output; own `f64` `pow`/`cbrt`/`sin`/`cos` because stable `core` lacks them (also keeps math identical across platforms).
 - Checks: 49 unit tests (OKLab against Ottosson's reference values, sRGB → OKLab → sRGB over a 18³ grid); bare-metal build; 27.7M fuzz runs clean after fixing one panic it found (byte slicing across a multi-byte char in the gradient prefix check).
 
+## M1 complete · 2026-10-25
+
+Static styles done: CSS colors and OKLab contrast, token palette with gradients, streaming SVG writer (hex attributes plus a prefixed `@supports` token layer), Square/Rounded/Dots/Bars, finder/alignment/timing styles with per-corner overrides, quiet zone, `Style::check` with measured limits and a damage budget, `freeqrent-verify`, the `freeqrent` CLI. Waves 20261025211731, 20261025212852, 20261025214510, 20261025215711.
+
+## 20261025215711 · M1 · Check completion, preview CLI, snapshots
+
+- Landed: `TargetSize` (pixels or millimeters, whole symbol) with `SmallOnScreen`/`SmallInPrint` warnings; `freeqrent-cli` (binary `freeqrent`): style flags mirroring `Style`, `--check`, `--verify`, `--gallery` (twelve style families with the reproducing command and verdict), exit codes 0/1/2; `insta` snapshots of five whole documents; pretty mode nests `<defs>` children.
+- Decision: target size is a `Style` field, not a `check` argument, so styles stay plain data. The CLI's `verify` feature (default on) keeps resvg/rxing optional.
+- Checks: 73 core unit + 5 snapshot + 9 CLI tests (6 end-to-end on the binary); CLI builds without `verify`; gallery for `https://freeqrent.dev/menu` decodes 11 of 12 families (Outline is refused at v2 over the damage budget, and the page says so).
+
 ## M0 complete · 2026-10-25
 
 Encoder done: v1–40, L/M/Q/H, numeric/alphanumeric/byte/Kanji/ECI, exact minimal segmentation, roles, pinning, capacity report. Waves 20261025204222, 20261025205148, 20261025210004, 20261025210241.

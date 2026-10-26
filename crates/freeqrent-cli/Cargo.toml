@@ -1,0 +1,26 @@
+[package]
+name = "freeqrent-cli"
+description = "Command-line front end and preview tool for freeQRent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "freeqrent"
+path = "src/main.rs"
+
+[features]
+default = ["verify"]
+# `--verify` and verified galleries (pulls in resvg, rqrr and rxing).
+verify = ["dep:freeqrent-verify"]
+
+[dependencies]
+freeqrent = { path = "../freeqrent", version = "0.1.0" }
+freeqrent-verify = { path = "../freeqrent-verify", version = "0.1.0", optional = true }
+lexopt = "0.3.2"
+
+[lints]
+workspace = true

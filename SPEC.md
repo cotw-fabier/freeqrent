@@ -352,7 +352,7 @@ The goal: a **short payload** (such as a website URL) rendered as a **large, ima
 4. **Optional clarity map** (§7.7 rule 4) keeps a calmer zone for scanners while the rest of the picture carries the visual.
 
 **Feasibility:** proven. This is the QArt technique plus halftone QR, both demonstrated in the literature, and the reference image matches a v14–20 code with emphasized alignment patterns. The trade-offs are:
-- **Minimum size goes up.** A v17 code is 85 modules plus quiet zone. The code must be displayed at ≥ 3 device pixels per module (about 280 px on screen) or printed at ≥ 0.4 mm per module (about 4 cm; 5 cm or more is recommended). `Style::check` takes an optional `target_size` and warns below these thresholds.
+- **Minimum size goes up.** A v17 code is 85 modules plus quiet zone. The code must be displayed at ≥ 3 device pixels per module (about 280 px on screen) or printed at ≥ 0.4 mm per module (about 4 cm; 5 cm or more is recommended). `Style::target_size(TargetSize::Pixels(n) | TargetSize::Millimeters(x))` (the whole symbol, quiet zone included) makes `Style::check` warn below these thresholds; it's a style field rather than a `check` argument so styles stay plain data. *(rev. W20261025215711)*
 - **Payload must stay small.** As the payload grows, fewer bits can be steered and the image fidelity drops. `ScanReport` includes `steerable_modules` (count and %) so callers can see the effect.
 - **Decoding is still global.** A scanner must read the whole symbol; there is no "scan only the clean zone." The clarity map improves the odds, but it is not a separate code.
 
@@ -523,7 +523,9 @@ Errors cross the boundary as a structured `{ code, message, detail }` value and 
 
 ### 10.5 CLI
 
-`freeqrent "https://x.y" --shape liquid --finder squircle --frame circle --logo logo.svg --palette-from-image hero.jpg --intro ripple -o code.svg`
+`freeqrent "https://x.y" --shape dots:0.8 --finder squircle/circle --fg "oklch(32% .08 265)" --verify -o code.svg`
+
+Built in M1 (crate `freeqrent-cli`, binary `freeqrent`, arguments via `lexopt`). Style flags mirror `Style`: `--shape`, `--finder RING[/EYE]`, `--corner CORNER=RING[/EYE]`, `--alignment`, `--emphasis`, `--timing`, `--token NAME=PAINT` (plus `--fg`/`--bg`), `--quiet-zone`, `--allow-inverted`, `--target-px`/`--target-mm`; encoding with `--ecc` and `--version`; output with `-o`, `--pretty`, `--title`, `--label` (defaults to the payload when it's an http(s) URL). `--check` prints the `ScanReport`; `--verify` decodes the render against the style's own bar (feature `verify`, on by default, uses `freeqrent-verify`); `--gallery FILE` writes an HTML page of twelve style families for the payload, each with the command that reproduces it and its verdict. Exit codes: 0 ok, 1 refused or failed verification, 2 bad arguments. Later milestones add `--logo`, `--frame`, `--palette-from-image` and `--intro`. *(rev. W20261025215711)*
 
 Phase 1: `cargo install` and GitHub releases. Phase 2: also an npm `bin` (WASM, so it works anywhere Node runs).
 
@@ -555,7 +557,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 | Milestone | Scope |
 |---|---|
 | **M0: Encoder** | Versions 1–40, all ECC, auto segmentation, masks, `QrMatrix` + roles, version pinning. Verified against `rqrr`, the ISO 18004 worked examples, and module-for-module against `qrcodegen`. Fuzzing (`cargo fuzz`) on inputs. **Done 2026-10-25.** |
-| **M1: Static styles** | SVG writer, Square/Rounded/Dots/Bars, finder/alignment/timing styles, tokens + contrast checks, quiet zone, `Style::check`, CLI for previewing. |
+| **M1: Static styles** | SVG writer, Square/Rounded/Dots/Bars, finder/alignment/timing styles, tokens + contrast checks, quiet zone, `Style::check`, CLI for previewing. Verified with resvg + ZXing (`rxing`) + rqrr. **Done 2026-10-25.** |
 | **M2: Liquid + logo + round** | Contour-traced Liquid, logo excavation with ECC budget, circle frame with filler. |
 | **M3: Animation** | `AnimationPlan`, grouping engine, core intro presets, reduced motion, static-fallback tests, palette transitions. |
 | **M4: Palettes** | OKLab k-means extraction, CSS/HTML parsing, `freeqrent-image`. |
@@ -574,7 +576,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 
 ## 13. Testing & Quality
 
-- Unit tests per stage. **Snapshot tests** (`insta`, dev-dep) on SVG output; determinism makes these reliable.
+- Unit tests per stage. **Snapshot tests** (`insta`, dev-dep; `crates/freeqrent/tests/snapshots.rs`) on whole pretty-printed documents; determinism makes these reliable. Review changes with `cargo insta review`. The CLI has end-to-end tests that run the binary. *(rev. W20261025215711)*
 - Round-trip scan tests (§9) in CI.
 - `cargo fuzz` targets: encoder (`encode_text`, `encode_segments`), CSS color/gradient parser (`color_parse`: no panics, canonical output re-parses to the same value), CSS/HTML palette parser, logo SVG sanitizer.
 - Benchmarks: target < 1 ms to render a v10 styled static code, and < 5 ms with Liquid + animation, on a modern laptop.

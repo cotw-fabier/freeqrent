@@ -1,0 +1,12 @@
+---
+source: crates/freeqrent/tests/snapshots.rs
+expression: "render(Style::new(), 1)"
+---
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29" class="qr" role="img" aria-label="QR code">
+  <style>@supports (color:var(--a)){.qr9b966d35-bg{fill:var(--qr-bg,#fefcf8)}.qr9b966d35-fg{fill:var(--qr-fg,#17161c)}.qr9b966d35-timing{fill:var(--qr-timing,var(--qr-fg,#17161c))}.qr9b966d35-finder-outer{fill:var(--qr-finder-outer,var(--qr-fg,#17161c))}.qr9b966d35-finder-eye{fill:var(--qr-finder-eye,var(--qr-fg,#17161c))}}</style>
+  <rect width="29" height="29" class="qr9b966d35-bg" fill="#fefcf8"/>
+  <path class="qr9b966d35-fg" fill="#17161c" d="m13 4h1v1h-1zm3 0h1v1h-1zm-2 1h1v1h-1zm2 1h1v1h-1zm-3 1h2v1h-2zm3 0h1v1h-1zm-4 1h2v1h-2zm3 0h2v1h-2zm-2 1h3v1h-3zm-1 2h2v1h-2zm4 0h1v1h-1zm-10 1h2v1h-2zm5 0h2v1h-2zm3 0h5v1h-5zm6 0h1v1h-1zm-15 1h2v1h-2zm3 0h2v1h-2zm4 0h2v1h-2zm3 0h3v1h-3zm4 0h1v1h-1zm2 0h4v1h-4zm-15 1h3v1h-3zm8 0h3v1h-3zm5 0h2v1h-2zm3 0h1v1h-1zm-18 1h3v1h-3zm4 0h2v1h-2zm5 0h1v1h-1zm3 0h1v1h-1zm2 0h1v1h-1zm4 0h2v1h-2zm-18 1h1v1h-1zm3 0h3v1h-3zm4 0h4v1h-4zm5 0h2v1h-2zm4 0h1v1h-1zm2 0h1v1h-1zm-10 1h3v1h-3zm7 0h1v1h-1zm3 0h2v1h-2zm-10 1h1v1h-1zm4 0h1v1h-1zm4 0h1v1h-1zm3 0h2v1h-2zm-10 1h1v1h-1zm2 0h3v1h-3zm6 0h1v1h-1zm3 0h1v1h-1zm-11 1h1v1h-1zm3 0h3v1h-3zm5 0h1v1h-1zm3 0h1v1h-1zm-12 1h1v1h-1zm4 0h3v1h-3zm4 0h1v1h-1zm3 0h1v1h-1zm-11 1h1v1h-1zm2 0h1v1h-1zm2 0h2v1h-2zm4 0h1v1h-1zm2 0h1v1h-1zm-9 1h2v1h-2zm4 0h1v1h-1zm3 0h2v1h-2zm-3 1h1v1h-1zm2 0h1v1h-1zm4 0h1v1h-1z"/>
+  <path class="qr9b966d35-timing" fill="#17161c" d="m12 10h1v1h-1zm2 0h1v1h-1zm2 0h1v1h-1zm-6 2h1v1h-1zm0 2h1v1h-1zm0 2h1v1h-1z"/>
+  <path class="qr9b966d35-finder-outer" fill="#17161c" fill-rule="evenodd" d="m4 4h7v7h-7zm1 1h5v5h-5zm13-1h7v7h-7zm1 1h5v5h-5zm-15 13h7v7h-7zm1 1h5v5h-5z"/>
+  <path class="qr9b966d35-finder-eye" fill="#17161c" d="m6 6h3v3h-3zm14 0h3v3h-3zm-14 14h3v3h-3z"/>
+</svg>

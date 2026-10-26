@@ -2,7 +2,7 @@
 
 Styled and animated SVG QR codes from a zero-dependency, `no_std` Rust core. MIT licensed.
 
-**Status:** early development. The encoder (M0) is done; static styles (M1) are landing now, and animation comes after. See [`SPEC.md`](SPEC.md) for the design, [`docs/waves/LOG.md`](docs/waves/LOG.md) for progress, and [`ROADMAP.md`](ROADMAP.md) for ideas.
+**Status:** early development. The encoder (M0) and static styles (M1) are done; logos, round frames and the Liquid shape (M2) come next, then animation. See [`SPEC.md`](SPEC.md) for the design, [`docs/waves/LOG.md`](docs/waves/LOG.md) for progress, and [`ROADMAP.md`](ROADMAP.md) for ideas.
 
 ```rust
 use freeqrent::{Ecc, ModuleShape, Palette, QrCode, Style};
@@ -14,3 +14,5 @@ let svg = Style::new()
     .label("https://example.com")
     .render(&qr)?;
 ```
+
+From the command line, `freeqrent "https://example.com" --shape dots:0.8 --finder squircle/circle --verify -o code.svg` renders, decodes the result to prove it scans, and writes it. `--gallery page.html` previews every style family for a payload.

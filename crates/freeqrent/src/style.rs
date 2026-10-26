@@ -60,6 +60,16 @@ impl Default for ModuleShape {
     }
 }
 
+/// How large a code will be displayed, across the whole symbol including
+/// the quiet zone.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TargetSize {
+    /// On screen, in device pixels.
+    Pixels(u32),
+    /// In print, in millimeters.
+    Millimeters(f32),
+}
+
 /// A complete description of how to draw a code. Cheap to clone; every
 /// field is plain data.
 #[derive(Clone, Debug, PartialEq)]
@@ -76,6 +86,7 @@ pub struct Style {
     pub(crate) description: Option<String>,
     pub(crate) label: Option<String>,
     pub(crate) id_prefix: Option<String>,
+    pub(crate) target: Option<TargetSize>,
 }
 
 impl Default for Style {
@@ -93,6 +104,7 @@ impl Default for Style {
             description: None,
             label: None,
             id_prefix: None,
+            target: None,
         }
     }
 }
@@ -178,6 +190,13 @@ impl Style {
     /// are dropped.
     pub fn id_prefix(mut self, prefix: impl Into<String>) -> Style {
         self.id_prefix = Some(prefix.into());
+        self
+    }
+
+    /// How big the code will be shown, so [`check`](Style::check) can warn
+    /// when modules get too small to scan (SPEC §7.8).
+    pub fn target_size(mut self, size: TargetSize) -> Style {
+        self.target = Some(size);
         self
     }
 

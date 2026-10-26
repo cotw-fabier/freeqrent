@@ -8,7 +8,7 @@ use crate::matrix::{QrMatrix, misdecode_protection};
 use crate::palette::Token;
 use crate::scanbox::{AlignmentShape, EyeShape, RingShape};
 use crate::scene;
-use crate::style::{ModuleShape, Style};
+use crate::style::{ModuleShape, Style, TargetSize};
 use crate::version::BlockLayout;
 
 /// The OKLab lightness difference below which a code isn't rendered. At
@@ -130,6 +130,17 @@ pub enum Warning {
     /// The background isn't opaque, so contrast depends on what's behind
     /// the code; it was judged over white.
     TranslucentBackground,
+    /// At the target size (`Style::target_size`), modules are smaller than
+    /// 3 device pixels.
+    SmallOnScreen {
+        /// Device pixels per module.
+        px_per_module: f32,
+    },
+    /// At the target size, modules are smaller than 0.4 mm in print.
+    SmallInPrint {
+        /// Millimeters per module.
+        mm_per_module: f32,
+    },
     /// A finder or alignment ring isn't square. ZXing-family scanners
     /// (most phones) read it, but decoders that fit the ring's square
     /// corners to find perspective, like quirc and rqrr, lose it: in the
@@ -162,6 +173,14 @@ impl fmt::Display for Warning {
                     "dots of {size} modules; 0.75 or more scans more reliably"
                 )
             }
+            Warning::SmallOnScreen { px_per_module } => write!(
+                f,
+                "{px_per_module:.1} px per module at the target size; 3 or more scans reliably"
+            ),
+            Warning::SmallInPrint { mm_per_module } => write!(
+                f,
+                "{mm_per_module:.2} mm per module at the target size; 0.4 or more scans reliably"
+            ),
             Warning::RoundedFinder => f.write_str(
                 "rounded scan-box rings need a ZXing-family scanner; quirc-style decoders can't locate them",
             ),
@@ -235,6 +254,7 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
     }
 
     check_scan_boxes(style, &mut errors, &mut warnings);
+    check_target(style, qr, &mut errors, &mut warnings);
     let ecc_budget_used = damage(style, qr, &mut errors);
 
     let palette = &style.palette;
@@ -271,6 +291,41 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         warnings,
         min_contrast,
         ecc_budget_used,
+    }
+}
+
+/// Screen and print minimums from SPEC §7.8.
+const MIN_PX_PER_MODULE: f32 = 3.0;
+const MIN_MM_PER_MODULE: f32 = 0.4;
+
+fn check_target(
+    style: &Style,
+    qr: &QrMatrix,
+    errors: &mut Vec<RenderError>,
+    warnings: &mut Vec<Warning>,
+) {
+    let modules = (qr.size() as u32 + 2 * style.quiet_zone as u32) as f32;
+    match style.target {
+        None => {}
+        Some(TargetSize::Pixels(px)) => {
+            let px_per_module = px as f32 / modules;
+            if px_per_module < MIN_PX_PER_MODULE {
+                warnings.push(Warning::SmallOnScreen { px_per_module });
+            }
+        }
+        Some(TargetSize::Millimeters(mm)) => {
+            in_range(
+                errors,
+                "TargetSize::Millimeters",
+                mm,
+                f32::MIN_POSITIVE,
+                f32::MAX,
+            );
+            let mm_per_module = mm / modules;
+            if mm_per_module < MIN_MM_PER_MODULE {
+                warnings.push(Warning::SmallInPrint { mm_per_module });
+            }
+        }
     }
 }
 
@@ -373,6 +428,32 @@ mod tests {
             "{report:?}"
         );
         assert!(report.ecc_budget_used > DAMAGE_BUDGET);
+    }
+
+    #[test]
+    fn target_size_warns_below_the_minimums() {
+        let code = qr(5, Ecc::M); // 37 modules + 8 of quiet zone = 45
+        let warned = |size| {
+            Style::new()
+                .target_size(size)
+                .check(&code)
+                .warnings
+                .into_iter()
+                .any(|w| {
+                    matches!(
+                        w,
+                        Warning::SmallOnScreen { .. } | Warning::SmallInPrint { .. }
+                    )
+                })
+        };
+        assert!(!warned(TargetSize::Pixels(135)));
+        assert!(warned(TargetSize::Pixels(134)));
+        assert!(!warned(TargetSize::Millimeters(18.0)));
+        assert!(warned(TargetSize::Millimeters(17.9)));
+        let report = Style::new()
+            .target_size(TargetSize::Millimeters(f32::NAN))
+            .check(&code);
+        assert!(!report.ok());
     }
 
     #[test]
