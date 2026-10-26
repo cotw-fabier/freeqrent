@@ -153,6 +153,7 @@ impl PaletteOpts {
 
 /// A color found in the source, with its share of it.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Swatch {
     /// The color.
     pub color: Color,
@@ -192,6 +193,7 @@ pub enum Origin {
 
 /// One token the extraction set.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Choice {
     /// The token.
     pub token: Token,
@@ -203,6 +205,7 @@ pub struct Choice {
 
 /// What [`Palette::from_image`] found and how it used it.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct PaletteReport {
     /// The source's colors, most common first.
     pub swatches: Vec<Swatch>,

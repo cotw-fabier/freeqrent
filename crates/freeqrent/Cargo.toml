@@ -19,7 +19,7 @@ animate = []
 halftone = []
 # Palettes derived from pixels (`Palette::from_image`) and CSS/HTML text.
 palette-extract = []
-# `std::error::Error` impls (and later the `std::io::Write` sink).
+# `std::error::Error` impls and the `std::io::Write` sink (`Style::render_io`).
 std = []
 # Kanji mode for JIS X 0208 text (adds a ~27 KB table).
 kanji = []

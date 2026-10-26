@@ -62,10 +62,19 @@ mod version;
 
 #[cfg(feature = "animate")]
 pub use animate::{
-    AnimationPlan, CubicBezier, Ease, Fallback, Idle, Intro, Keyframe, LogoIntro, LogoTiming,
-    PlanLayer, PlanOutline, Preset, Property, Reveal, RevealShape, StaggerOrder, Target, Track,
-    Trigger, Value,
+    AnimationPlan, CubicBezier, Ease, Idle, Intro, LogoIntro, LogoTiming, Preset, StaggerOrder,
+    Trigger,
 };
+
+/// The parts of an [`AnimationPlan`] (SPEC §8.5): what a player outside
+/// CSS, such as the Flutter widget, reads to replay an intro.
+#[cfg(feature = "animate")]
+pub mod plan {
+    pub use crate::animate::{
+        AnimationPlan, Fallback, Keyframe, PlanLayer, PlanOutline, Property, Reveal, RevealShape,
+        Target, Track, Value,
+    };
+}
 pub use check::{
     ANIMATED_ELEMENTS, CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, DAMAGE_BUDGET_H,
     FRAME_FLOOR, HALFTONE_DAMAGE_BUDGET, LONG_INTRO_MS, RenderError, ScanReport, Warning,

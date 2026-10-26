@@ -12,6 +12,7 @@ pub const ECI_UTF8: u32 = 26;
 
 /// How a segment's characters are packed into bits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Mode {
     /// Digits `0-9`, 10 bits per 3 digits.
     Numeric,

@@ -74,10 +74,7 @@ fn steered_outlines_fit() {
     // smaller `HALFTONE_DAMAGE_BUDGET`; where it's still exceeded, the
     // fitted code grows instead.
     let text = "https://example.com";
-    let outline = AlignmentStyle {
-        shape: AlignmentShape::Match,
-        emphasis: Emphasis::Outline,
-    };
+    let outline = AlignmentStyle::new(AlignmentShape::Match, Emphasis::Outline);
     let mut fit = 0;
     for version in 7..=14u8 {
         let qr = pinned(version, Ecc::M)

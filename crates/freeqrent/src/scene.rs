@@ -172,16 +172,16 @@ pub enum LayerRole {
     Shimmer,
     /// A picture drawn into sub-cells (SPEC §7.7 B): one layer per
     /// paint. Its path is in sub-cells of a third of a module, from the
-    /// code's top-left corner ([`PlanLayer::cells`](crate::PlanLayer::cells)).
+    /// code's top-left corner ([`PlanLayer::cells`](crate::plan::PlanLayer::cells)).
     Halftone,
     /// The frame on the logo's plate ([`LogoFrame`](crate::LogoFrame)),
     /// drawn over the logo. Ring and Brackets are stroked
-    /// ([`PlanLayer::outline`](crate::PlanLayer::outline)).
+    /// ([`PlanLayer::outline`](crate::plan::PlanLayer::outline)).
     LogoFrame,
     /// The logo's silhouette in `fg` for
     /// [`LogoIntro::Ink`](crate::LogoIntro::Ink): the plate path, masked by
     /// the logo's alpha. It rests invisible
-    /// ([`PlanLayer::opacity`](crate::PlanLayer::opacity) 0).
+    /// ([`PlanLayer::opacity`](crate::plan::PlanLayer::opacity) 0).
     LogoInk,
     /// The highlight band of [`Idle::LogoGlint`](crate::Idle::LogoGlint): a
     /// white slanted band, 45% opacity at most, clipped to the plate and

@@ -86,6 +86,7 @@ impl CubicBezier {
 
 /// Timing curves (SPEC §8.1): exponential ease-outs only.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Ease {
     /// `cubic-bezier(0.25, 1, 0.5, 1)`, refined. The default.
     Quart,
@@ -111,6 +112,7 @@ impl Ease {
 
 /// The order stagger groups play in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum StaggerOrder {
     /// From the center outward.
     Radial,
@@ -126,6 +128,7 @@ pub enum StaggerOrder {
 
 /// What starts an intro.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Trigger {
     /// The document loading. The default.
     Load,
@@ -640,6 +643,7 @@ impl Property {
 
 /// A keyframe value.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Value {
     /// A number.
     Number(f32),
@@ -649,6 +653,7 @@ pub enum Value {
 
 /// One property's value at one point of a track.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Keyframe {
     /// Where in the track, 0–1. Offsets 0 and 1 left out of a track take
     /// the layer's natural value.
@@ -661,6 +666,7 @@ pub struct Keyframe {
 
 /// What a track moves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Target {
     /// A layer, by index into [`AnimationPlan::layers`].
     Layer(usize),
@@ -670,6 +676,7 @@ pub enum Target {
 
 /// The shape of a reveal mask.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum RevealShape {
     /// A straight edge moving from `from` to `to`: at progress 0 the
     /// feather lies wholly before `from`, at 1 wholly past `to`.
@@ -692,6 +699,7 @@ pub enum RevealShape {
 /// A mask over a run of layers, opened by a [`Property::Reveal`] track
 /// (presets Sweep, Raster and Iris).
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Reveal {
     /// Its shape.
     pub shape: RevealShape,
@@ -717,6 +725,7 @@ impl Reveal {
 
 /// One animation of one layer.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Track {
     /// What it moves.
     pub target: Target,
@@ -744,6 +753,7 @@ pub enum Fallback {
 
 /// One drawn layer of a plan.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct PlanLayer {
     /// What it is.
     pub role: LayerRole,
@@ -779,6 +789,7 @@ pub struct PlanLayer {
 
 /// A logo frame stroked along its path (SPEC §7.3).
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct PlanOutline {
     /// Stroke width, in viewBox units.
     pub width: f32,

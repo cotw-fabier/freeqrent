@@ -65,13 +65,13 @@ fn bars_gradient_and_outlined_alignment() {
             axis: Axis::Vertical,
             radius: 0.5,
         })
-        .alignment(AlignmentStyle {
-            shape: AlignmentShape::Own {
+        .alignment(AlignmentStyle::new(
+            AlignmentShape::Own {
                 outer: RingShape::Square,
                 eye: EyeShape::Square,
             },
-            emphasis: Emphasis::Outline,
-        })
+            Emphasis::Outline,
+        ))
         .timing(TimingStyle::Dashed)
         .palette(
             Palette::from_tokens([

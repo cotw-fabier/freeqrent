@@ -520,6 +520,7 @@ impl Builder {
 
 /// Data-bit and damage budget of a symbol, from [`QrMatrix::capacity_report`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CapacityReport {
     /// Bits taken by the segments (mode headers, counts, and data), before
     /// the terminator and padding.

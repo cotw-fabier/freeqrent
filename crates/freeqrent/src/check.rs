@@ -337,6 +337,7 @@ impl fmt::Display for Warning {
 
 /// The result of [`Style::check`].
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct ScanReport {
     /// Problems that stop rendering.
     pub errors: Vec<RenderError>,

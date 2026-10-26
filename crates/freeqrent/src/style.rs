@@ -29,6 +29,7 @@ pub enum Axis {
 
 /// How data modules are drawn (SPEC §7.1). Sizes are fractions of a module.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum ModuleShape {
     /// Squares; horizontal runs merge when `gap` is 0. `gap` is 0–0.25
     /// (at 0.3, rqrr loses codes at 6 px per module).
@@ -77,6 +78,7 @@ impl Default for ModuleShape {
 
 /// The outer shape of the code (SPEC §7.4).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub enum Frame {
     /// A square background, the default.
     #[default]
@@ -101,6 +103,7 @@ pub enum Frame {
 
 /// The ring around [`Frame::Circle`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum FrameRing {
     /// No ring.
     #[default]
@@ -114,6 +117,7 @@ pub enum FrameRing {
 /// How large a code will be displayed, across the whole symbol including
 /// the quiet zone.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum TargetSize {
     /// On screen, in device pixels.
     Pixels(u32),

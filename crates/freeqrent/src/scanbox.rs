@@ -8,6 +8,7 @@ use crate::matrix::Corner;
 
 /// The outer ring of a finder (7×7) or alignment pattern (5×5).
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum RingShape {
     /// Square corners.
     Square,
@@ -24,6 +25,7 @@ pub enum RingShape {
 
 /// The center of a finder (3×3) or alignment pattern (1×1).
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum EyeShape {
     /// A square.
     Square,
@@ -91,6 +93,7 @@ const fn corner_index(corner: Corner) -> usize {
 
 /// The shape of alignment patterns.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum AlignmentShape {
     /// The top-left finder's shapes, scaled to 5×5 and 1×1.
     Match,
@@ -105,6 +108,7 @@ pub enum AlignmentShape {
 
 /// How much alignment patterns stand out (SPEC §7.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Emphasis {
     /// Painted like data (`fg`).
     None,
@@ -118,11 +122,19 @@ pub enum Emphasis {
 
 /// How alignment patterns are drawn.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct AlignmentStyle {
     /// Their shape.
     pub shape: AlignmentShape,
     /// How they're painted.
     pub emphasis: Emphasis,
+}
+
+impl AlignmentStyle {
+    /// Alignment patterns of `shape`, painted with `emphasis`.
+    pub const fn new(shape: AlignmentShape, emphasis: Emphasis) -> AlignmentStyle {
+        AlignmentStyle { shape, emphasis }
+    }
 }
 
 impl Default for AlignmentStyle {
@@ -138,6 +150,7 @@ impl Default for AlignmentStyle {
 
 /// How the timing patterns are drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum TimingStyle {
     /// In the data module shape.
     #[default]

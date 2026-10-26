@@ -14,6 +14,7 @@ use crate::style::ModuleShape;
 
 /// A raster image format a logo can be inlined as.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum RasterFormat {
     /// PNG.
     Png,
@@ -54,6 +55,7 @@ impl RasterFormat {
 
 /// The outline of the logo's plate and of the modules cleared under it.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum LogoShape {
     /// A square.
     Square,

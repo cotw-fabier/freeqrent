@@ -108,6 +108,7 @@ fn matching_eye(ring: RingShape) -> EyeShape {
         RingShape::Rounded(r) => EyeShape::Rounded((r / 2.0).min(1.5)),
         RingShape::Squircle => EyeShape::Squircle,
         RingShape::Leaf => EyeShape::Leaf,
+        _ => EyeShape::Square,
     }
 }
 

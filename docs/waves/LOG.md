@@ -2,6 +2,14 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026173421 · M6 · API review: additive growth, one way to steer
+
+- Landed: `#[non_exhaustive]` on the public enums that may grow (module shapes, finder ring and eye, alignment shape, emphasis, timing, frames and rings, `TargetSize`, logo shapes, raster formats, `Fit`, `Ink`, `Clarity`, `TrackingGrid`, `Ease`, `StaggerOrder`, `Trigger`, `Token`, `Paint`, `GradientKind`, `Mode`, the plan's enums) and on report and plan structs (`ScanReport`, `CapacityReport`, `Steering`, `PaletteReport`, `Choice`, `Swatch`, `Contrast`, `PaletteError`, `GradientStop`, `PlanLayer`, `PlanOutline`, `Track`, `Keyframe`, `Reveal`); `AlignmentStyle::new` replaces the struct literal. The plan's parts move to `freeqrent::plan`, so the root keeps no generic names like `Value` or `Target`. `encode_text_steered` is gone: the `encode_*_for` family steers when the style draws a picture.
+- Decisions: ISO-fixed sets (`Ecc`, `Corner`, `ModuleRole`, `FinderRing`) and `Axis` stay exhaustive. The intro enum keeps the name `Preset` next to the coming `Style::preset`: one is a value, the other a function on `Style`. `Style`'s getters keep their names (`module_shape`, `finder_style`, `logo_options`, …): setters own the plain nouns, and renaming every getter buys little before the Style JSON of M7.
+- Reviewed and unchanged: §5's sketch matches the API; every error type has `Display` and `std::error::Error`; every public type is `Debug` (`missing_debug_implementations` is clean).
+- Checks: all clean; no output changes. The CLI and verify tests needed the same edits users would (a wildcard arm, `AlignmentStyle::new`).
+- Follow-up: `cargo doc` with no default features has broken links to feature-gated items (docs wave).
+
 ## 20261026173249 · M6 · Kickoff: what Core 1.0 needs
 
 - Landed: SPEC §12's M6 row becomes a six-item done-when list: API review with `#[non_exhaustive]` on growable enums, style presets (`Style::preset`, `Style::presets()`, the §9 preset matrix, a gallery section, `--preset`), complete docs (`missing_docs` denied in core), measured render times and a CI-checked WASM size, the scan matrix rechecked at the release candidate, and release prep up to `cargo publish --dry-run`.

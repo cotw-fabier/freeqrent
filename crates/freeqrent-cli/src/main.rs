@@ -14,9 +14,9 @@ use std::process::ExitCode;
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Clarity, Corner, Ease, Ecc, Emphasis, EyeShape, FinderStyle,
     Fit, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
-    LogoTiming, ModuleShape, Origin, Paint, Palette, PaletteError, PaletteOpts, PaletteReport,
-    Preset, QrBuilder, QrCode, QrMatrix, RasterFormat, Rgba8Image, RingShape, ScanReport,
-    StaggerOrder, Style, TargetSize, TimingStyle, Token, TrackingGrid, Trigger, Version,
+    LogoTiming, ModuleShape, Origin, Paint, Palette, PaletteOpts, PaletteReport, Preset, QrBuilder,
+    QrCode, QrMatrix, RasterFormat, Rgba8Image, RingShape, ScanReport, StaggerOrder, Style,
+    TargetSize, TimingStyle, Token, TrackingGrid, Trigger, Version,
 };
 
 const HELP: &str = "\
@@ -500,13 +500,7 @@ impl StyleArgs {
             None => Palette::new(),
         };
         for (name, value) in &self.tokens {
-            let wrap = |error| {
-                PaletteError {
-                    token: name.clone(),
-                    error,
-                }
-                .to_string()
-            };
+            let wrap = |error| format!("token {name:?}: {error}");
             let token =
                 Token::from_name(name).ok_or_else(|| wrap(freeqrent::ColorError::UnknownToken))?;
             let paint = Paint::parse(value).map_err(wrap)?;
@@ -553,10 +547,10 @@ impl StyleArgs {
         let mut style = base
             .modules(self.shape.unwrap_or_default())
             .finders(finders)
-            .alignment(AlignmentStyle {
-                shape: self.alignment.unwrap_or(default.shape),
-                emphasis: self.emphasis.unwrap_or(default.emphasis),
-            })
+            .alignment(AlignmentStyle::new(
+                self.alignment.unwrap_or(default.shape),
+                self.emphasis.unwrap_or(default.emphasis),
+            ))
             .timing(self.timing.unwrap_or(timing))
             .palette(palette)
             .quiet_zone(self.quiet_zone.unwrap_or(4))

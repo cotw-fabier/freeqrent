@@ -14,6 +14,7 @@ use crate::num::write_scaled;
 /// A named paint slot (SPEC §6.1). Each one falls back to another when
 /// unset, ending at `fg` or `bg`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Token {
     /// Canvas background. Solid colors only; may be `transparent`.
     Bg,
@@ -174,6 +175,7 @@ impl fmt::Display for Token {
 
 /// A solid color or a gradient.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Paint {
     /// One color.
     Solid(Color),
@@ -250,6 +252,7 @@ impl FromStr for Paint {
 /// Gradient geometry. Both kinds span the whole code (not each module),
 /// like a CSS gradient on a square box.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum GradientKind {
     /// Along a line at `angle` hundredths of a degree, CSS convention:
     /// 0 points up, 9000 points right.
@@ -263,6 +266,7 @@ pub enum GradientKind {
 
 /// A color at a position along a gradient.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct GradientStop {
     /// The stop's color.
     pub color: Color,
@@ -516,6 +520,7 @@ fn fix_up_positions(raw: &[(Color, Option<f64>)]) -> Vec<GradientStop> {
 
 /// A palette entry that failed to parse, with the token it was for.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PaletteError {
     /// The token name as given.
     pub token: String,
@@ -534,6 +539,7 @@ impl std::error::Error for PaletteError {}
 
 /// How far a paint stands out from the background (SPEC §6.3).
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Contrast {
     /// The smallest OKLab lightness difference between the paint
     /// (composited over the background) and the background, 0–1. For a

@@ -134,6 +134,7 @@ impl Ecc {
 /// How dense a grid of alignment boxes an art-mode code carries (SPEC
 /// §7.8): a version range, picked instead of a version.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum TrackingGrid {
     /// A 3 × 3 grid: 6 alignment boxes, versions 7–13 (45–69 modules).
     /// The one that scans fast on phones (SPEC §7.8).

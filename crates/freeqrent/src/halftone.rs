@@ -14,6 +14,7 @@ use crate::steer::Want;
 
 /// How a picture fills the code's square.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Fit {
     /// Scaled to cover the square, cropped around the focal point.
     #[default]
@@ -25,6 +26,7 @@ pub enum Fit {
 
 /// How halftone sub-cells are painted (SPEC §7.7 rule 3).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Ink {
     /// Dark sub-cells in `fg`; light ones show `bg`. The default.
     #[default]
@@ -42,6 +44,7 @@ pub enum Ink {
 /// 0 draws the picture as it is, 1 draws pure modules. Sub-cells around a
 /// module's center are pulled toward its value by this much.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Clarity {
     /// The same everywhere.
     Uniform(f32),
@@ -193,6 +196,7 @@ impl Halftone {
 
 /// How steering went for a code, in [`ScanReport::steering`](crate::ScanReport::steering).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Steering {
     /// Modules whose value the encoder could choose: the free data bits
     /// after the payload (0 with steering off).

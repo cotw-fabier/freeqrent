@@ -87,7 +87,7 @@ fn alignment_styles_scan() {
                 let style = Style::new()
                     .finders(finders)
                     .palette(palette.clone())
-                    .alignment(AlignmentStyle { shape, emphasis });
+                    .alignment(AlignmentStyle::new(shape, emphasis));
                 assert_scans(&style, &format!("{finders:?} {shape:?} {emphasis:?}"));
             }
         }
@@ -98,10 +98,10 @@ fn alignment_styles_scan() {
 fn outline_emphasis_scans_within_budget() {
     // Outline clears real data modules, so only codes within the damage
     // budget render. Every one that does must decode.
-    let style = Style::new().alignment(AlignmentStyle {
-        shape: AlignmentShape::Match,
-        emphasis: Emphasis::Outline,
-    });
+    let style = Style::new().alignment(AlignmentStyle::new(
+        AlignmentShape::Match,
+        Emphasis::Outline,
+    ));
     let mut rendered = 0;
     for version in [2, 3, 5, 7, 10, 14, 20, 25, 30, 40] {
         for ecc in Ecc::ALL {

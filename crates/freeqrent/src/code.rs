@@ -140,22 +140,6 @@ impl QrBuilder {
         })
     }
 
-    /// Encodes text with the free data bits after the payload chosen so the
-    /// modules follow `halftone`'s picture (SPEC §7.7 A), and the mask that
-    /// matches it best (unless one is forced). The ECC level is used as
-    /// given, never boosted: a higher level would trade steerable bits for
-    /// error correction the picture doesn't spend. With steering off this
-    /// is [`encode_text`](Self::encode_text) without the boost.
-    #[cfg(feature = "halftone")]
-    pub fn encode_text_steered(
-        &self,
-        text: &str,
-        halftone: &Halftone,
-    ) -> Result<QrMatrix, EncodeError> {
-        let plans = self.plans(text);
-        self.steered(|v| &plans[v.count_band()], halftone, &Style::new())
-    }
-
     /// Steers for `halftone` as drawn by `style`: the picture over its
     /// background, and the modules it clears wanted light first.
     #[cfg(feature = "halftone")]

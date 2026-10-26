@@ -219,10 +219,7 @@ fn halftone_combines_with_other_styles() {
         }
     }
     let wide = picture("photo", 200);
-    let outline = AlignmentStyle {
-        shape: AlignmentShape::Match,
-        emphasis: Emphasis::Outline,
-    };
+    let outline = AlignmentStyle::new(AlignmentShape::Match, Emphasis::Outline);
     let gradient =
         Palette::from_tokens([("fg", "linear-gradient(135deg, #1d2a6b, #5a1340)")]).unwrap();
     for kind in ["disc", "photo", "rings"] {
