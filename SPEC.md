@@ -54,7 +54,7 @@ Core feature flags (all additive, all dependency-free):
 | `halftone` | yes | Image-embedded QR (§7.7) |
 | `kanji` | no | Kanji mode: a JIS X 0208 table, 6,879 entries (adds ~27 KB) |
 
-**Size budget:** core WASM build ≤ 120 KB gzipped with default features. CI will track this.
+**Size budget** *(rev. W20261026180849)*: core WASM build ≤ 200 KB gzipped with default features, checked in CI by `scripts/wasm-size.sh`. It builds a cdylib that reaches every default feature (presets, intros and plans, logos, CSS/HTML/image palettes, art mode) for `wasm32-unknown-unknown`, at `opt-level = "s"` with LTO, one codegen unit, `panic = "abort"` and stripping. Measured: 165 KB gzipped (391 KB raw), and 150 KB at `opt-level = "z"`. The first budget, 120 KB, was set before logos, pictures, extraction and motion existed. Even one preset render links most of the crate, since `render` reaches every feature's code for whatever the style carries (144 KB at `s`). Sharing one sort across the crate took 186 KB down to 165; nothing else found cuts more without cutting features. `wasm-opt` (M8) should take more off.
 
 **MSRV:** latest stable minus 4 releases. `#![forbid(unsafe_code)]` in core.
 
@@ -681,7 +681,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 1. **The API is reviewed.** Every public item in `freeqrent` has been read once for naming, argument order, plain-data options and structured errors, and §5 matches the real API. Enums that will grow in 1.x (module shapes, finder parts, frames, logo frames, intros, idles, warnings, errors) are `#[non_exhaustive]`, so the ROADMAP's additions (a data form of custom modules, extra glyphs, more finder shapes) stay additive. Breaking changes land before 1.0; after it, semver.
 2. **Style presets ship.** `Style::preset(name)` returns one of a curated, named set, and `Style::presets()` lists the names (the list §10.1's bindings expose). Every preset is held to its bar across module shapes and frames (§9's preset × shape × frame matrix), has a gallery section, and the CLI takes `--preset`.
 3. **Docs are complete.** `missing_docs` is denied in the core; the crate docs tour each feature with doctests that run; `RUSTDOCFLAGS="-D warnings" cargo doc` is clean with all features and with none. The README describes 1.0: a quick start, the feature flags, the MSRV and the scannability guarantee.
-4. **§2 and §13's numbers are measured.** Render times for a v10 styled static code (target < 1 ms) and Liquid with animation (< 5 ms) are benchmarked without a new dependency and recorded; the core's default-feature WASM build is measured against the 120 KB gzipped budget, and CI checks it.
+4. **§2 and §13's numbers are measured.** Render times for a v10 styled static code (target < 1 ms) and Liquid with animation (< 5 ms) are benchmarked without a new dependency and recorded; the core's default-feature WASM build is measured against the gzipped budget (200 KB, rev. W20261026180849), and CI checks it.
 5. **The scan matrix holds at the release.** The scan sheet regenerated from the release candidate reads on iOS Camera and Google Lens, including the cards that changed since the first results (S14, S47–S66; W20261026171519).
 6. **The release is prepared.** The workspace is at 1.0.0; the core, `freeqrent-image`, `freeqrent-verify` and `freeqrent-cli` have complete crate metadata and publish together; a CHANGELOG exists; `cargo publish --dry-run` is clean for each, in dependency order; this spec's status reads 1.0. Publishing, tagging and pushing wait for the owner's go.
 
@@ -701,7 +701,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 - Unit tests per stage. **Snapshot tests** (`insta`, dev-dep; `crates/freeqrent/tests/snapshots.rs`) on whole pretty-printed documents; determinism makes these reliable. Review changes with `cargo insta review`. The CLI has end-to-end tests that run the binary. *(rev. W20261025215711)*
 - Round-trip scan tests (§9) in CI.
 - `cargo fuzz` targets: encoder (`encode_text`, `encode_segments`), CSS color/gradient parser (`color_parse`: no panics, canonical output re-parses to the same value), logo SVG sanitizer (`logo_svg`: no panics, the clean document sanitizes to itself, rendered codes carry no dropped markup; seeds in `fuzz/seeds/logo_svg`), CSS/HTML palette parser (`palette_parse`: no panics, returned palettes keep the extraction contrast; seeds in `fuzz/seeds/palette_parse`). *(rev. W20261026074436)*
-- Benchmarks: target < 1 ms to render a v10 styled static code, and < 5 ms with Liquid + animation, on a modern laptop.
+- Benchmarks: target < 1 ms to render a v10 styled static code, and < 5 ms with Liquid + animation, on a modern laptop. `cargo run --release -p freeqrent --example bench` prints medians. Measured on an Apple-silicon laptop (W20261026180849): v10 rounded with squircle finders and a gradient takes 0.26 ms, Liquid with a Ripple intro 0.45 ms, and every preset 0.08–0.38 ms; at v40, 2.2 and 4.2 ms; encoding 0.03 ms.
 - WASM size check in CI (§2).
 - `cargo deny` for licenses, advisories and sources; `scripts/check-core-deps.sh` keeps the core's dependency tree empty.
 - Golden fingerprints (`tests/golden.rs`) on a fixed corpus catch unintended output changes.

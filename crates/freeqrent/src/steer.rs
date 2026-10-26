@@ -200,7 +200,9 @@ pub(crate) fn steer(
             let mut order: Vec<usize> = (0..len)
                 .filter(|&i| wants[modules[i]].priority > 0)
                 .collect();
-            order.sort_by_key(|&i| (core::cmp::Reverse(wants[modules[i]].priority), modules[i]));
+            crate::sort::sort_by_key(&mut order, |&i| {
+                (core::cmp::Reverse(wants[modules[i]].priority), modules[i])
+            });
             let mut pivots = Vec::new();
             let mut next = 0;
             for at in order {

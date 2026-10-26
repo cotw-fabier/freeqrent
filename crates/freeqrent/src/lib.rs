@@ -178,6 +178,7 @@ mod scene;
 mod segment;
 #[cfg(feature = "palette-extract")]
 mod site;
+mod sort;
 #[cfg(feature = "halftone")]
 mod steer;
 mod style;

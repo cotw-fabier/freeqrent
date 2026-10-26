@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026180849 · M6 · Render times and the WASM budget, measured
+
+- Landed: `examples/bench.rs`, release medians with no new dependency: v10 styled 0.26 ms (target < 1), Liquid + Ripple 0.45 ms (< 5), presets 0.08–0.38 ms; v40 2.2 and 4.2 ms. `scripts/wasm-size.sh` and a CI job: a cdylib reaching every default feature, built for wasm32 at `opt-level = "s"` with LTO, checked gzipped. One stable merge sort over indices (`sort.rs`) replaces the ten `slice::sort*` call sites, each of which had compiled its own copy of a sort: 186 → 165 KB gzipped. Output is byte-identical, since every call site was stable or sorted by a total key; snapshots are unchanged, and a unit test matches std's stable sort.
+- Decision (owner): the budget goes from 120 KB to 200 KB. Measured, any render links most of the crate (one preset alone: 144 KB), and `opt-level = "z"` only reaches 150 KB, so 120 KB would mean cutting features. What's left to try is in the ROADMAP (float formatting in the logo ID hash, `wasm-opt`).
+- Checks: all clean; 165,461 bytes gzipped against 204,800.
+
 ## 20261026175640 · M6 · Docs: a crate tour, a 1.0 README
 
 - Landed: the crate docs tour encoding, presets, scannability, colors, logos, pictures and animation, with doctests, plus the feature table and MSRV. `#![deny(missing_docs)]` in the core. The README is rewritten for 1.0 (what it does, quick start, presets, logos, palettes, pictures and motion, checking, CLI, crates, features), and its examples run as doctests, so they can't drift from the API. `docs.rs` builds with all features.

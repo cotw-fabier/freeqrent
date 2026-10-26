@@ -909,7 +909,7 @@ fn regions(grid: &Grid, size: usize, connected: bool) -> Vec<Vec<(u16, u16)>> {
                 }
             }
         }
-        cells.sort_unstable_by_key(|&(x, y)| (y, x));
+        crate::sort::sort_by_key(&mut cells, |&(x, y)| (y, x));
         out.push(cells);
     }
     out
@@ -1059,7 +1059,7 @@ pub(crate) fn element_count(style: &Style, qr: &QrMatrix) -> usize {
         .iter()
         .map(|p| (p.layer, p.group, corner_of(&p.unit)))
         .collect();
-    seen.sort_unstable_by_key(|&(l, g, c)| (l, g, c.map(|c| c as u8)));
+    crate::sort::sort_by_key(&mut seen, |&(l, g, c)| (l, g, c.map(|c| c as u8)));
     seen.dedup();
     seen.len() + logo
 }
@@ -1097,7 +1097,7 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
         // own center.
         let mut keys: Vec<(u8, Option<Corner>)> =
             mine.iter().map(|p| (p.group, corner_of(&p.unit))).collect();
-        keys.sort_unstable_by_key(|&(g, c)| (g, c.map(|c| c as u8)));
+        crate::sort::sort_by_key(&mut keys, |&(g, c)| (g, c.map(|c| c as u8)));
         keys.dedup();
         for (group, corner) in keys {
             let chosen: Vec<&&Piece> = mine
@@ -2186,7 +2186,7 @@ fn write_keyframes<W: Write + ?Sized>(w: &mut W, keys: &[Keyframe]) -> fmt::Resu
     let turns = keys.iter().any(|k| k.property == Property::Rotate);
     let flips = keys.iter().any(|k| k.property == Property::ScaleY);
     let mut offsets: Vec<f32> = keys.iter().map(|k| k.offset).collect();
-    offsets.sort_unstable_by(|a, b| a.total_cmp(b));
+    crate::sort::sort_by(&mut offsets, |a, b| a.total_cmp(b));
     offsets.dedup();
     for offset in offsets {
         write_number(w, offset as f64 * 100.0)?;

@@ -341,7 +341,7 @@ const MIN_SPREAD: f64 = 0.05;
 impl Levels {
     pub(crate) fn of(lightness: &[f64]) -> Levels {
         let mut sorted = lightness.to_vec();
-        sorted.sort_by(f64::total_cmp);
+        crate::sort::sort_by(&mut sorted, f64::total_cmp);
         let at = |q: f64| sorted[((sorted.len() - 1) as f64 * q) as usize];
         let (low, high) = (at(0.02), at(0.98));
         if high - low < MIN_SPREAD {
@@ -690,7 +690,9 @@ fn quantize(
         }
         let points: Vec<[f64; 3]> = members.iter().map(|&i| clamp(lab[i], band)).collect();
         let mut by_l: Vec<usize> = (0..points.len()).collect();
-        by_l.sort_by(|&a, &b| points[a][0].total_cmp(&points[b][0]).then(a.cmp(&b)));
+        crate::sort::sort_by(&mut by_l, |&a, &b| {
+            points[a][0].total_cmp(&points[b][0]).then(a.cmp(&b))
+        });
         let k = k.min(points.len());
         let mut centers: Vec<[f64; 3]> = (0..k)
             .map(|j| points[by_l[(2 * j + 1) * points.len() / (2 * k)]])

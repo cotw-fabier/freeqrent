@@ -209,7 +209,7 @@ fn property_role(name: &str, selector: Selector) -> Option<(Role, f32)> {
     Some((if selector.accent { Role::Accent } else { role }, 1.0))
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Entry {
     color: Option<Color>,
     weight: f32,
@@ -320,7 +320,7 @@ impl Site {
         }
         let mut entries: Vec<Entry> = self.entries.into_values().collect();
         // Heaviest first; the map's key order breaks ties, deterministically.
-        entries.sort_by(|a, b| b.weight.total_cmp(&a.weight));
+        crate::sort::sort_by(&mut entries, |a, b| b.weight.total_cmp(&a.weight));
         entries.truncate(MAX_SWATCHES);
         let swatches = entries
             .iter()

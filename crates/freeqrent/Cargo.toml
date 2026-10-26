@@ -29,6 +29,10 @@ kanji = []
 [lints]
 workspace = true
 
+[[example]]
+name = "bench"
+required-features = ["std", "animate"]
+
 [package.metadata.docs.rs]
 all-features = true
 

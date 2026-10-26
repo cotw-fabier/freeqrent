@@ -52,6 +52,10 @@ Each item says where it came from, so we remember why it's here.
 - **Dark-scheme palettes:** `from_css`/`from_html` skip `@media (prefers-color-scheme: dark)` rules even with `allow_inverted`; reading a light site's dark scheme would give it a dark palette of its own (W20261026141235).
 - **Accents from small areas:** a wallpaper's yellow eyes or a single bright sun are too small a share to become an accent, so muted pictures give no `finder.eye` or `logo.frame`; a saliency or chroma-weighted pick could find them (W20261026114047).
 
+## Size
+
+- **A smaller WASM build:** 165 KB gzipped against a 200 KB budget (W20261026180849). Still to try: hash the logo's numbers for the ID prefix by their bits, not their `Debug` text, which links float formatting (about 5 KB gzipped; it changes the prefixes of logo codes); `wasm-opt -Oz` in the M8 build; and `opt-level = "z"` (150 KB).
+
 ## Scannability
 
 - **Pending: WeChat and ZXing app scans.** The scan sheet (S01–S69) is recorded for iOS Camera and Google Lens (W20261026164853); its WeChat and ZXing app columns are empty until someone has those apps (W20261026171229). Regenerate the sheet at the release being checked, scan, and add the results to the log and SPEC §9.

@@ -395,7 +395,7 @@ fn kmeans(samples: &[Sample], k: usize, seed: u64) -> Vec<Swatch> {
             share: (m / total) as f32,
         })
         .collect();
-    swatches.sort_by(|a, b| {
+    crate::sort::sort_by(&mut swatches, |a, b| {
         b.share
             .total_cmp(&a.share)
             .then(b.color.to_oklab()[0].total_cmp(&a.color.to_oklab()[0]))

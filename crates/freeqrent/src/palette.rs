@@ -420,7 +420,7 @@ fn parse_direction(s: &str) -> Option<Result<u16, ()>> {
     let lower = s.to_ascii_lowercase();
     if let Some(rest) = lower.strip_prefix("to ") {
         let mut words: Vec<&str> = rest.split_ascii_whitespace().collect();
-        words.sort_unstable();
+        crate::sort::sort_by(&mut words, |a, b| a.cmp(b));
         let angle = match words[..] {
             ["top"] => 0,
             ["right"] => 90,
