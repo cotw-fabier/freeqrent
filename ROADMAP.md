@@ -61,3 +61,5 @@ Each item says where it came from, so we remember why it's here.
 
 - **Native Node build via `napi-rs`**, if WASM performance isn't enough (SPEC §10.2).
 - **Swift, Kotlin, and C# packages** over the C ABI.
+- **Lighter auto frame colors:** extraction darkens `logo.frame` to the same 0.66 contrast as the read tokens, so a bright accent (a sunset orange) lands at L 0.31 and turns muddy. The frame sits on the plate and is never read; it could keep more of its lightness (W20261026114047).
+- **Accents from small areas:** a wallpaper's yellow eyes or a single bright sun are too small a share to become an accent, so muted pictures give no `finder.eye` or `logo.frame`; a saliency or chroma-weighted pick could find them (W20261026114047).

@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026114047 · M5 · Picture gallery cards
+
+- Landed: eighteen picture cards in the gallery (65 families, all decode): art mode (mono, color, picture palette, dense grid), halftones, palettes and linear and radial gradients from a picture, and pictures with framed logos, Shrink, Draw, Ink and Develop intros and the turn, glint, spin, flip, shimmer and breathe idles. `--gallery-picture FILE` (repeatable) supplies the pictures, `sample` otherwise; `--palette-from-image sample`.
+- Measured with two of the user's wallpapers (a wolf under a moon for art mode, a city of clouds for color; not in the repository): all 65 cards decode. The wolf and a birds-on-a-branch picture are muted, so extraction gives only `bg` and `fg`, even at 12 clusters; the city gives a blue `finder.eye` and a separate red `logo.frame`, both darkened to L 0.31. A framed logo at the default 0.2 doesn't fit a picture's 0.40 budget (refused, as it should be), so picture logos use 0.12; halftones need a tracking grid to get a version big enough to show the picture.
+- Decisions: pictures come in by flag rather than being committed, so the cards work with anyone's images and the repository holds none; the scan sheet's ids stay as they are.
+- Checks: the gallery test covers the default (sample) and a given picture.
+
 ## 20261026105648 · M5 · Thicker frames, frame colors, Shrink, spin and flip
 
 - Landed: frame defaults Ring 0.8, Beads 0.9, Stamp 0.9, Brackets 0.8 (were 0.45–0.7), growing in proportion for logos wider than 8 modules (`FRAME_REFERENCE`, up to 2.5); `frame_width` up to 2.5; `Logo::moon_size` for the Orbit (default 2.4, `DEFAULT_MOON`, three times the old moon, 0.4–4; the frame width is now the Orbit's line, default 0.4). Palette extraction sets `logo.frame`: a second accent apart from `fg` and the eyes, else the eyes' accent. `LogoIntro::Shrink` (from as wide as the code, hold to 15%, then down over the whole intro, with the code). `Idle::LogoSpin` and `Idle::LogoFlip` (every 8 s, 1.2 s and 1 s, ease-in-out quart sampled into keyframes; together half a loop apart), on a new `LayerRole::LogoArt` drawn inside the plate's group and clipped to the window; `Property::ScaleY`. CLI: `--logo-frame-width`, `--logo-frame-color`, `--logo-moon`, `--logo-intro shrink`, `--idle logo-spin|logo-flip`; five gallery cards (47 families, all decode), scan sheet S61–S65.

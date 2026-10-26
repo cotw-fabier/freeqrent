@@ -44,7 +44,8 @@ Style:
   --token NAME=PAINT       any color token, e.g. finder.eye=oklch(55% .2 30)
                            or fg=\"linear-gradient(135deg, #123, #456)\"
   --palette-from-image FILE
-                           take bg, fg and finder.eye from a PNG or JPEG
+                           take bg, fg, finder.eye and logo.frame from a PNG or
+                           JPEG (`sample` for the built-in picture)
   --palette-from-css FILE  ... from a style sheet (`-` for stdin, `sample`)
   --palette-from-html FILE ... from a page: theme-color, <style>, style attributes
                            (`-` for stdin, e.g. curl -s URL | freeqrent ...)
@@ -113,6 +114,8 @@ Output:
   --show-palette           print what --palette-from-* found, as flags
   --verify                 rasterize and decode the result before writing it
   --gallery FILE           write an HTML page of style families for TEXT
+  --gallery-picture FILE   a PNG or JPEG for the gallery's picture cards, instead
+                           of `sample` (repeatable: the first two are used)
   --scan-sheet FILE        write the real-device scan matrix as an HTML page
                            (TEXT is ignored: each code names its own card)
   -h, --help               show this help
@@ -347,9 +350,7 @@ impl StyleArgs {
                 )
             }
             "palette-from-image" => {
-                let bytes = fs::read(value).map_err(|e| format!("{value}: {e}"))?;
-                let image = freeqrent_image::decode(&bytes).map_err(|e| format!("{value}: {e}"))?;
-                self.palette_source = Some(PaletteSource::Image(image));
+                self.palette_source = Some(PaletteSource::Image(load_picture(flag, value)?));
             }
             "palette-from-css" => {
                 let css = match value {
@@ -629,6 +630,7 @@ struct Args {
     style: StyleArgs,
     output: Option<PathBuf>,
     gallery: Option<PathBuf>,
+    gallery_pictures: Vec<String>,
     scan_sheet: Option<PathBuf>,
     check: bool,
     verify: bool,
@@ -646,6 +648,7 @@ fn parse_args() -> Result<Option<Args>, Failure> {
     let mut version = None;
     let mut style = StyleArgs::default();
     let (mut output, mut gallery, mut check, mut verify) = (None, None, false, false);
+    let mut gallery_pictures = Vec::new();
     let mut scan_sheet = None;
     let (mut frame_at, mut plan, mut show_palette) = (None, false, false);
     while let Some(arg) = parser.next()? {
@@ -656,6 +659,7 @@ fn parse_args() -> Result<Option<Args>, Failure> {
             }
             Short('o') | Long("output") => output = Some(PathBuf::from(parser.value()?)),
             Long("gallery") => gallery = Some(PathBuf::from(parser.value()?)),
+            Long("gallery-picture") => gallery_pictures.push(parser.value()?.string()?),
             Long("check") => check = true,
             Long("verify") => verify = true,
             Long("plan") => plan = true,
@@ -710,6 +714,7 @@ fn parse_args() -> Result<Option<Args>, Failure> {
         style,
         output,
         gallery,
+        gallery_pictures,
         scan_sheet,
         check,
         verify,
@@ -824,7 +829,13 @@ fn run() -> Result<(), Failure> {
             .map_err(|e| Failure::Failed(format!("{}: {e}", path.display())));
     }
     if let Some(path) = &args.gallery {
-        let page = gallery::page(&args.text, &args.builder, args.pinned, &args.style);
+        let page = gallery::page(
+            &args.text,
+            &args.builder,
+            args.pinned,
+            &args.style,
+            &args.gallery_pictures,
+        );
         return fs::write(path, page)
             .map_err(|e| Failure::Failed(format!("{}: {e}", path.display())));
     }

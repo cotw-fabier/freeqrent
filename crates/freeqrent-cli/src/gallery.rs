@@ -409,6 +409,219 @@ pub(crate) const LOGO_FAMILIES: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
+/// Pictures with everything else: art mode, halftones, palettes and
+/// gradients taken from a picture, logos and motion. `{a}` and `{b}` stand
+/// for the pictures given with `--gallery-picture` (`sample` without).
+pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
+    ("Art, mono ink", &[("art", "{a}"), ("ink", "mono")]),
+    ("Art, color ink", &[("art", "{a}"), ("ink", "color:6")]),
+    (
+        "Art, picture palette",
+        &[
+            ("art", "{b}"),
+            ("ink", "color:6"),
+            ("palette-from-image", "{b}"),
+        ],
+    ),
+    (
+        "Art, dense grid",
+        &[
+            ("art", "{b}"),
+            ("ink", "mono"),
+            ("palette-from-image", "{b}"),
+            ("tracking-grid", "dense"),
+        ],
+    ),
+    (
+        "Halftone dots",
+        &[
+            ("halftone", "{a}"),
+            ("tracking-grid", "standard"),
+            ("ink", "color:6"),
+            ("shape", "dots:0.85"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
+    (
+        "Halftone, clearer",
+        &[
+            ("halftone", "{b}"),
+            ("tracking-grid", "sparse"),
+            ("ink", "color:6"),
+            ("clarity", "0.4"),
+            ("shape", "rounded:0.4"),
+        ],
+    ),
+    (
+        "Picture palette",
+        &[
+            ("intro", "ripple"),
+            ("palette-from-image", "{b}"),
+            ("shape", "liquid:0.8"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
+        "Picture palette, gradient ink",
+        &[
+            ("intro", "iris"),
+            ("palette-from-image", "{a}"),
+            (
+                "fg",
+                "linear-gradient(135deg, oklch(30% .06 265), oklch(26% .09 305))",
+            ),
+            ("shape", "dots:0.85"),
+            ("finder", "squircle/circle"),
+        ],
+    ),
+    (
+        "Radial gradient, breathing",
+        &[
+            ("idle", "breathe"),
+            ("palette-from-image", "{b}"),
+            (
+                "fg",
+                "radial-gradient(oklch(34% .1 230), oklch(24% .05 266))",
+            ),
+            ("shape", "rounded:0.5"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
+    (
+        "Gradient eyes, logo glint",
+        &[
+            ("intro", "lock-on"),
+            ("idle", "logo-glint"),
+            ("palette-from-image", "{a}"),
+            (
+                "token",
+                "finder.eye=linear-gradient(135deg, oklch(42% .14 60), oklch(34% .12 30))",
+            ),
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "beads"),
+            ("shape", "dots:0.85"),
+        ],
+    ),
+    (
+        "Art with a framed logo",
+        &[
+            ("art", "{a}"),
+            ("ink", "color:6"),
+            ("logo", "sample"),
+            ("logo-scale", "0.12"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "ring"),
+        ],
+    ),
+    (
+        "Art, orbit turning",
+        &[
+            ("intro", "develop"),
+            ("idle", "logo-turn"),
+            ("art", "{b}"),
+            ("ink", "color:6"),
+            ("palette-from-image", "{b}"),
+            ("logo", "sample"),
+            ("logo-scale", "0.12"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "orbit"),
+        ],
+    ),
+    (
+        "Develop, logo shrinks",
+        &[
+            ("intro", "develop"),
+            ("art", "{a}"),
+            ("ink", "mono"),
+            ("logo", "sample"),
+            ("logo-scale", "0.12"),
+            ("logo-shape", "rounded:1.5"),
+            ("logo-frame", "ring"),
+            ("logo-intro", "shrink"),
+        ],
+    ),
+    (
+        "Halftone, logo spin",
+        &[
+            ("intro", "settle"),
+            ("idle", "logo-spin"),
+            ("halftone", "{b}"),
+            ("tracking-grid", "sparse"),
+            ("ink", "color:6"),
+            ("palette-from-image", "{b}"),
+            ("logo", "sample"),
+            ("logo-scale", "0.12"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "brackets"),
+        ],
+    ),
+    (
+        "Halftone, flip and shimmer",
+        &[
+            ("intro", "sweep"),
+            ("idle", "logo-flip"),
+            ("idle", "shimmer"),
+            ("halftone", "{a}"),
+            ("tracking-grid", "standard"),
+            ("ink", "mono"),
+            ("logo", "sample"),
+            ("logo-scale", "0.12"),
+            ("logo-shape", "rounded:1.5"),
+            ("logo-frame", "ring"),
+        ],
+    ),
+    (
+        "Picture palette, ink logo",
+        &[
+            ("intro", "settle"),
+            ("palette-from-image", "{b}"),
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "stamp"),
+            ("logo-intro", "ink"),
+            ("shape", "dots:0.85"),
+            ("finder", "rounded:2/circle"),
+        ],
+    ),
+    (
+        "Picture palette, thick ring draws",
+        &[
+            ("intro", "ripple"),
+            ("palette-from-image", "{b}"),
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "ring:1.4"),
+            ("logo-intro", "draw"),
+            ("shape", "liquid:0.8"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
+        "Art, every logo loop",
+        &[
+            ("intro", "iris"),
+            ("idle", "logo-turn"),
+            ("idle", "logo-glint"),
+            ("idle", "logo-spin"),
+            ("art", "{b}"),
+            ("ink", "color:6"),
+            ("logo", "sample"),
+            ("logo-scale", "0.12"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "orbit"),
+        ],
+    ),
+];
+
+/// A family's flag value with `{a}` and `{b}` replaced by the pictures:
+/// `{b}` is the second, or the first again, and both are `sample` without.
+fn picture_value(value: &str, pictures: &[String]) -> String {
+    let a = pictures.first().map_or("sample", String::as_str);
+    let b = pictures.get(1).map_or(a, String::as_str);
+    value.replace("{a}", a).replace("{b}", b)
+}
+
 pub(crate) fn escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -428,13 +641,21 @@ pub(crate) fn shell_quote(value: &str) -> String {
     }
 }
 
-pub fn page(text: &str, builder: &QrBuilder, pinned: bool, base: &StyleArgs) -> String {
+pub fn page(
+    text: &str,
+    builder: &QrBuilder,
+    pinned: bool,
+    base: &StyleArgs,
+    pictures: &[String],
+) -> String {
     let mut cards = String::new();
-    for (name, flags) in FAMILIES.iter().chain(LOGO_FAMILIES) {
+    let families = FAMILIES.iter().chain(LOGO_FAMILIES).chain(PICTURE_FAMILIES);
+    for (name, flags) in families {
         let mut args = base.clone();
         let mut command = format!(" {}", shell_quote(text));
         let mut problem = None;
         for (flag, value) in *flags {
+            let value = &picture_value(value, pictures);
             if let Err(e) = args.set(flag, value) {
                 problem = Some(e);
             }
