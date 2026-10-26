@@ -34,7 +34,7 @@ Cargo workspace:
 |---|---|---|---|
 | `freeqrent` (core) | 1 | Encoder, matrix, styling, SVG writer, animation, palettes | **none** (`no_std` + `alloc`) |
 | `freeqrent-image` | 1 | Decodes PNG/JPEG into the core's `Rgba8Image` buffer type | `zune-png`, `zune-jpeg` (small, pure Rust), behind features |
-| `freeqrent-verify` | 1 | Rasterizes the output and decodes it to prove scannability | `resvg`, `rqrr` |
+| `freeqrent-verify` | 1 | Rasterizes the output and decodes it to prove scannability | `resvg`, `rqrr`, `rxing` (ZXing port) |
 | `freeqrent-cli` | 1 | CLI front end (also the main dev/preview tool during Phase 1) | `freeqrent`, `freeqrent-image`, arg parsing (`lexopt`, tiny) |
 | `freeqrent-ffi` | 2 | Stable C ABI (`cbindgen` header). This is the base for Dart, Go, and any other FFI host (Swift, Kotlin, C#) | none |
 | `freeqrent-wasm` | 2 | `wasm-bindgen` build, published to npm as `freeqrent` for **Node and browsers** | `wasm-bindgen` |
@@ -135,7 +135,7 @@ payload ─▶ encode ─▶ QrMatrix ─▶ Layout ─▶ Geometry ─▶ Paint
 - **Deterministic:** the same inputs and the same library version produce byte-identical output. Any randomness comes from a seeded internal PRNG (SplitMix64), with the seed defaulting to a hash of the payload.
 - Coordinates are in **module units** (`viewBox="0 0 N N"`), numbers are written with ≤ 3 decimals, and there are no redundant attributes.
 - Output is valid SVG 1.1 with CSS. It contains no `<script>`, no `<foreignObject>`, and no external references (logos/images are inlined as `data:` URIs or nested SVG).
-- Optional `<title>`/`<desc>` and `role="img"` + `aria-label` (defaults to the payload when it's a URL, otherwise "QR code").
+- Optional `<title>`/`<desc>` and `role="img"` + `aria-label`. `QrMatrix` doesn't keep the payload, so the label defaults to "QR code" and `Style::label` sets it; the CLI passes the URL for link codes. *(rev. W20261025212852)*
 - Option: `minify` (default on) or pretty-printed.
 
 ---
@@ -164,7 +164,7 @@ let svg: String = Style::new()
 style.render_to(&qr, &mut writer)?;
 
 // Validation without rendering:
-let report = style.check(&qr);   // ScanReport { ok, warnings, ecc_budget_used, contrast, ... }
+let report = style.check(&qr);   // ScanReport { errors, warnings, min_contrast, … }; report.ok()
 ```
 
 - `RenderError` is returned for **hard failures**, such as a logo too large for the ECC budget, contrast below the floor, or no quiet zone.
@@ -197,18 +197,24 @@ Parsed values are **re-serialized**, never copied: each color keeps the space it
 
 ### 6.2 Output form
 
-Tokens are emitted as **CSS custom properties** on the root `<svg>`:
+Paint is written at two levels, because renderers disagree about CSS:
 
 ```svg
-<svg style="--qr-bg:#f7f3ec;--qr-fg:oklch(32% .08 265);…">
-  <path class="qr-data" fill="var(--qr-fg)" d="…"/>
+<svg … class="qr"><style>@supports (color:var(--a)){.qr1a2b3c4d-fg{fill:var(--qr-fg,oklch(32% .08 265))}…}</style>
+  <path class="qr1a2b3c4d-fg" fill="#2b2f55" d="…"/>
 ```
 
-with **literal fallback** fills for renderers that don't support CSS variables (`fill="#2b2f55"` plus a `style` override). Host pages can re-theme an inline SVG by setting `--qr-*` variables.
+- **Attributes** carry plain sRGB hex (gamut-mapped from OKLCH/OKLab), plus `fill-opacity` for translucent colors. Every renderer understands these.
+- **A `<style>` block inside `@supports (color:var(--a))`** gives each painted token a rule that reads its custom property, falling back through the token chain to the canonical value: `var(--qr-finder-outer,var(--qr-fg,#17161c))`. When a value is OKLCH/OKLab the condition adds `and (color:oklch(0% 0 0))`, so a browser without OKLCH keeps the hex. Renderers that don't understand `@supports` skip the block. This matters: resvg paints **black** when it meets `var()` or `oklch()` in an inline `style` or a plain rule, so the §6.2 draft (variables declared on the root, `fill="var(--qr-fg)"`) would have broken every non-browser renderer. `freeqrent-verify` pins this behavior with a test.
+- Custom properties are **not declared** on the root, so a host page can set `--qr-fg` on the `<svg>` or any ancestor to re-theme an inline code. Alpha stays in `fill-opacity`, so variable values are opaque.
+- Class names and gradient IDs carry a **prefix**, by default `qr` plus an FNV-1a hash of the modules, quiet zone and palette: a `<style>` in inline SVG applies to the whole page, so two different codes must never share a class. `Style::id_prefix` overrides it.
+- Gradients become `<linearGradient>`/`<radialGradient>` in user space over the code area (CSS angle convention; radial reaches the corners). Wide-gamut stops get a class rule in the same `@supports` block. Gradient stops aren't re-themable through variables yet.
+
+*(rev. W20261025212852)*
 
 ### 6.3 Scannability rules for color
 
-- **Contrast floor:** the luminance difference between `fg` and `bg` (computed in OKLab L) must be ≥ 0.40 to render. Values below 0.55 produce a warning. Translucent paints are composited over `bg` first (a translucent `bg` is judged over white). For gradients, the check uses the **worst point**: renderers interpolate in premultiplied sRGB, which can drift from the stops, so each span is sampled at 9 points. A gradient that crosses the background's lightness has zero contrast. *(rev. W20261025211731)*
+- **Contrast floor:** the luminance difference between every painted token and `bg` (computed in OKLab L) must be ≥ 0.40 to render: at that level codes decode from clean renders. Values below **0.60** produce a warning, because `freeqrent-verify` measured that ZXing starts missing blurred, noisy captures below about 0.6, and finder eyes go first (a grey eye at ΔL 0.51 failed 5 of 6 soft renders; 0.54 and up passed). *(rev. W20261025212852)* Translucent paints are composited over `bg` first (a translucent `bg` is judged over white). For gradients, the check uses the **worst point**: renderers interpolate in premultiplied sRGB, which can drift from the stops, so each span is sampled at 9 points. A gradient that crosses the background's lightness has zero contrast. *(rev. W20261025211731)*
 - **Polarity:** dark-on-light is the default. Inverted codes (light modules on dark) are allowed with `.allow_inverted(true)` and a warning, because some older scanners fail on them.
 - Finder colors may vary in hue but must meet the same contrast floor.
 
@@ -240,15 +246,15 @@ with **literal fallback** fills for renderers that don't support CSS variables (
 
 | Shape | Description | Geometry strategy |
 |---|---|---|
-| `Square` ("box") | Classic squares, optional `gap` (0–0.3) | Merge horizontal runs into rects, then one path |
+| `Square` ("box") | Classic squares, optional `gap` (0–0.25; at 0.3 rqrr lost codes at 6 px/module) | Merge horizontal runs into rects, then one path |
 | `Rounded { radius }` | Squares with corners rounded only where they don't touch a neighbor | Per-corner neighbor test (4-neighborhood) |
 | `Dots { size }` | Circles, size 0.6–1.0 | Arc path per module; `size < 0.75` raises a warning |
 | `Liquid { smoothness }` | Neighboring modules flow into one blob, with concave inner corners filled ("gooey") | Contour tracing on the dark-region boundary, then corners rounded with quadratic Béziers. Inner fillets are added at L-junctions. One path per connected region. |
 | `Bars { axis, radius }` | Vertical or horizontal pills that merge runs along an axis | Run-length per row/column → rounded rects |
 | `Diamond`, `Star`, `Plus`, … | Fun extras (v1.x) | Per-module glyph |
-| `Custom(fn)` | User callback returning path data for a module, given its 8-neighborhood mask | Escape hatch |
+| `Custom(fn)` | *Deferred (ROADMAP):* a user callback breaks "options are plain data" and can't cross the binding boundary | — |
 
-All shapes receive the **8-neighborhood bitmask** of each module, so shape logic stays local and testable.
+Shape logic is local: a module's geometry depends only on its neighbors in the same layer (`Rounded` looks at the 4-neighborhood). Geometry is integer, in thousandths of a module, and path commands are relative. Alignment patterns are never drawn in the module shape, even before they are styled: dots or gaps would break the 1:1:1:1:1 profile scanners look for (`Dots` at 0.6 lost rqrr from v5 up until alignment was drawn solid). *(rev. W20261025212852)*
 
 ### 7.2 Scan boxes: finders, alignment & timing patterns (feature 4)
 
@@ -461,7 +467,7 @@ pub enum Property { Opacity, Scale, TranslateX, TranslateY, Fill(TokenId), ClipR
 |---|---|---|
 | Static rules | Contrast floor, quiet zone, logo ECC budget, finder ratio, min dot size, filler gap | core `Style::check` (always runs before render) |
 | Per-feature budgets | Halftone sub-cell center preserved; palette transition midpoints | core |
-| Round-trip verify | Rasterize at 3 sizes (and at intro midpoints for animations), add noise/blur/perspective, decode with `rqrr` | `freeqrent-verify` crate and CI |
+| Round-trip verify | Rasterize with resvg at 4, 6 and 10 px/module plus a 3×3-blurred, ±24-noise render at 8 px/module (and at intro midpoints for animations); decode with ZXing (`rxing`) on every render and rqrr on the clean ones. rqrr loses large plain codes after even a 3×3 blur, so it isn't a fair judge of soft renders. Styles with a low-contrast warning must pass the clean renders; all others, every render. Perspective is still to come. *(rev. W20261025212852)* | `freeqrent-verify` crate and CI |
 | Real-device matrix | iOS Camera, Android Google Lens, WeChat, ZXing | manual, per release, for presets |
 
 CI runs the round-trip suite over the full preset × shape × frame matrix. A preset that fails is a release blocker.

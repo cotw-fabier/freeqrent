@@ -1,17 +1,20 @@
 //! freeQRent: styled and animated SVG QR codes, with zero dependencies.
 //!
-//! This release contains the encoder (SPEC §3): versions 1–40, ECC L/M/Q/H,
+//! The encoder (SPEC §3): versions 1–40, ECC L/M/Q/H,
 //! numeric/alphanumeric/byte/Kanji/ECI segments with minimal-length
-//! segmentation, mask selection, and a
-//! [`QrMatrix`] that records the role of every module; and CSS color
-//! parsing with OKLab contrast math for the color tokens (SPEC §6).
+//! segmentation, mask selection, and a [`QrMatrix`] that records the role
+//! of every module. The styling layer (SPEC §4–§7): a [`Style`] with module
+//! shapes, color tokens with OKLab contrast checks, and a streaming SVG
+//! writer.
 //!
 //! ```
-//! use freeqrent::{Ecc, ModuleRole, QrCode};
+//! use freeqrent::{Ecc, ModuleShape, QrCode, Style};
 //!
 //! let qr = QrCode::encode("https://example.com", Ecc::M).unwrap();
-//! let data_modules = qr.modules().filter(|&(_, _, _, role)| role == ModuleRole::Data).count();
-//! assert!(data_modules > 0);
+//! let style = Style::new().modules(ModuleShape::Rounded { radius: 0.4 });
+//! assert!(style.check(&qr).ok());
+//! let svg = style.render(&qr).unwrap();
+//! assert!(svg.starts_with("<svg "));
 //! ```
 
 #![no_std]
@@ -22,9 +25,11 @@ extern crate alloc;
 extern crate std;
 
 mod bits;
+mod check;
 mod code;
 mod color;
 mod error;
+mod geometry;
 mod gf;
 #[cfg(feature = "kanji")]
 mod kanji_table;
@@ -33,10 +38,14 @@ mod matrix;
 mod num;
 mod optimize;
 mod palette;
+mod scene;
 mod segment;
+mod style;
+mod svg;
 mod tables;
 mod version;
 
+pub use check::{CONTRAST_FLOOR, CONTRAST_WARNING, RenderError, ScanReport, Warning};
 pub use code::{QrBuilder, QrCode};
 pub use color::{Color, ColorError};
 pub use error::EncodeError;
@@ -45,4 +54,5 @@ pub use palette::{
     Contrast, Gradient, GradientKind, GradientStop, Paint, Palette, PaletteError, Token,
 };
 pub use segment::{ECI_UTF8, EciPolicy, Mode, Segment};
+pub use style::{Axis, ModuleShape, Style};
 pub use version::{Ecc, Version};

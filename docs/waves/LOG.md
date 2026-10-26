@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261025212852 · M1 · SVG writer, module shapes, verify crate
+
+- Landed: `Style` (module shape, palette, quiet zone, inverted opt-in, minify, title/desc/label, id prefix) with `render`, `render_to` (any `fmt::Write`), `render_io`, and `check` → `ScanReport { errors, warnings, min_contrast }`. Shapes `Square { gap }`, `Rounded`, `Dots`, `Bars`; integer path geometry with relative commands. Finders and alignment patterns drawn solid on their own layers and tokens. New crate `freeqrent-verify`: resvg rasterization, ZXing (`rxing`) + rqrr decoding, four renders (4/6/10 px/module, and blur + noise at 8).
+- Decisions (all measured): resvg paints black for `var()`/`oklch()` outside `@supports`, so attributes carry hex and the token variables live in a prefixed `<style>@supports(…)` block; warning threshold raised to ΔL 0.60 (ZXing misses soft, noisy captures below it, finder eyes first); `Square.gap` capped at 0.25; alignment patterns never use the module shape (dots broke rqrr from v5 up). rqrr judges clean renders only.
+- Checks: 62 unit + 6 verify tests (10 shapes, 4 quiet zones, 9 palettes, each at v1/v5/v10/v25 under every render); release render v10 0.08–0.29 ms.
+- Follow-up: `Custom` shapes and smaller dot output moved to ROADMAP.
+
 ## 20261025211731 · M1 · Colors, tokens, contrast
 
 - Landed: `Color` (hex, `rgb()`, `hsl()`, `oklch()`, `oklab()`, named, `transparent`) with OKLab conversion and chroma-reducing gamut mapping; `Paint` (solid, linear and radial gradients with CSS stop fix-up); `Palette` with the §6.1 token set, per-corner finder tokens and the fallback chain; `Palette::contrast` (OKLab ΔL, compositing, worst point along gradients, polarity). Fuzz target `color_parse`.

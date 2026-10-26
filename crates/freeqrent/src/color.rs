@@ -144,6 +144,13 @@ impl Color {
         }
     }
 
+    /// The nearest opaque sRGB color: the literal fallback for renderers
+    /// without CSS variables or OKLCH.
+    pub(crate) fn opaque_srgb(self) -> Color {
+        let [r, g, b] = self.to_srgb8();
+        Color::srgb(r, g, b)
+    }
+
     /// Gamma-encoded sRGB in 0–1 (gamut-mapped).
     pub(crate) fn to_srgb(self) -> [f64; 3] {
         match self.space {
