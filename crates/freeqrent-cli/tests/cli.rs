@@ -82,7 +82,7 @@ fn gallery_shows_every_family() {
     // Each family gets a code that can afford it, so all of them decode.
     assert_eq!(html.matches("class=\"verdict\">decodes").count(), 65);
     // Without pictures the picture cards use the sample.
-    assert!(html.contains("--art sample --ink mono"));
+    assert!(html.contains("--art sample --clarity 0.5"));
 
     // With one, it stands in for both.
     let png = dir.join("brand.png");
@@ -97,8 +97,8 @@ fn gallery_shows_every_family() {
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
     assert_eq!(html.matches("class=\"verdict\">decodes").count(), 65);
-    assert!(!html.contains("--art sample --ink mono"));
-    assert!(html.contains("brand.png --ink mono"));
+    assert!(!html.contains("--art sample --clarity 0.5"));
+    assert!(html.contains("brand.png --clarity 0.5"));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

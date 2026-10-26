@@ -412,13 +412,35 @@ pub(crate) const LOGO_FAMILIES: &[(&str, &[(&str, &str)])] = &[
 /// Pictures with everything else: art mode, halftones, palettes and
 /// gradients taken from a picture, logos and motion. `{a}` and `{b}` stand
 /// for the pictures given with `--gallery-picture` (`sample` without).
+/// Pictures carry clarity 0.5 and, unless a card shows a grid, the sparse
+/// grid: measured (W20261026115722) under blur and noise at fixed image
+/// sizes, art codes at clarity 0 on the standard grid decoded only at the
+/// largest size tried.
 pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
-    ("Art, mono ink", &[("art", "{a}"), ("ink", "mono")]),
-    ("Art, color ink", &[("art", "{a}"), ("ink", "color:6")]),
+    (
+        "Art, mono ink",
+        &[
+            ("art", "{a}"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
+            ("ink", "mono"),
+        ],
+    ),
+    (
+        "Art, color ink",
+        &[
+            ("art", "{a}"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
+            ("ink", "color:6"),
+        ],
+    ),
     (
         "Art, picture palette",
         &[
             ("art", "{b}"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
             ("ink", "color:6"),
             ("palette-from-image", "{b}"),
         ],
@@ -427,6 +449,7 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
         "Art, dense grid",
         &[
             ("art", "{b}"),
+            ("clarity", "0.75"),
             ("ink", "mono"),
             ("palette-from-image", "{b}"),
             ("tracking-grid", "dense"),
@@ -436,7 +459,8 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
         "Halftone dots",
         &[
             ("halftone", "{a}"),
-            ("tracking-grid", "standard"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
             ("ink", "color:6"),
             ("shape", "dots:0.85"),
             ("finder", "rounded:2/circle"),
@@ -448,7 +472,7 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("halftone", "{b}"),
             ("tracking-grid", "sparse"),
             ("ink", "color:6"),
-            ("clarity", "0.4"),
+            ("clarity", "0.6"),
             ("shape", "rounded:0.4"),
         ],
     ),
@@ -507,6 +531,8 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
         "Art with a framed logo",
         &[
             ("art", "{a}"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
             ("ink", "color:6"),
             ("logo", "sample"),
             ("logo-scale", "0.12"),
@@ -520,6 +546,8 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("intro", "develop"),
             ("idle", "logo-turn"),
             ("art", "{b}"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
             ("ink", "color:6"),
             ("palette-from-image", "{b}"),
             ("logo", "sample"),
@@ -533,6 +561,8 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
         &[
             ("intro", "develop"),
             ("art", "{a}"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
             ("ink", "mono"),
             ("logo", "sample"),
             ("logo-scale", "0.12"),
@@ -547,6 +577,7 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("intro", "settle"),
             ("idle", "logo-spin"),
             ("halftone", "{b}"),
+            ("clarity", "0.5"),
             ("tracking-grid", "sparse"),
             ("ink", "color:6"),
             ("palette-from-image", "{b}"),
@@ -563,7 +594,8 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("idle", "logo-flip"),
             ("idle", "shimmer"),
             ("halftone", "{a}"),
-            ("tracking-grid", "standard"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
             ("ink", "mono"),
             ("logo", "sample"),
             ("logo-scale", "0.12"),
@@ -605,6 +637,8 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("idle", "logo-glint"),
             ("idle", "logo-spin"),
             ("art", "{b}"),
+            ("clarity", "0.5"),
+            ("tracking-grid", "sparse"),
             ("ink", "color:6"),
             ("logo", "sample"),
             ("logo-scale", "0.12"),
@@ -757,11 +791,12 @@ figure {{ margin: 0; }}
 .refused {{ aspect-ratio: 1; margin: 0; display: grid; place-items: center; text-align: center;
   padding: 16px; border: 1px dashed var(--rule); color: var(--bad); border-radius: 6px; }}
 figcaption {{ padding-top: 12px; border-top: 1px solid var(--rule); margin-top: 12px; }}
-h2 {{ font-size: 1rem; margin: 0 0 4px; font-weight: 600; }}
+h2 {{ font-size: 1rem; margin: 0 0 4px; font-weight: 600;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; }}
 code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--muted); overflow-wrap: anywhere; }}
 .code.waiting svg * {{ animation-play-state: paused !important; }}
-.replay {{ position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; padding: 0;
+.replay {{ flex: none; width: 28px; height: 28px; padding: 0;
   display: grid; place-items: center; border: 1px solid var(--rule); border-radius: 50%;
   background: var(--page); color: var(--ink); cursor: pointer; opacity: .75; }}
 .replay:hover, .replay:focus-visible {{ opacity: 1; }}
@@ -780,7 +815,9 @@ code {{ display: block; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, mon
 {cards}</main>
 <script>
 // Animated codes hold their first frame until they scroll into view, and
-// a button replays them. A fresh copy of the SVG restarts its animations.
+// a button beside the title replays them (off the code, so it never covers
+// modules a scanner needs). A fresh copy of the SVG restarts its
+// animations.
 const icon = '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" ' +
   'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M12.5 1.5v3h-3"/></svg>';
@@ -806,7 +843,7 @@ for (const box of document.querySelectorAll(".code")) {{
   button.title = button.ariaLabel = "Replay animation";
   button.innerHTML = icon;
   button.addEventListener("click", () => replay(box));
-  box.append(button);
+  box.closest("figure").querySelector("h2").append(button);
 }}
 </script>
 </body>

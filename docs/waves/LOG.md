@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026115722 · M5 · Gallery replay button off the code; art mode capture
+
+- Landed: the gallery's replay button sits beside each card's title instead of on the code's corner, where it covered modules. The gallery's picture cards use clarity 0.5 and the sparse grid (the dense-grid card 0.75).
+- Measured: a harsher bar, close to a phone camera (whole code 160–400 px, one or two blurs, noise, ZXing), separates settings the bench passed alike. With two wallpapers the art defaults decoded 1 time in 10, clarity 0.5 on the sparse grid 6, 0.75 on sparse 8–9; bands, ECC H and ink made no difference. The picture cards went from 0–1 in 10 to 4–7 (the dense grid stays at 2; it needs a bigger print), and the plain picture-palette cards decode 9–10.
+- Decisions: library defaults unchanged; the clarity default is a choice for after phone results (ROADMAP).
+- Checks: the gallery test follows the cards' new flags.
+
 ## 20261026114047 · M5 · Picture gallery cards
 
 - Landed: eighteen picture cards in the gallery (65 families, all decode): art mode (mono, color, picture palette, dense grid), halftones, palettes and linear and radial gradients from a picture, and pictures with framed logos, Shrink, Draw, Ink and Develop intros and the turn, glint, spin, flip, shimmer and breathe idles. `--gallery-picture FILE` (repeatable) supplies the pictures, `sample` otherwise; `--palette-from-image sample`.
