@@ -2,6 +2,15 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## M6 complete · 2026-10-26
+
+- All six done-when items have landed: API review (W20261026173421), presets (W20261026174357), docs (W20261026175640), measured render times and WASM size (W20261026180849), the scan matrix at the release candidate (W20261026190646), and release prep (W20261026181929). The 1.0.0 publish, tag and push wait for the owner's go.
+
+## 20261026190646 · M6 · The scan matrix at the release candidate
+
+- Measured: the owner rescanned the 1.0.0 candidate's scan sheet on iOS Camera and Google Lens, and it read fine. That covers the logo cards that changed with the ECC H budget (S14, S47–S66) and the new preset cards (S70–S77). SPEC §9 records it.
+- Checks: docs only.
+
 ## 20261026181929 · M6 · Release prep: 1.0.0, ready to publish
 
 - Landed: the workspace is at 1.0.0, and path dependencies ask for 1.0.0. Every crate has a description, keywords, categories, a readme and a homepage; the core's README is a symlink to the root one, so the packaged crate carries it and its README doctests still find it. Short READMEs for `freeqrent-image`, `freeqrent-verify` and `freeqrent-cli`. `CHANGELOG.md`. SPEC's status reads v1.0 (release candidate until published).
