@@ -22,19 +22,19 @@ Styled and animated SVG QR codes from a zero-dependency Rust core. MIT licensed.
 <details>
 <summary>Spoilers: what they say, and how they were made</summary>
 
-| Code | Says | Style |
-|---|---|---|
-| Heart | Hi Mom! | liquid modules, ripple intro, a heart stamped in, breathing |
-| Coin | Secret $4 Fee Not Included | dots, sweep intro, a spinning coin in orbit, shimmer |
-| Gear | Built with Claude because my programming skills got RUSTy (get it?) | round frame, assemble intro, a turning gear, pulsing finders |
-| Terminal | You found the secret level. There is no secret level. | inverted, raster intro, shimmer |
-| Bars | Achievement unlocked: pointed phone at square | vertical bars, polar iris intro, pulsing finders |
-| Bubble | This QR code is legally a hug | round frame, radial settle intro, breathing |
-| Penguin | Dress code: black tie. Species: penguin. | art mode in color ink, develop intro |
-| Samurai | Forged in Rust. Folded 1,000 times. | art mode in gradient ink, sweep intro |
-| Windmill | Not all who wander are lost. Some are just scanning. | art mode in color ink, ripple intro, shimmer |
+| Code | Says | Style | CLI command |
+|---|---|---|---|
+| Heart | Hi Mom! | liquid modules, ripple intro, a heart stamped in, breathing | `freeqrent 'Hi Mom!' --shape liquid:0.85 --finder squircle/circle --bg '#fff2f6' --fg 'linear-gradient(135deg, oklch(36% .17 355), oklch(29% .15 300))' --token 'finder.eye=oklch(34% .18 15)' --logo docs/showcase/logos/heart.svg --logo-shape circle --logo-frame ring --logo-intro stamp --intro ripple --intro-ms 1400 --idle breathe --label 'Hi Mom!' --trigger every:5000 -o hi-mom.svg` |
+| Coin | Secret $4 Fee Not Included | dots, sweep intro, a spinning coin in orbit, shimmer | `freeqrent 'Secret $4 Fee Not Included' --shape dots:0.86 --finder rounded:1.5/circle --bg '#f3fbf4' --fg 'linear-gradient(160deg, oklch(33% .1 160), oklch(28% .08 220))' --token 'finder.eye=oklch(34% .09 85)' --logo docs/showcase/logos/coin.svg --logo-shape circle --logo-frame orbit --logo-intro spin --intro sweep --intro-ms 1300 --idle shimmer --idle logo-spin --label 'Secret $4 Fee Not Included' --trigger every:5000 -o secret-fee.svg` |
+| Gear | Built with Claude because my programming skills got RUSTy (get it?) | round frame, assemble intro, a turning gear, pulsing finders | `freeqrent 'Built with Claude because my programming skills got RUSTy (get it?)' --shape rounded:0.45 --finder squircle/squircle --frame circle:0.5 --frame-ring dashed --bg '#fff6ee' --fg 'radial-gradient(oklch(36% .13 40), oklch(26% .08 30))' --token 'finder.eye=oklch(35% .14 45)' --token 'filler=oklch(36% .13 40 / .3)' --logo docs/showcase/logos/gear.svg --logo-scale 0.24 --logo-shape circle --logo-frame beads --intro assemble --intro-ms 1600 --idle finder-pulse --idle logo-turn --label 'Built with Claude because my programming skills got RUSTy (get it?)' --trigger every:5000 -o rusty.svg` |
+| Terminal | You found the secret level. There is no secret level. | inverted, raster intro, shimmer | `freeqrent 'You found the secret level. There is no secret level.' --shape square:0.12 --finder square/square --timing dashed --bg '#0b1410' --fg 'linear-gradient(90deg, #7dffa8, #6fe3ff)' --token 'finder.eye=#c6ff7d' --allow-inverted --intro raster --intro-ms 1500 --idle shimmer --label 'You found the secret level. There is no secret level.' --trigger every:5000 -o secret-level.svg` |
+| Bars | Achievement unlocked: pointed phone at square | vertical bars, polar iris intro, pulsing finders | `freeqrent 'Achievement unlocked: pointed phone at square' --shape bars-v:0.5 --finder rounded:1/rounded:0.8 --bg '#fff8ef' --fg 'linear-gradient(135deg, oklch(37% .16 30), oklch(33% .17 330), oklch(30% .15 285))' --intro iris --intro-ms 1400 --stagger polar --idle finder-pulse --label 'Achievement unlocked: pointed phone at square' --trigger every:5000 -o achievement.svg` |
+| Bubble | This QR code is legally a hug | round frame, radial settle intro, breathing | `freeqrent 'This QR code is legally a hug' --shape dots:0.82 --finder rounded:1.5/circle --frame circle:0.5 --frame-ring solid --bg '#f1f6ff' --fg 'linear-gradient(135deg, oklch(34% .14 265), oklch(31% .13 200))' --token 'filler=oklch(34% .12 240 / .3)' --token 'finder.eye=oklch(36% .17 300)' --intro settle --intro-ms 1500 --stagger radial --idle breathe --label 'This QR code is legally a hug' --trigger every:5000 -o hug.svg` |
+| Penguin | Dress code: black tie. Species: penguin. | art mode in color ink, develop intro | `freeqrent 'Dress code: black tie. Species: penguin.' --art docs/showcase/pictures/penguin.jpg --ink color --tracking-grid sparse --intro develop --intro-ms 1800 --label 'Dress code: black tie. Species: penguin.' --trigger every:5000 -o art-penguin.svg` |
+| Samurai | Forged in Rust. Folded 1,000 times. | art mode in gradient ink, sweep intro | `freeqrent 'Forged in Rust. Folded 1,000 times.' --art docs/showcase/pictures/samurai.jpg --ink mono --tracking-grid sparse --fg 'linear-gradient(160deg, oklch(28% .09 280), oklch(32% .14 20))' --intro sweep --intro-ms 1400 --label 'Forged in Rust. Folded 1,000 times.' --trigger every:5000 -o art-samurai.svg` |
+| Windmill | Not all who wander are lost. Some are just scanning. | art mode in color ink, ripple intro, shimmer | `freeqrent 'Not all who wander are lost. Some are just scanning.' --art docs/showcase/pictures/windmill.jpg --ink color --tracking-grid sparse --intro ripple --intro-ms 1600 --idle shimmer --label 'Not all who wander are lost. Some are just scanning.' --trigger every:5000 -o art-windmill.svg` |
 
-Each was rendered by the `freeqrent` CLI and decoded with ZXing (and rqrr, where it reads the style) before it was written. The exact flags are in [`scripts/showcase.sh`](scripts/showcase.sh); the art pieces start from the owner's own wallpapers, in [`docs/showcase/pictures`](docs/showcase/pictures).
+Each was rendered by the `freeqrent` CLI and decoded with ZXing (and rqrr, where it reads the style) before it was written. Run the commands from the repository root; [`scripts/showcase.sh`](scripts/showcase.sh) renders all of them and checks each one with `--verify`; the art pieces start from the owner's own wallpapers, in [`docs/showcase/pictures`](docs/showcase/pictures).
 
 </details>
 
