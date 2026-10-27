@@ -78,9 +78,9 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 115);
+    assert_eq!(html.matches("<figure>").count(), 113);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 230);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 226);
     // Without pictures the picture cards use the sample.
     assert!(html.contains("--art sample --clarity 0.5"));
     // The presets lead.
@@ -90,8 +90,8 @@ fn gallery_shows_every_family() {
     // Every card has a dark twin, and the twins, the two dark cards, the
     // terminal preset and both codes of each dark design system are read
     // inverted.
-    assert_eq!(html.matches("<div class=\"variant dark\">").count(), 115);
-    assert_eq!(html.matches(", read inverted").count(), 133);
+    assert_eq!(html.matches("<div class=\"variant dark\">").count(), 113);
+    assert_eq!(html.matches(", read inverted").count(), 130);
     // The design systems have a section of their own.
     assert!(html.contains("<h2 class=\"section\">Design systems</h2>"));
     assert!(html.contains("freeqrent https://example.com/menu --dark</code>"));
@@ -108,7 +108,7 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 230);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 226);
     assert!(!html.contains("--art sample --clarity 0.5"));
     assert!(html.contains("brand.png --clarity 0.5"));
     std::fs::remove_dir_all(&dir).unwrap();

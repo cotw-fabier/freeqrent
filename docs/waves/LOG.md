@@ -2,6 +2,16 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## M7.5 complete · 2026-10-26
+
+Design styles, core 1.1, before the bindings: frame borders and hard shadows, data colors, gradient backgrounds, glow, emboss and sketch effects, grain, scanline and ink textures, and captions, each reaching the Style document, the schema, the conformance suite (58 → 74 cases) and the CLI, with limits measured on pinned codes. 1.0 output is unchanged. The core's WASM build is 176 KB gzipped against 200 KB (165 KB at 1.0). Waves 20261026204907, 20261026210723, 20261026211921, 20261026212751, 20261026220634, 20261026221457, 20261026223536, 20261026224505.
+
+## 20261026224505 · M7.5 · Design cards on the new styles
+
+- Landed: the design-system gallery cards use M7.5: Bauhaus gets red and blue data modules with a yellow shadow, neo-brutalism a black border, shadow and "SCAN ME", Swiss a red border and caption, cyberpunk and terminal glow and scanlines, neumorphism and clay an emboss, sketch and organic the sketch effect, newsprint ink and grain, aurora, glass, modern-dark and vaporwave gradient backgrounds, and so on. Accents that can't sit on modules (Bauhaus yellow, Swiss red, vermillion, electric blue, safety orange) now show at full strength on borders, shadows and captions. Tooli Rent and VaraCMS are gone from the gallery at the owner's request: 35 design cards, 113 in all.
+- Decision: gradient backgrounds were darkened or lightened until their worst point clears the 0.60 band from the ink, so no design card warns beyond inversion and rounded rings.
+- Checks: all 226 gallery codes decode (`gallery_shows_every_family` updated); WASM 176 KB gzipped.
+
 ## 20261026223536 · M7.5 · Captions
 
 - Landed: `Style::caption(Caption::new(text))` with size, `CaptionFont::{Sans, Serif, Mono}`, weight and tracking, in a new `caption` token. Square and rounded cards grow a band to hold it (inside the border and shadow); under a round frame or none it stands below. The viewBox can now be taller than wide (`Canvas::band`, `height`, `card_height`). Generic font families only; a line too long for an average-width guess is squeezed with `textLength`. Plans carry `caption` (text, type, center). Style document `caption`, schema, CLI `--caption` and four companions.

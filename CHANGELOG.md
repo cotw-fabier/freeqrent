@@ -2,6 +2,17 @@
 
 All four Phase 1 crates (`freeqrent`, `freeqrent-image`, `freeqrent-verify`, `freeqrent-cli`) share one version. From 1.0 on, the core follows semver: enums and reports that may grow are `#[non_exhaustive]`, so new shapes, presets, tokens or warnings arrive in minor releases. Output changes (the SVG for a given input) are called out here, even when the API doesn't change.
 
+## Unreleased (core 1.1, M7.5)
+
+New options, all additive; 1.0 styles render byte for byte as before (snapshots and conformance hashes unchanged):
+
+- **Frames:** `Style::border(Border::Solid | Double)` and a hard `Style::shadow(offset)`, outside the quiet zone, with a `shadow` token.
+- **Colors:** data colors `fg.2`–`fg.4`, spread per module or per region (`Style::color_spread`); gradient backgrounds (`bg` takes a gradient, judged at its worst point).
+- **Effects:** `Style::effect(Effect::Glow | Emboss | Sketch)`, one SVG filter on the code.
+- **Textures:** `Style::texture(Texture::Grain | Scanlines | Ink)`.
+- **Captions:** `Style::caption(Caption)`, a line under the code with a `caption` token; the viewBox may now be taller than wide.
+- Every option is in the Style document, the schema, the conformance suite (16 new cases, 74 in all) and the CLI, and plans carry what other players need (`effect`, `textures`, `caption`, layers' `fillOpacity`).
+
 ## Unreleased (Phase 2, M7)
 
 Not part of the 1.0 core release. These crates are `publish = false` until the bindings ship together (M9).
