@@ -2,6 +2,14 @@
 
 All four Phase 1 crates (`freeqrent`, `freeqrent-image`, `freeqrent-verify`, `freeqrent-cli`) share one version. From 1.0 on, the core follows semver: enums and reports that may grow are `#[non_exhaustive]`, so new shapes, presets, tokens or warnings arrive in minor releases. Output changes (the SVG for a given input) are called out here, even when the API doesn't change.
 
+## Unreleased (Phase 2, M7)
+
+Not part of the 1.0 core release. These crates are `publish = false` until the bindings ship together (M9).
+
+- **`freeqrent-doc`:** Style documents (JSON) in; SVG, scan reports, animation plans and palettes out. Errors are structured as `{code, message, detail}`. This is the boundary every binding shares (SPEC §10.1).
+- **Schema and conformance:** `schema/freeqrent.schema.json` is generated from the parser's tables. `conformance/cases.json` has 57 cases every binding has to reproduce byte for byte.
+- **`freeqrent-ffi`:** the C ABI and `include/freeqrent.h`.
+
 ## 1.0.0 (unreleased)
 
 The first release. Phase 1 of [`SPEC.md`](SPEC.md), milestones M0–M6:

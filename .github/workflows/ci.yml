@@ -37,6 +37,16 @@ jobs:
           targets: wasm32-unknown-unknown
       - run: scripts/wasm-size.sh
 
+  ffi:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: scripts/ffi-smoke.sh
+
   msrv:
     runs-on: ubuntu-latest
     steps:

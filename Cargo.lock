@@ -281,6 +281,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "freeqrent-ffi"
+version = "1.0.0"
+dependencies = [
+ "freeqrent",
+ "freeqrent-doc",
+]
+
+[[package]]
 name = "freeqrent-image"
 version = "1.0.0"
 dependencies = [

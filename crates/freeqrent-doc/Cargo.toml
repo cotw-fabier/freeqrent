@@ -11,6 +11,8 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 authors.workspace = true
+# Released with the bindings (M9), not with the 1.0 core.
+publish = false
 
 [dependencies]
 # Every binding builds on the same feature set, so every language encodes

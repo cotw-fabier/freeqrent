@@ -37,7 +37,7 @@ Cargo workspace:
 | `freeqrent-verify` | 1 | Rasterizes the output and decodes it to prove scannability | `resvg`, `rqrr`, `rxing` (ZXing port) |
 | `freeqrent-cli` | 1 | CLI front end (also the main dev/preview tool during Phase 1) | `freeqrent`, `freeqrent-image`, arg parsing (`lexopt`, tiny) |
 | `freeqrent-doc` | 2 | The binding boundary (§10.1): Style documents (JSON) in, SVG, reports, plans and palettes out, with structured errors. Its own small JSON reader and writer. Shared by `freeqrent-ffi`, `freeqrent-wasm` and `freeqrent-py` *(W20261026200815)* | `freeqrent` only |
-| `freeqrent-ffi` | 2 | Stable C ABI (`cbindgen` header). This is the base for Dart, Go, and any other FFI host (Swift, Kotlin, C#) | none |
+| `freeqrent-ffi` | 2 | Stable C ABI over `freeqrent-doc`, with a hand-written header (`include/freeqrent.h`; *rev. W20261026203955*, was cbindgen). This is the base for Dart, Go, and any other FFI host (Swift, Kotlin, C#). The one crate that allows `unsafe`, to read the caller's pointers | `freeqrent-doc` |
 | `freeqrent-wasm` | 2 | `wasm-bindgen` build, published to npm as `freeqrent` for **Node and browsers** | `wasm-bindgen` |
 | `freeqrent-py` | 2 | **Python** extension module via PyO3, built with `maturin` and published to PyPI | `pyo3` |
 | `bindings/go` | 2 | **Go** module over `freeqrent-ffi` via **cgo, linking prebuilt static libraries** (the default). An optional `freeqrent_wasm` build tag uses an embedded WASM build with `wazero` for pure-Go / `CGO_ENABLED=0` users. | cgo; `wazero` (tag only) |
@@ -655,7 +655,7 @@ A variant added to the core in 1.x gets its own code in the same release; until 
 | **Python** | PyO3 + maturin, **abi3** wheels (CPython ≥ 3.9) for manylinux/musllinux x86_64 + aarch64, macOS universal2, Windows x64 | PyPI `freeqrent` | `freeqrent.render(text, style=Style(...))`, dataclass-like style objects with type stubs (`.pyi`), `Palette.from_image()` also accepts a Pillow `Image` duck-typed via `tobytes()` (no Pillow dependency) |
 | **Dart / Flutter** | `dart:ffi` over `freeqrent-ffi`, compiled through **Native Assets** (`native_toolchain_rs`) for iOS, Android, macOS, Linux, Windows; Dart web via the WASM build | pub.dev `freeqrent` | `FreeQrent.render(text, style: QrStyle(...))` with sealed classes for shapes/intros. The SVG string works with `flutter_svg` for static codes. Animated codes use the native `FreeQrentAnimated` widget (§10.4). |
 | **Go** | Default: **cgo** over `freeqrent-ffi`, linking prebuilt static libraries that ship in the module for linux/darwin/windows × amd64/arm64 (consumers need a C toolchain but no Rust). Opt-in: `-tags freeqrent_wasm` for pure Go via embedded WASM + `wazero` (`CGO_ENABLED=0`, roughly 2–5× slower). | Go module `github.com/freeqrent/freeqrent-go` | `freeqrent.Render(text, freeqrent.Style{...}) (string, error)`, safe for concurrent use. Functional options for styles. |
-| **C / others** | `freeqrent-ffi`: `freeqrent_render(const char* text, const char* style_json, char** out_svg, QrsvgError* err) -> int`, `freeqrent_free(char*)` | GitHub release artifacts + header | For Swift, Kotlin, Go, and C# later |
+| **C / others** | `freeqrent-ffi` *(rev. W20261026203955)*: `int32_t freeqrent_render(const uint8_t *data, size_t len, int32_t kind, const char *style_json, char **out, size_t *out_len)`, and the same shape for `freeqrent_check`, `freeqrent_plan`, `freeqrent_palette_from_image/css/html` and `freeqrent_presets`. Each writes one string to `*out`: the result with `FREEQRENT_OK` (0), or the error JSON `{code, message, detail}` with `FREEQRENT_ERROR` (1). Only a NULL `out` returns `FREEQRENT_INVALID` (2). `kind` is `FREEQRENT_TEXT` (UTF-8) or `FREEQRENT_BYTES`, and a NULL style means `{}`. Strings are freed with `freeqrent_free(char*)`; `freeqrent_version()` is static. Panics are caught and become `internal` errors, and the functions are safe from any thread | GitHub release artifacts + header | For Swift, Kotlin, Go, and C# later |
 
 ### 10.3 Consistency rules
 
@@ -731,7 +731,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 
 | Milestone | Scope |
 |---|---|
-| **M7: Boundary** | `freeqrent-ffi` C ABI, Style JSON schema, cross-language conformance suite. The Style document and the boundary functions are built (`freeqrent-doc`, W20261026200815), and so are the schema and the conformance suite (W20261026203442). |
+| **M7: Boundary** | `freeqrent-ffi` C ABI, Style JSON schema, cross-language conformance suite. **Done 2026-10-26**: the Style document and the boundary functions (`freeqrent-doc`, W20261026200815), the schema and the conformance suite (W20261026203442), and the C ABI (`freeqrent-ffi`, W20261026203955), which passes the whole suite and a C smoke program. |
 | **M8: Bindings** | npm (WASM), Python (PyO3), Dart (FFI + Native Assets + `FreeQrentAnimated`), Go (cgo + `wazero` tag), prebuilt binaries for all platforms. |
 | **M9: Release** | Lockstep 1.x release in all registries, docs site with live WASM playground. |
 
