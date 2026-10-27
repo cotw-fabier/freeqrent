@@ -68,6 +68,8 @@ if [ -z "$targets" ]; then
 fi
 
 target_dir=$(cargo metadata --format-version 1 --no-deps | sed 's/.*"target_directory":"\([^"]*\)".*/\1/')
+# JSON doubles a Windows path's backslashes; forward slashes work there too.
+target_dir=$(printf '%s' "$target_dir" | sed 's|\\\\|/|g')
 out=${PREBUILT_OUT:-$target_dir/prebuilt}
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 header=crates/freeqrent-ffi/include/freeqrent.h
