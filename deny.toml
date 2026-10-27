@@ -17,6 +17,11 @@ allow = ["MIT", "Apache-2.0", "Unicode-3.0", "BSD-2-Clause", "BSD-3-Clause", "Zl
 unused-allowed-license = "allow"
 confidence-threshold = 0.9
 
+# pyo3-build-config's platform table (the Python binding's build only).
+[[licenses.exceptions]]
+crate = "target-lexicon"
+allow = ["Apache-2.0 WITH LLVM-exception"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
