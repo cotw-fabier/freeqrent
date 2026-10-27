@@ -36,6 +36,7 @@ Cargo workspace:
 | `freeqrent-image` | 1 | Decodes PNG/JPEG into the core's `Rgba8Image` buffer type: `decode(&[u8])`, sniffed by signature, sRGB assumed (gamma and ICC ignored), 16-bit reduced to 8, first frame of an APNG, `Limits` checked after the headers and before any pixels are allocated (default 16,384 a side, 40 MP) *(rev. W20261026075708)* | `zune-png`, `zune-jpeg` (small, pure Rust), behind features `png`, `jpeg` (both default) |
 | `freeqrent-verify` | 1 | Rasterizes the output and decodes it to prove scannability | `resvg`, `rqrr`, `rxing` (ZXing port) |
 | `freeqrent-cli` | 1 | CLI front end (also the main dev/preview tool during Phase 1) | `freeqrent`, `freeqrent-image`, arg parsing (`lexopt`, tiny) |
+| `freeqrent-doc` | 2 | The binding boundary (§10.1): Style documents (JSON) in, SVG, reports, plans and palettes out, with structured errors. Its own small JSON reader and writer. Shared by `freeqrent-ffi`, `freeqrent-wasm` and `freeqrent-py` *(W20261026200815)* | `freeqrent` only |
 | `freeqrent-ffi` | 2 | Stable C ABI (`cbindgen` header). This is the base for Dart, Go, and any other FFI host (Swift, Kotlin, C#) | none |
 | `freeqrent-wasm` | 2 | `wasm-bindgen` build, published to npm as `freeqrent` for **Node and browsers** | `wasm-bindgen` |
 | `freeqrent-py` | 2 | **Python** extension module via PyO3, built with `maturin` and published to PyPI | `pyo3` |
@@ -597,15 +598,53 @@ Not built in Phase 1. Specified here so the core is designed for it. Dart, TS/JS
 
 ### 10.1 Shared boundary
 
+The boundary is the `freeqrent-doc` crate *(W20261026200815)*: plain functions over text, shared by `freeqrent-ffi`, the WASM build and the Python module, so every language parses documents the same way.
+
 ```
-render(payload: string | bytes, style: Style) -> string        // SVG
-check(payload, style) -> ScanReport
-palette_from_image(rgba: bytes, width, height, opts) -> Palette
-palette_from_css(text) / palette_from_html(text) -> Palette
-presets() -> list of preset names
+render(payload: text | bytes, style_json) -> SVG
+check(payload, style_json) -> ScanReport JSON
+plan(payload, style_json) -> AnimationPlan JSON (§8.5)
+palette_from_image(rgba, width, height, opts_json) -> palette JSON
+palette_from_css(text, opts_json) / palette_from_html(text, opts_json) -> palette JSON
+presets() -> JSON array of preset names
+version() -> "1.0.0"
 ```
 
-Errors cross the boundary as a structured `{ code, message, detail }` value and become an idiomatic exception or `Result` in each language.
+Text payloads are segmented like `encode_text`; bytes go in byte mode. Every payload is encoded with `encode_*_for`, so a logo grows the code instead of being refused. `check` returns a report even for a style `render` would refuse (`ok` false); only a bad document or a payload that doesn't fit is an error.
+
+**The Style document** is a JSON object. Every key is optional; unknown keys, wrong types and out-of-range integers are refused. It starts from a base, `preset` (a name from `presets()`) or `art` (a picture, as `Style::art`) or the default style, and each key given replaces that part of the base. `palette` tokens merge onto the base's palette. Values use the CLI's names (§10.5). A variant with data is an object tagged by `kind`; a variant without data may also be the bare name (`"square"` is `{"kind":"square"}`). Numbers left out take the CLI's defaults.
+
+| Key | Value |
+|---|---|
+| `preset` | `"ink"` and the other preset names |
+| `art` | a halftone object (below); can't be combined with `preset` or `halftone` |
+| `modules` | `{"kind":"square","gap"}`, `rounded` (`radius`, 0.35), `dots` (`size`, 0.85), `liquid` (`smoothness`, 0.8), `bars` (`axis`: `horizontal`/`vertical`, `radius` 0.5) |
+| `finders` | `{"ring", "eye", "corners": {"top-left"\|"top-right"\|"bottom-left": {"ring", "eye"}}}`. Rings: `square`, `rounded` (`radius`, 1.5), `squircle`, `leaf`. Eyes: `square`, `rounded` (`radius`, 0.75), `circle`, `squircle`, `leaf`. A ring alone brings its matching eye, as in the CLI |
+| `alignment` | `{"shape": "match" \| {"kind":"own","ring","eye"}, "emphasis": "none"\|"accent"\|"outline"}` |
+| `timing` | `plain`, `dotted`, `dashed` |
+| `palette` | `{token: CSS paint}`, the tokens of §6.1 |
+| `dark` | `true` renders the palette's dark twin (§6.3) and allows inverted colors, like `--dark` |
+| `quiet_zone`, `allow_inverted`, `seed`, `minify` | as in `Style`; `seed` takes any `u64` written as an integer |
+| `frame` | `square`, `none`, `{"kind":"rounded","radius"}` (2), `{"kind":"circle","filler_density","ring": "none"\|"solid"\|"dashed"}` (0.5) |
+| `logo` | `{"svg": text}` or `{"raster": base64}` (PNG, JPEG, GIF, WebP by signature), plus `size`, `scale`, `frame` (`ring`/`beads`/`stamp`/`brackets`/`orbit`, or `{"kind","width","moon"}`), `shape` (`square`, `circle`, `{"kind":"rounded","radius"}`), `padding`, `backdrop`, `clear_modules` |
+| `halftone` | `{"image", "ink": "mono"\|{"kind":"color","colors"}, "bands": [dark, light], "clarity": number \| image, "fit", "focal": [x, y], "priority": image, "steer"}` |
+| `intro` | a preset name, or `{"preset", "duration_ms", "delay_ms", "ease", "stagger", "groups", "trigger", "logo", "logo_timing", "frame", "frame_timing"}`, or a palette shift `{"palette_from": {token: paint}, "duration_ms", "ease", "trigger"}`. Ease: `quart`, `quint`, `expo`, `{"kind":"custom","x1","y1","x2","y2"}`. Stagger: `radial`, `linear`, `diagonal`, `polar`, `{"kind":"random","seed"}`. Trigger: `load`, `hover`, `{"kind":"class","name"}`, `{"kind":"every","ms"}`. Logo options need a `logo` |
+| `idle` | a list of idle names (`finder-pulse`, `shimmer`, …) |
+| `theme_transition_ms`, `title`, `description`, `label`, `id_prefix` | as in `Style` |
+| `target_size` | `{"kind":"pixels","px"}` or `{"kind":"millimeters","mm"}` |
+| `encoding` | `{"ecc": "L"\|"M"\|"Q"\|"H", "boost_ecc", "mask": 0–7, "eci": "auto"\|"never"\|"always"}` and one of `version`, `tracking_grid` (`sparse`/`standard`/`dense`), or `min_version`/`max_version`. Art mode takes the standard grid unless one of those is given |
+
+Images are `{"width", "height", "rgba": base64}`, 8-bit RGBA row by row. Palette options are `{"clusters", "seed", "min_contrast", "allow_inverted", "logo_colors": [CSS colors]}`; an empty text means none. A palette result is `{"palette": {token: paint}, "swatches": [{"color", "share"}], "choices": [{"token", "color", "origin"}]}`, and its `palette` drops straight into a document. A report is `{"ok", "errors", "warnings", "min_contrast", "ecc_budget_used", "logo_scale", "steering", "code": {"version", "ecc", "size", "mask"}}`, with each error and warning a `{code, message, detail}` entry.
+
+**Errors** cross the boundary as `{ code, message, detail }` and become an idiomatic exception or `Result` in each language. `code` is stable; `message` is English for people; `detail` holds the fields. The codes:
+
+- Documents: `invalid_style` (`detail.path` is the JSON path, like `intro.trigger.ms`; `detail.reason` says what's wrong; text that isn't JSON also has `offset`), `invalid_logo` (`path`, `reason`: `not_svg`, `no_size`, `not_image`), `invalid_image` (`path`, and `expected`/`actual` byte counts), `invalid_argument` (a null pointer or text that isn't UTF-8 at the C ABI).
+- Encoding: `data_too_long` (`bits_needed`, `bits_available`, `max_version`, `ecc`), `invalid_version_range`, `invalid_character`, `invalid_eci`.
+- Rendering (also the report's errors): `contrast_too_low` (`token`, `delta_l`), `inverted_colors`, `quiet_zone_too_small`, `option_out_of_range` (`option`, `value`, `min`, `max`), `ecc_budget_exceeded`, `logo_too_large` (`max_scale`), `logo_over_alignment`, `turn_needs_round_frame`, `replay_too_soon`, `write`.
+- Report warnings: `low_contrast`, `inverted`, `narrow_quiet_zone`, `small_dots`, `translucent_background`, `small_on_screen`, `small_in_print`, `rounded_finder`, `long_intro`, `motion_contrast`, `many_animated_elements`.
+- Palettes: `no_colors`.
+
+A variant added to the core in 1.x gets its own code in the same release; until then it would come through as `render_error`, `encode_error` or `warning` with the core's message.
 
 ### 10.2 Per language
 
@@ -621,6 +660,7 @@ Errors cross the boundary as a structured `{ code, message, detail }` value and 
 ### 10.3 Consistency rules
 
 - One **conformance suite** (a JSON list of payload + style → expected SVG hash) runs in all five languages in CI. Because output is deterministic, every binding must produce byte-identical SVG.
+- Every binding is built on `freeqrent-doc`, with the same core features: `std`, `animate`, `palette-extract`, `halftone`, and `kanji` off. Kanji mode changes how JIS X 0208 text (including Greek and Cyrillic) is segmented, so one feature set is what makes the bytes agree *(W20261026200815)*.
 - Versions are released in lockstep: `freeqrent` 1.2.0 means the same core in every package.
 - Prebuilt binaries are produced for every platform, so users never need a Rust toolchain. Dart Native Assets can download prebuilt libraries and falls back to a local build.
 
@@ -690,7 +730,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 
 | Milestone | Scope |
 |---|---|
-| **M7: Boundary** | `freeqrent-ffi` C ABI, Style JSON schema, cross-language conformance suite. |
+| **M7: Boundary** | `freeqrent-ffi` C ABI, Style JSON schema, cross-language conformance suite. The Style document and the boundary functions are built (`freeqrent-doc`, W20261026200815). |
 | **M8: Bindings** | npm (WASM), Python (PyO3), Dart (FFI + Native Assets + `FreeQrentAnimated`), Go (cgo + `wazero` tag), prebuilt binaries for all platforms. |
 | **M9: Release** | Lockstep 1.x release in all registries, docs site with live WASM playground. |
 

@@ -1,0 +1,1 @@
+{"preset":"ink","modules":{"kind":"dots","size":0.9},"intro":{"preset":"ripple","trigger":{"kind":"every","ms":5000}},"palette":{"fg":"oklch(30% .1 250)"},"encoding":{"ecc":"Q"}}

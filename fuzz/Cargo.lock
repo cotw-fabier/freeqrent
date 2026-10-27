@@ -72,7 +72,14 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "freeqrent"
-version = "0.1.0"
+version = "1.0.0"
+
+[[package]]
+name = "freeqrent-doc"
+version = "1.0.0"
+dependencies = [
+ "freeqrent",
+]
 
 [[package]]
 name = "freeqrent-fuzz"
@@ -80,6 +87,7 @@ version = "0.0.0"
 dependencies = [
  "arbitrary",
  "freeqrent",
+ "freeqrent-doc",
  "libfuzzer-sys",
  "rqrr",
 ]

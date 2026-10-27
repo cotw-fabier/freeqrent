@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026200815 · M7 · The Style document and the boundary functions
+
+- Landed: `freeqrent-doc`, the boundary every binding shares (SPEC §10.1). A Style document (JSON) is a base (`preset`, `art` or the default) plus the parts it replaces; it reaches every `Style` option and the encoder's (`encoding`). The crate exports `render`, `check`, `plan`, `palette_from_image/css/html`, `presets` and `version`, all over text. Errors are `{code, message, detail}` with stable codes; document errors carry the JSON path. It has its own JSON reader and writer (strict: duplicate keys, unknown keys and nesting past 64 are refused; integers keep all 64 bits) and no dependencies besides the core, which `scripts/check-core-deps.sh` now checks too.
+- Decision: the document is parse-only and built from public builders, so the core gains no API. Values use the CLI's names, and variants with data are `kind`-tagged objects. Bindings use one core feature set with kanji off, since kanji changes how Greek and Cyrillic are segmented.
+- Checks: every key is compared with the builder-made style, 38 bad documents each give the expected code and path, and the boundary functions return the core's exact bytes. Seven documents (presets, inverted, dark, logo, halftone, art) are verified to scan. New fuzz target `style_doc`: 310k runs locally, clean, and in CI.
+- Next (M7): the schema generated from the crate's tables, the conformance suite, `freeqrent-ffi`.
+
 ## 20261026194504 · M6 · Replayed intros, and art in the showcase
 
 - Landed: `Trigger::Every(ms)` (CLI `--trigger every:MS`), which replays the intro every period in pure CSS, so it works in an `<img>`. Each intro track becomes one endless animation a period long that waits, plays, then holds the finished code. Idle loops run on through the replays as the individual `translate`/`rotate`/`scale` properties, so they compose with the intro. Palette shifts play once. New `RenderError::ReplayTooSoon` when the intro doesn't end by half the period. The plan's JSON trigger is `{"every":ms}`.

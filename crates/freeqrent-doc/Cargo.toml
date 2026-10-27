@@ -1,0 +1,24 @@
+[package]
+name = "freeqrent-doc"
+description = "freeQRent's Style documents: JSON in, SVG out, the boundary every language binding shares"
+keywords = ["qr", "qrcode", "svg", "json"]
+categories = ["multimedia::images", "encoding"]
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Every binding builds on the same feature set, so every language encodes
+# and renders the same bytes (SPEC §10.3). Kanji stays off.
+freeqrent = { path = "../freeqrent", version = "1.0.0", features = ["std", "animate", "palette-extract", "halftone"] }
+
+[dev-dependencies]
+freeqrent-verify = { path = "../freeqrent-verify" }
+
+[lints]
+workspace = true
