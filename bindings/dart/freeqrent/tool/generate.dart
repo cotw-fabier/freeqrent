@@ -343,9 +343,25 @@ class Generator {
     return '{$named}';
   }
 
-  void writeToJson(StringBuffer b, List<Field> fields, {String? kind}) {
+  /// With [bare], a kind whose fields are all left out writes its bare
+  /// name, as the schema allows.
+  void writeToJson(
+    StringBuffer b,
+    List<Field> fields, {
+    String? kind,
+    bool bare = false,
+  }) {
     b.writeln('  @override');
-    b.writeln('  Map<String, Object?> toJson() => {');
+    if (bare && fields.every((f) => !f.required)) {
+      if (fields.isEmpty) {
+        b.writeln("  Object? toJson() => '$kind';");
+        return;
+      }
+      final none = fields.map((f) => '${f.dart} == null').join(' && ');
+      b.writeln("  Object? toJson() => $none ? '$kind' : {");
+    } else {
+      b.writeln('  Map<String, Object?> toJson() => {');
+    }
     if (kind != null) b.writeln("    'kind': '$kind',");
     for (final f in fields) {
       final value = f.type.toJson(f.required ? f.dart : '${f.dart}!');
@@ -415,6 +431,7 @@ class Generator {
         alts.where((a) => kindOf(a) != null).toList(),
         owner: owner,
         name: name,
+        bare: {for (final e in enumAlts) ...(e['enum'] as List).cast<String>()},
       );
     }
     if (kinds.isNotEmpty) fail('$name: kinds mixed with other shapes');
@@ -497,6 +514,7 @@ class Generator {
     List<Map<String, Object?>> alts, {
     required String owner,
     required String name,
+    required Set<String> bare,
   }) {
     claim(name);
     final b = StringBuffer();
@@ -519,7 +537,7 @@ class Generator {
       );
       subDefs.writeln('  const $sub(${params(fields)});\n');
       writeFields(subDefs, fields);
-      writeToJson(subDefs, fields, kind: kind);
+      writeToJson(subDefs, fields, kind: kind, bare: bare.contains(kind));
       subDefs.writeln('}\n');
     }
     b.writeln('}\n');

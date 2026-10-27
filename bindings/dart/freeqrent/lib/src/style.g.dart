@@ -282,7 +282,7 @@ final class QrHalftoneInkMono extends QrHalftoneInk {
   const QrHalftoneInkMono();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'mono'};
+  Object? toJson() => 'mono';
 }
 
 /// `{"kind": "color"}`.
@@ -293,10 +293,9 @@ final class QrHalftoneInkColor extends QrHalftoneInk {
   final int? colors;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'color',
-    if (colors != null) 'colors': colors!,
-  };
+  Object? toJson() => colors == null
+      ? 'color'
+      : {'kind': 'color', if (colors != null) 'colors': colors!};
 }
 
 sealed class QrHalftoneClarity extends QrDocument {
@@ -401,10 +400,8 @@ final class QrModuleShapeSquare extends QrModuleShape {
   final double? gap;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'square',
-    if (gap != null) 'gap': gap!,
-  };
+  Object? toJson() =>
+      gap == null ? 'square' : {'kind': 'square', if (gap != null) 'gap': gap!};
 }
 
 /// `{"kind": "rounded"}`.
@@ -415,10 +412,9 @@ final class QrModuleShapeRounded extends QrModuleShape {
   final double? radius;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'rounded',
-    if (radius != null) 'radius': radius!,
-  };
+  Object? toJson() => radius == null
+      ? 'rounded'
+      : {'kind': 'rounded', if (radius != null) 'radius': radius!};
 }
 
 /// `{"kind": "dots"}`.
@@ -429,10 +425,8 @@ final class QrModuleShapeDots extends QrModuleShape {
   final double? size;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'dots',
-    if (size != null) 'size': size!,
-  };
+  Object? toJson() =>
+      size == null ? 'dots' : {'kind': 'dots', if (size != null) 'size': size!};
 }
 
 /// `{"kind": "liquid"}`.
@@ -443,10 +437,9 @@ final class QrModuleShapeLiquid extends QrModuleShape {
   final double? smoothness;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'liquid',
-    if (smoothness != null) 'smoothness': smoothness!,
-  };
+  Object? toJson() => smoothness == null
+      ? 'liquid'
+      : {'kind': 'liquid', if (smoothness != null) 'smoothness': smoothness!};
 }
 
 /// `{"kind": "bars"}`.
@@ -459,11 +452,13 @@ final class QrModuleShapeBars extends QrModuleShape {
   final double? radius;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'bars',
-    if (axis != null) 'axis': axis!.json,
-    if (radius != null) 'radius': radius!,
-  };
+  Object? toJson() => axis == null && radius == null
+      ? 'bars'
+      : {
+          'kind': 'bars',
+          if (axis != null) 'axis': axis!.json,
+          if (radius != null) 'radius': radius!,
+        };
 }
 
 sealed class QrRing extends QrDocument {
@@ -488,7 +483,7 @@ final class QrRingSquare extends QrRing {
   const QrRingSquare();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'square'};
+  Object? toJson() => 'square';
 }
 
 /// `{"kind": "squircle"}`.
@@ -497,7 +492,7 @@ final class QrRingSquircle extends QrRing {
   const QrRingSquircle();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'squircle'};
+  Object? toJson() => 'squircle';
 }
 
 /// `{"kind": "leaf"}`.
@@ -506,7 +501,7 @@ final class QrRingLeaf extends QrRing {
   const QrRingLeaf();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'leaf'};
+  Object? toJson() => 'leaf';
 }
 
 /// `{"kind": "rounded"}`.
@@ -517,10 +512,9 @@ final class QrRingRounded extends QrRing {
   final double? radius;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'rounded',
-    if (radius != null) 'radius': radius!,
-  };
+  Object? toJson() => radius == null
+      ? 'rounded'
+      : {'kind': 'rounded', if (radius != null) 'radius': radius!};
 }
 
 sealed class QrEye extends QrDocument {
@@ -548,7 +542,7 @@ final class QrEyeSquare extends QrEye {
   const QrEyeSquare();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'square'};
+  Object? toJson() => 'square';
 }
 
 /// `{"kind": "circle"}`.
@@ -557,7 +551,7 @@ final class QrEyeCircle extends QrEye {
   const QrEyeCircle();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'circle'};
+  Object? toJson() => 'circle';
 }
 
 /// `{"kind": "squircle"}`.
@@ -566,7 +560,7 @@ final class QrEyeSquircle extends QrEye {
   const QrEyeSquircle();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'squircle'};
+  Object? toJson() => 'squircle';
 }
 
 /// `{"kind": "leaf"}`.
@@ -575,7 +569,7 @@ final class QrEyeLeaf extends QrEye {
   const QrEyeLeaf();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'leaf'};
+  Object? toJson() => 'leaf';
 }
 
 /// `{"kind": "rounded"}`.
@@ -586,10 +580,9 @@ final class QrEyeRounded extends QrEye {
   final double? radius;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'rounded',
-    if (radius != null) 'radius': radius!,
-  };
+  Object? toJson() => radius == null
+      ? 'rounded'
+      : {'kind': 'rounded', if (radius != null) 'radius': radius!};
 }
 
 class QrRingAndEye extends QrDocument {
@@ -660,7 +653,7 @@ final class QrAlignmentShapeMatch extends QrAlignmentShape {
   const QrAlignmentShapeMatch();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'match'};
+  Object? toJson() => 'match';
 }
 
 /// `{"kind": "own"}`.
@@ -718,7 +711,7 @@ final class QrFrameSquare extends QrFrame {
   const QrFrameSquare();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'square'};
+  Object? toJson() => 'square';
 }
 
 /// `{"kind": "none"}`.
@@ -727,7 +720,7 @@ final class QrFrameNone extends QrFrame {
   const QrFrameNone();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'none'};
+  Object? toJson() => 'none';
 }
 
 /// `{"kind": "rounded"}`.
@@ -738,10 +731,9 @@ final class QrFrameRounded extends QrFrame {
   final double? radius;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'rounded',
-    if (radius != null) 'radius': radius!,
-  };
+  Object? toJson() => radius == null
+      ? 'rounded'
+      : {'kind': 'rounded', if (radius != null) 'radius': radius!};
 }
 
 /// `{"kind": "circle"}`.
@@ -754,11 +746,13 @@ final class QrFrameCircle extends QrFrame {
   final QrFrameRing? ring;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'circle',
-    if (fillerDensity != null) 'filler_density': fillerDensity!,
-    if (ring != null) 'ring': ring!.json,
-  };
+  Object? toJson() => fillerDensity == null && ring == null
+      ? 'circle'
+      : {
+          'kind': 'circle',
+          if (fillerDensity != null) 'filler_density': fillerDensity!,
+          if (ring != null) 'ring': ring!.json,
+        };
 }
 
 sealed class QrBorder extends QrDocument {
@@ -779,10 +773,9 @@ final class QrBorderSolid extends QrBorder {
   final double? width;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'solid',
-    if (width != null) 'width': width!,
-  };
+  Object? toJson() => width == null
+      ? 'solid'
+      : {'kind': 'solid', if (width != null) 'width': width!};
 }
 
 /// `{"kind": "double"}`.
@@ -793,10 +786,9 @@ final class QrBorderDouble extends QrBorder {
   final double? width;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'double',
-    if (width != null) 'width': width!,
-  };
+  Object? toJson() => width == null
+      ? 'double'
+      : {'kind': 'double', if (width != null) 'width': width!};
 }
 
 sealed class QrEffect extends QrDocument {
@@ -823,11 +815,13 @@ final class QrEffectGlow extends QrEffect {
   final double? strength;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'glow',
-    if (radius != null) 'radius': radius!,
-    if (strength != null) 'strength': strength!,
-  };
+  Object? toJson() => radius == null && strength == null
+      ? 'glow'
+      : {
+          'kind': 'glow',
+          if (radius != null) 'radius': radius!,
+          if (strength != null) 'strength': strength!,
+        };
 }
 
 /// `{"kind": "emboss"}`.
@@ -838,10 +832,9 @@ final class QrEffectEmboss extends QrEffect {
   final double? depth;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'emboss',
-    if (depth != null) 'depth': depth!,
-  };
+  Object? toJson() => depth == null
+      ? 'emboss'
+      : {'kind': 'emboss', if (depth != null) 'depth': depth!};
 }
 
 /// `{"kind": "sketch"}`.
@@ -852,10 +845,9 @@ final class QrEffectSketch extends QrEffect {
   final double? roughness;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'sketch',
-    if (roughness != null) 'roughness': roughness!,
-  };
+  Object? toJson() => roughness == null
+      ? 'sketch'
+      : {'kind': 'sketch', if (roughness != null) 'roughness': roughness!};
 }
 
 sealed class QrTexture extends QrDocument {
@@ -879,10 +871,9 @@ final class QrTextureGrain extends QrTexture {
   final double? amount;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'grain',
-    if (amount != null) 'amount': amount!,
-  };
+  Object? toJson() => amount == null
+      ? 'grain'
+      : {'kind': 'grain', if (amount != null) 'amount': amount!};
 }
 
 /// `{"kind": "scanlines"}`.
@@ -893,10 +884,9 @@ final class QrTextureScanlines extends QrTexture {
   final double? opacity;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'scanlines',
-    if (opacity != null) 'opacity': opacity!,
-  };
+  Object? toJson() => opacity == null
+      ? 'scanlines'
+      : {'kind': 'scanlines', if (opacity != null) 'opacity': opacity!};
 }
 
 /// `{"kind": "ink"}`.
@@ -907,10 +897,8 @@ final class QrTextureInk extends QrTexture {
   final double? fade;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'ink',
-    if (fade != null) 'fade': fade!,
-  };
+  Object? toJson() =>
+      fade == null ? 'ink' : {'kind': 'ink', if (fade != null) 'fade': fade!};
 }
 
 class QrCaption extends QrDocument {
@@ -977,11 +965,13 @@ final class QrLogoFrameRing extends QrLogoFrame {
   final double? moon;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'ring',
-    if (width != null) 'width': width!,
-    if (moon != null) 'moon': moon!,
-  };
+  Object? toJson() => width == null && moon == null
+      ? 'ring'
+      : {
+          'kind': 'ring',
+          if (width != null) 'width': width!,
+          if (moon != null) 'moon': moon!,
+        };
 }
 
 /// `{"kind": "beads"}`.
@@ -994,11 +984,13 @@ final class QrLogoFrameBeads extends QrLogoFrame {
   final double? moon;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'beads',
-    if (width != null) 'width': width!,
-    if (moon != null) 'moon': moon!,
-  };
+  Object? toJson() => width == null && moon == null
+      ? 'beads'
+      : {
+          'kind': 'beads',
+          if (width != null) 'width': width!,
+          if (moon != null) 'moon': moon!,
+        };
 }
 
 /// `{"kind": "stamp"}`.
@@ -1011,11 +1003,13 @@ final class QrLogoFrameStamp extends QrLogoFrame {
   final double? moon;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'stamp',
-    if (width != null) 'width': width!,
-    if (moon != null) 'moon': moon!,
-  };
+  Object? toJson() => width == null && moon == null
+      ? 'stamp'
+      : {
+          'kind': 'stamp',
+          if (width != null) 'width': width!,
+          if (moon != null) 'moon': moon!,
+        };
 }
 
 /// `{"kind": "brackets"}`.
@@ -1028,11 +1022,13 @@ final class QrLogoFrameBrackets extends QrLogoFrame {
   final double? moon;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'brackets',
-    if (width != null) 'width': width!,
-    if (moon != null) 'moon': moon!,
-  };
+  Object? toJson() => width == null && moon == null
+      ? 'brackets'
+      : {
+          'kind': 'brackets',
+          if (width != null) 'width': width!,
+          if (moon != null) 'moon': moon!,
+        };
 }
 
 /// `{"kind": "orbit"}`.
@@ -1045,11 +1041,13 @@ final class QrLogoFrameOrbit extends QrLogoFrame {
   final double? moon;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'orbit',
-    if (width != null) 'width': width!,
-    if (moon != null) 'moon': moon!,
-  };
+  Object? toJson() => width == null && moon == null
+      ? 'orbit'
+      : {
+          'kind': 'orbit',
+          if (width != null) 'width': width!,
+          if (moon != null) 'moon': moon!,
+        };
 }
 
 sealed class QrLogoShape extends QrDocument {
@@ -1071,7 +1069,7 @@ final class QrLogoShapeSquare extends QrLogoShape {
   const QrLogoShapeSquare();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'square'};
+  Object? toJson() => 'square';
 }
 
 /// `{"kind": "circle"}`.
@@ -1080,7 +1078,7 @@ final class QrLogoShapeCircle extends QrLogoShape {
   const QrLogoShapeCircle();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'circle'};
+  Object? toJson() => 'circle';
 }
 
 /// `{"kind": "rounded"}`.
@@ -1091,10 +1089,9 @@ final class QrLogoShapeRounded extends QrLogoShape {
   final double? radius;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'rounded',
-    if (radius != null) 'radius': radius!,
-  };
+  Object? toJson() => radius == null
+      ? 'rounded'
+      : {'kind': 'rounded', if (radius != null) 'radius': radius!};
 }
 
 class QrLogo extends QrDocument {
@@ -1172,7 +1169,7 @@ final class QrEaseQuart extends QrEase {
   const QrEaseQuart();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'quart'};
+  Object? toJson() => 'quart';
 }
 
 /// `{"kind": "quint"}`.
@@ -1181,7 +1178,7 @@ final class QrEaseQuint extends QrEase {
   const QrEaseQuint();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'quint'};
+  Object? toJson() => 'quint';
 }
 
 /// `{"kind": "expo"}`.
@@ -1190,7 +1187,7 @@ final class QrEaseExpo extends QrEase {
   const QrEaseExpo();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'expo'};
+  Object? toJson() => 'expo';
 }
 
 /// `{"kind": "custom"}`.
@@ -1246,7 +1243,7 @@ final class QrStaggerRadial extends QrStagger {
   const QrStaggerRadial();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'radial'};
+  Object? toJson() => 'radial';
 }
 
 /// `{"kind": "linear"}`.
@@ -1255,7 +1252,7 @@ final class QrStaggerLinear extends QrStagger {
   const QrStaggerLinear();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'linear'};
+  Object? toJson() => 'linear';
 }
 
 /// `{"kind": "diagonal"}`.
@@ -1264,7 +1261,7 @@ final class QrStaggerDiagonal extends QrStagger {
   const QrStaggerDiagonal();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'diagonal'};
+  Object? toJson() => 'diagonal';
 }
 
 /// `{"kind": "polar"}`.
@@ -1273,7 +1270,7 @@ final class QrStaggerPolar extends QrStagger {
   const QrStaggerPolar();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'polar'};
+  Object? toJson() => 'polar';
 }
 
 /// `{"kind": "random"}`.
@@ -1284,10 +1281,9 @@ final class QrStaggerRandom extends QrStagger {
   final int? seed;
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': 'random',
-    if (seed != null) 'seed': seed!,
-  };
+  Object? toJson() => seed == null
+      ? 'random'
+      : {'kind': 'random', if (seed != null) 'seed': seed!};
 }
 
 sealed class QrTrigger extends QrDocument {
@@ -1312,7 +1308,7 @@ final class QrTriggerLoad extends QrTrigger {
   const QrTriggerLoad();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'load'};
+  Object? toJson() => 'load';
 }
 
 /// `{"kind": "hover"}`.
@@ -1321,7 +1317,7 @@ final class QrTriggerHover extends QrTrigger {
   const QrTriggerHover();
 
   @override
-  Map<String, Object?> toJson() => {'kind': 'hover'};
+  Object? toJson() => 'hover';
 }
 
 /// `{"kind": "class"}`.
