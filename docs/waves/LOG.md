@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026231724 · M7.5 · Design systems in the README showcase
+
+- Landed: a fourth showcase row, Maximalism, Neo-brutalism and Terminal, taken from their gallery cards with their own payloads, intros replaying every 5 s like the rest. `scripts/showcase.sh` renders them; the README spoiler table has their commands.
+- Decisions: Maximalism uses `--groups 10` (the default 12 animated 65 elements over three data colors, one past the smooth-animation warning) and drops its idle loop; Neo-brutalism gets a diagonal assemble intro (its card has none).
+- Checks: each verified with `--verify` before writing: Maximalism decodes with ZXing (read inverted; rounded rings keep rqrr out), Neo-brutalism and Terminal with ZXing and rqrr. No library output changed.
+
 ## 20261026230624 · M7.5 · The gallery in the repository
 
 - Landed: `gallery.html` is tracked (no longer in `.gitignore`), regenerated at M7.5 for `https://example.com/menu` (113 cards, all 226 codes decode), and the README links it, with a rendered view through raw.githack.com since GitHub shows HTML as source.

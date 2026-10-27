@@ -73,3 +73,26 @@ run art-windmill "Not all who wander are lost. Some are just scanning." \
     --art $pictures/windmill.jpg --ink color --tracking-grid sparse \
     --intro ripple --intro-ms 1600 --idle shimmer \
     --label "Not all who wander are lost. Some are just scanning."
+
+# Design systems from the gallery, on the M7.5 chrome: borders, shadows,
+# effects, textures and captions.
+run maximalism "More is more. This QR code has never heard of restraint." \
+    --allow-inverted --bg "#0d0d1a" --fg "#00f5d4" \
+    --token fg.2="#ffe600" --token fg.3="#ff77ff" --spread regions \
+    --token finder.eye="#ff77ff" --token filler="#ff3af2" --token frame="#ff6b35" \
+    --shape liquid:1 --finder leaf/circle --frame circle:0.7 --frame-ring dashed \
+    --effect glow:0.3:0.2 --intro ripple --intro-ms 1600 --stagger random --groups 10 \
+    --label "More is more. This QR code has never heard of restraint."
+
+run neo-brutalism "SCAN ME. Yes, you. No rounded corners were harmed." \
+    --bg "#ffd93d" --fg "#000000" --shape square --timing dashed \
+    --border solid:1 --shadow 1.5 --caption "SCAN ME" --caption-tracking 10 \
+    --intro assemble --intro-ms 1300 --stagger diagonal \
+    --label "SCAN ME. Yes, you. No rounded corners were harmed."
+
+run terminal '$ sudo scan --this-code. Permission granted.' \
+    --preset terminal --token finder.eye="#ffb000" \
+    --effect glow:0.25 --texture scanlines:0.2 \
+    --caption '$ sudo scan_' --caption-font mono --caption-size 1.5 --token caption="#ffb000" \
+    --intro raster --intro-ms 1500 --stagger linear \
+    --label '$ sudo scan --this-code. Permission granted.'
