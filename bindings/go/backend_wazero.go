@@ -50,8 +50,20 @@ type instance struct {
 
 var ctx = context.Background()
 
+// runtimeConfig is wazero's compiler, except on amd64: there, wazero
+// 1.12's compiler gets one conformance case wrong (a palette's dark twin
+// comes out with different lightness), while its interpreter matches the
+// library byte for byte, so amd64 runs interpreted until that's fixed
+// upstream. The arm64 compiler passes the whole suite.
+func runtimeConfig() wazero.RuntimeConfig {
+	if runtime.GOARCH == "amd64" {
+		return wazero.NewRuntimeConfigInterpreter()
+	}
+	return wazero.NewRuntimeConfig()
+}
+
 var loadBackend = sync.OnceValues(func() (*wasmBackend, error) {
-	rt := wazero.NewRuntime(ctx)
+	rt := wazero.NewRuntimeWithConfig(ctx, runtimeConfig())
 	compiled, err := rt.CompileModule(ctx, wasmModule)
 	if err != nil {
 		rt.Close(ctx)

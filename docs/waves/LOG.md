@@ -6,7 +6,9 @@ One short entry per W wave, newest first. The protocol is in `README.md`.
 
 - Landed: GitHub release v1.1.0 with the artifacts from `scripts/bindings.sh build` (the C ABI for macOS, iOS, Android and wasm32, the npm package, the macOS universal2 wheel and the sdist, `SHA256SUMS`); `prebuilt.yml` attached Linux (x86_64, aarch64) and Windows (x86_64 msvc and gnu, aarch64 msvc) with `SHA256SUMS-ci`.
 - Fixed, from the workflows' first run: CI sets `CARGO_TERM_COLOR=always`, which wrapped the last `native-static-libs` flag in escape codes, breaking Go's link check and the C smoke test's link on Linux (now `--color never`); Rust 1.99's Clippy (`question_mark` in the SVG sanitizer, `chunks_exact_to_as_chunks` in `freeqrent-image`); the `logo_svg` fuzz target unwrapped a correct `LogoTooLarge` refusal for a very wide logo, and now renders it at the scale the refusal names (seed `wide.svg`). No output changed.
-- Checks: Prebuilt, Python and js workflows green; the rest re-run with these fixes. Clippy clean on 1.96 and 1.99.
+- Found: wazero 1.12's amd64 compiler renders the `dark twin` conformance case with different lightness (Go's `freeqrent_wasm` build on Linux CI; reproduced under Rosetta with the same `.wasm` that passes on arm64). Its interpreter matches byte for byte, and no lone float operation, nor any step of `dark_twin` lifted into its own function, differs, so it is a miscompile of that function's body. The wasm build now runs interpreted on amd64 (about 95 ms for a v10 render under Rosetta, against 1.1 ms compiled on arm64); the default cgo build is unaffected. `*.go` files keep LF on Windows checkouts (gofmt).
+- Checks: Prebuilt, Python, js and dart workflows green; Go and CI re-run with these fixes. Clippy clean on 1.96 and 1.99.
+- Follow-up: report the miscompile to wazero with a reduced case, and go back to the compiler on amd64 once it's fixed.
 
 ## 20261027011038 · M8 · Version 1.1.0
 

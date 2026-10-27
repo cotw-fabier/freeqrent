@@ -23,7 +23,7 @@ There are two builds, and both produce the same bytes:
 | Build | How | Needs | Speed |
 |---|---|---|---|
 | **cgo** (default) | links the prebuilt static library `lib/<goos>_<goarch>/libfreeqrent_ffi.a` (linux, darwin, windows × amd64, arm64) | a C toolchain (on Windows, MinGW gcc); no Rust | native |
-| **wasm** | `-tags freeqrent_wasm`: runs an embedded WebAssembly build of the same library on [wazero](https://github.com/tetratelabs/wazero), in pure Go | nothing; `CGO_ENABLED=0` works | about 2.6× slower, plus about 150 ms to compile the module on first use |
+| **wasm** | `-tags freeqrent_wasm`: runs an embedded WebAssembly build of the same library on [wazero](https://github.com/tetratelabs/wazero), in pure Go | nothing; `CGO_ENABLED=0` works | on arm64 about 2.6× slower, plus about 150 ms to compile the module on first use; on amd64 interpreted, far slower (below) |
 
 ```sh
 CGO_ENABLED=0 go build -tags freeqrent_wasm ./...
@@ -32,6 +32,8 @@ CGO_ENABLED=0 go build -tags freeqrent_wasm ./...
 Building without cgo and without the tag fails with `undefined: freeqrent_needs_cgo_or_the_freeqrent_wasm_build_tag`.
 
 Measured on an Apple M4 Max (darwin/arm64, Go 1.27), rendering a version 10 code in the ink preset (`BenchmarkRenderV10`): cgo 0.43 ms, wasm 1.12 ms (2.6×). Across 14 goroutines (`BenchmarkRenderV10Parallel`): cgo 58 µs, wasm 122 µs per render (2.1×). The darwin/arm64 static library is 19.5 MB (most of it is dropped at link time: a program that renders one code is 8.1 MB with cgo), and the `.wasm` is 835 KB (a wasm-build program is 9.4 MB).
+
+**On amd64 the wasm build runs on wazero's interpreter.** wazero 1.12's amd64 compiler gets one conformance case wrong (a palette's dark twin comes out with different lightness; its interpreter and the arm64 compiler match the library byte for byte), so amd64 is interpreted until that's fixed upstream: about 95 ms for the same render under Rosetta on the M4 Max, less on a native x86 machine. Use the default cgo build on amd64 where speed matters.
 
 ## API
 
