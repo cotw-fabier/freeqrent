@@ -9,7 +9,7 @@
 //! The core is `no_std` + `alloc`, has no dependencies and no `unsafe`,
 //! and its output is deterministic: the same input gives byte-identical
 //! SVG. References like "SPEC §7.3" point into
-//! [SPEC.md](https://github.com/freeqrent/freeqrent/blob/main/SPEC.md),
+//! [SPEC.md](https://github.com/cotw-fabier/freeQRent/blob/main/SPEC.md),
 //! where each limit's measurement is recorded.
 //!
 //! # Encode and render

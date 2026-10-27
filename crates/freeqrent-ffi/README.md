@@ -1,6 +1,6 @@
 # freeqrent-ffi
 
-The C ABI of [freeQRent](https://github.com/freeqrent/freeqrent): styled and animated SVG QR codes from a JSON Style document, for Dart, Go, Swift and any other C host. The header is `include/freeqrent.h`.
+The C ABI of [freeQRent](https://github.com/cotw-fabier/freeQRent): styled and animated SVG QR codes from a JSON Style document, for Dart, Go, Swift and any other C host. The header is `include/freeqrent.h`.
 
 ```c
 char *svg = NULL;

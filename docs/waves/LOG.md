@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261027014421 · M9 prep · Everything points at the repository
+
+- Landed: every package's repository and homepage (Cargo, npm, PyPI, pub.dev) and the crate docs link to `github.com/cotw-fabier/freeQRent`, the repository the code is in, instead of the `freeqrent` organization that was never created. The Go module is `github.com/cotw-fabier/freeQRent/bindings/go` (SPEC §10.2 rev.), and the schema's `$id` is its raw URL on `main`.
+- Note: the v1.1.0 release's packaged artifacts still carry the old links; the next release carries these.
+- Checks: fmt, `freeqrent-doc` tests, npm 142, Python 240, Go, Dart 116.
+
 ## 20261027011830 · M8 · 1.1.0 released; the first CI run
 
 - Landed: GitHub release v1.1.0 with the artifacts from `scripts/bindings.sh build` (the C ABI for macOS, iOS, Android and wasm32, the npm package, the macOS universal2 wheel and the sdist, `SHA256SUMS`); `prebuilt.yml` attached Linux (x86_64, aarch64) and Windows (x86_64 msvc and gnu, aarch64 msvc) with `SHA256SUMS-ci`.

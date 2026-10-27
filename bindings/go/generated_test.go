@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/freeqrent/freeqrent-go/internal/gen"
+	"github.com/cotw-fabier/freeQRent/bindings/go/internal/gen"
 )
 
 // style_gen.go is what the generator writes for the checked-in schema.

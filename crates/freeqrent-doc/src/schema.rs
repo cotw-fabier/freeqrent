@@ -738,7 +738,9 @@ pub fn schema() -> Value {
         ("$schema", s("https://json-schema.org/draft/2020-12/schema")),
         (
             "$id",
-            s("https://github.com/freeqrent/freeqrent/schema/freeqrent.schema.json"),
+            s(
+                "https://raw.githubusercontent.com/cotw-fabier/freeQRent/main/schema/freeqrent.schema.json",
+            ),
         ),
         ("title", s("freeQRent Style document")),
         ("x-freeqrent-version", s(crate::version())),

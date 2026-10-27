@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/freeqrent/freeqrent-go"
+	"github.com/cotw-fabier/freeQRent/bindings/go"
 )
 
 func ExampleRender() {

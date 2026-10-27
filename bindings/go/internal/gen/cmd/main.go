@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/freeqrent/freeqrent-go/internal/gen"
+	"github.com/cotw-fabier/freeQRent/bindings/go/internal/gen"
 )
 
 func main() {

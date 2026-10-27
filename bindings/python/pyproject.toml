@@ -20,7 +20,7 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/freeqrent/freeqrent"
+Homepage = "https://github.com/cotw-fabier/freeQRent"
 
 [tool.maturin]
 # Mixed layout: the Python package lives in python/freeqrent and the

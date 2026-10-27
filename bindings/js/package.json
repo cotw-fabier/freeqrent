@@ -11,10 +11,10 @@
   ],
   "license": "MIT",
   "author": "Dan Kolansky",
-  "homepage": "https://github.com/freeqrent/freeqrent",
+  "homepage": "https://github.com/cotw-fabier/freeQRent",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/freeqrent/freeqrent.git",
+    "url": "git+https://github.com/cotw-fabier/freeQRent.git",
     "directory": "bindings/js"
   },
   "engines": {
