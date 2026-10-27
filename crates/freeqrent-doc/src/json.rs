@@ -368,6 +368,86 @@ impl<'a> ObjectWriter<'a> {
     }
 }
 
+/// Writes `value` with two-space indentation, one member or item per line,
+/// and a newline at the end: the form checked-in files take.
+pub fn write_pretty(out: &mut String, value: &Value) {
+    pretty(out, value, 0);
+    out.push('\n');
+}
+
+fn pretty(out: &mut String, value: &Value, depth: usize) {
+    let indent = |out: &mut String, depth: usize| {
+        out.push('\n');
+        out.extend(std::iter::repeat_n("  ", depth));
+    };
+    match value {
+        Value::Null => out.push_str("null"),
+        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Value::Number(n) => out.push_str(n),
+        Value::String(s) => write_str(out, s),
+        Value::Array(items) if items.is_empty() => out.push_str("[]"),
+        Value::Object(members) if members.is_empty() => out.push_str("{}"),
+        Value::Array(items) => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                indent(out, depth + 1);
+                pretty(out, item, depth + 1);
+            }
+            indent(out, depth);
+            out.push(']');
+        }
+        Value::Object(members) => {
+            out.push('{');
+            for (i, (key, item)) in members.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                indent(out, depth + 1);
+                write_str(out, key);
+                out.push_str(": ");
+                pretty(out, item, depth + 1);
+            }
+            indent(out, depth);
+            out.push('}');
+        }
+    }
+}
+
+/// Writes `value` compactly, members in order.
+pub fn write_compact(out: &mut String, value: &Value) {
+    match value {
+        Value::Null => out.push_str("null"),
+        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Value::Number(n) => out.push_str(n),
+        Value::String(s) => write_str(out, s),
+        Value::Array(items) => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_compact(out, item);
+            }
+            out.push(']');
+        }
+        Value::Object(members) => {
+            out.push('{');
+            for (i, (key, item)) in members.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_str(out, key);
+                out.push(':');
+                write_compact(out, item);
+            }
+            out.push('}');
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

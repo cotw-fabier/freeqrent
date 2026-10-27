@@ -31,6 +31,7 @@ mod error;
 pub mod json;
 mod read;
 mod report;
+pub mod schema;
 pub mod style;
 
 use freeqrent::{Palette, PaletteOpts, QrMatrix, Rgba8Image, Style};

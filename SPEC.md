@@ -594,7 +594,7 @@ CI runs the round-trip suite over the full preset × shape × frame matrix (`fre
 
 ## 10. Language Bindings & Interfaces (Phase 2)
 
-Not built in Phase 1. Specified here so the core is designed for it. Dart, TS/JS, Python, and Go ship together at the end of Phase 2. To keep them in sync, the **binding boundary is narrow and data-driven**: each binding exposes a few functions that take a **Style document** (JSON, schema generated from the Rust types) plus typed wrappers in each language. New styles and presets reach every language without binding changes.
+Not built in Phase 1. Specified here so the core is designed for it. Dart, TS/JS, Python, and Go ship together at the end of Phase 2. To keep them in sync, the **binding boundary is narrow and data-driven**: each binding exposes a few functions that take a **Style document** (JSON, schema generated from the Rust types: `schema/freeqrent.schema.json`) plus typed wrappers in each language. New styles and presets reach every language without binding changes.
 
 ### 10.1 Shared boundary
 
@@ -659,7 +659,8 @@ A variant added to the core in 1.x gets its own code in the same release; until 
 
 ### 10.3 Consistency rules
 
-- One **conformance suite** (a JSON list of payload + style → expected SVG hash) runs in all five languages in CI. Because output is deterministic, every binding must produce byte-identical SVG.
+- One **conformance suite** (a JSON list of payload + style → expected SVG hash) runs in all five languages in CI. Because output is deterministic, every binding must produce byte-identical SVG. It is `conformance/cases.json` *(W20261026203442)*: 57 cases covering every preset, module shape, scan-box option, frame, logo kind, picture mode and intro preset, plus triggers, idles, palette shifts, Unicode and byte payloads, pinned encodings, `check` reports (clean, warned, refused, logo, halftone), plans, all three palette sources and every error family. Each case expects the SHA-256 and length of the returned text, or an error code. Styles are stored as JSON objects, so each runner re-serializes them with its own JSON writer, and seeds stay below 2^53 so JavaScript keeps them exact. The file is generated (`cargo run -p freeqrent-doc --example generate`) from inputs in `freeqrent-doc`'s tests. A changed hash is an output change, reviewed like a snapshot. The Rust runner also checks that every document fits the schema and that every rendered case scans (`freeqrent_verify::verify_style`).
+- **The schema** is `schema/freeqrent.schema.json` (JSON Schema 2020-12) *(W20261026203442)*: the Style document at the root, plus `$defs` for every part and for what comes back (`Report`, `PaletteResult`, `PaletteOpts`, `Error`). `freeqrent_doc::schema` generates it from the parser's name tables and the core's name lists (presets, tokens, intros, idles, logo frames and sizes), and a test fails if the checked-in file differs. Tests also check that documents the parser takes fit it, and that 31 it refuses for names, types or shapes are refused by both. What the schema can't say (art with a preset, more than one of `version`, `tracking_grid` and the version range) only the parser checks. Bindings generate their typed surfaces from it.
 - Every binding is built on `freeqrent-doc`, with the same core features: `std`, `animate`, `palette-extract`, `halftone`, and `kanji` off. Kanji mode changes how JIS X 0208 text (including Greek and Cyrillic) is segmented, so one feature set is what makes the bytes agree *(W20261026200815)*.
 - Versions are released in lockstep: `freeqrent` 1.2.0 means the same core in every package.
 - Prebuilt binaries are produced for every platform, so users never need a Rust toolchain. Dart Native Assets can download prebuilt libraries and falls back to a local build.
@@ -730,7 +731,7 @@ Each milestone is an **M wave**, built from small timestamp-named **W waves**. S
 
 | Milestone | Scope |
 |---|---|
-| **M7: Boundary** | `freeqrent-ffi` C ABI, Style JSON schema, cross-language conformance suite. The Style document and the boundary functions are built (`freeqrent-doc`, W20261026200815). |
+| **M7: Boundary** | `freeqrent-ffi` C ABI, Style JSON schema, cross-language conformance suite. The Style document and the boundary functions are built (`freeqrent-doc`, W20261026200815), and so are the schema and the conformance suite (W20261026203442). |
 | **M8: Bindings** | npm (WASM), Python (PyO3), Dart (FFI + Native Assets + `FreeQrentAnimated`), Go (cgo + `wazero` tag), prebuilt binaries for all platforms. |
 | **M9: Release** | Lockstep 1.x release in all registries, docs site with live WASM playground. |
 
