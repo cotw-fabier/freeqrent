@@ -1,6 +1,6 @@
 # freeqrent-doc
 
-Style documents for [freeQRent](https://github.com/cotw-fabier/freeQRent): a JSON object that describes a style and how to encode for it. Every language binding goes through this crate, so the same document gives the same SVG bytes in every language.
+Style documents for [freeQRent](https://github.com/cotw-fabier/freeqrent): a JSON object that describes a style and how to encode for it. Every language binding goes through this crate, so the same document gives the same SVG bytes in every language.
 
 ```rust
 use freeqrent_doc::{Payload, render};

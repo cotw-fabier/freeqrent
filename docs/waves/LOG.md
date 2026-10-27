@@ -2,6 +2,11 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261027014811 · M9 prep · The repository is lowercase
+
+- Landed: the GitHub repository is renamed `cotw-fabier/freeqrent` (GitHub redirects the old name), the remote follows, and every link, the schema's `$id` and the Go module path (`github.com/cotw-fabier/freeqrent/bindings/go`) are lowercase, so Go users don't need the capitals the module proxy escapes.
+- Checks: fmt, `freeqrent-doc` tests, npm, Go.
+
 ## 20261027014421 · M9 prep · Everything points at the repository
 
 - Landed: every package's repository and homepage (Cargo, npm, PyPI, pub.dev) and the crate docs link to `github.com/cotw-fabier/freeQRent`, the repository the code is in, instead of the `freeqrent` organization that was never created. The Go module is `github.com/cotw-fabier/freeQRent/bindings/go` (SPEC §10.2 rev.), and the schema's `$id` is its raw URL on `main`.

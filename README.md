@@ -46,7 +46,7 @@ Each was rendered by the `freeqrent` CLI and decoded with ZXing (and rqrr, where
 
 </details>
 
-**Gallery:** [`gallery.html`](gallery.html) shows every preset, every style family and a card per design system (Bauhaus, neo-brutalism, terminal, vaporwave and more), each light and dark, with the command that makes it and whether it decodes. GitHub shows HTML as source, so [open it rendered](https://raw.githack.com/cotw-fabier/freeQRent/main/gallery.html) instead. It's regenerated with `freeqrent "https://example.com/menu" --gallery gallery.html`.
+**Gallery:** [`gallery.html`](gallery.html) shows every preset, every style family and a card per design system (Bauhaus, neo-brutalism, terminal, vaporwave and more), each light and dark, with the command that makes it and whether it decodes. GitHub shows HTML as source, so [open it rendered](https://raw.githack.com/cotw-fabier/freeqrent/main/gallery.html) instead. It's regenerated with `freeqrent "https://example.com/menu" --gallery gallery.html`.
 
 - **Styles:** square, rounded, dot, bar and liquid modules; styled finders, alignment and timing patterns; color tokens and gradients; round frames; logos with frames; pictures drawn into the code; art mode.
 - **Motion:** intros that play *into* the finished code as CSS keyframes. Renderers that ignore animation, and viewers who prefer reduced motion, see the static code.

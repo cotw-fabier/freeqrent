@@ -739,7 +739,7 @@ pub fn schema() -> Value {
         (
             "$id",
             s(
-                "https://raw.githubusercontent.com/cotw-fabier/freeQRent/main/schema/freeqrent.schema.json",
+                "https://raw.githubusercontent.com/cotw-fabier/freeqrent/main/schema/freeqrent.schema.json",
             ),
         ),
         ("title", s("freeQRent Style document")),

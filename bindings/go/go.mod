@@ -1,4 +1,4 @@
-module github.com/cotw-fabier/freeQRent/bindings/go
+module github.com/cotw-fabier/freeqrent/bindings/go
 
 go 1.25.0
 

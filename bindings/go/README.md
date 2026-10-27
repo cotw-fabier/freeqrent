@@ -3,7 +3,7 @@
 Styled and animated SVG QR codes for Go, from freeQRent's Rust core. The output is deterministic: the same payload and style give the same bytes as the Rust crate and every other freeQRent binding (the shared conformance suite checks this).
 
 ```go
-import "github.com/cotw-fabier/freeQRent/bindings/go"
+import "github.com/cotw-fabier/freeqrent/bindings/go"
 
 svg, err := freeqrent.Render("https://example.com", freeqrent.NewStyle(
 	freeqrent.WithPreset(freeqrent.PresetCandy),
@@ -15,7 +15,7 @@ svg, err := freeqrent.Render("https://example.com", freeqrent.NewStyle(
 ## Install
 
 ```sh
-go get github.com/cotw-fabier/freeQRent/bindings/go
+go get github.com/cotw-fabier/freeqrent/bindings/go
 ```
 
 There are two builds, and both produce the same bytes:
