@@ -1,0 +1,114 @@
+name: Python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - bindings/python/**
+      - crates/freeqrent/**
+      - crates/freeqrent-doc/**
+      - crates/freeqrent-ffi/**
+      - conformance/**
+      - schema/**
+      - deny.toml
+      - .github/workflows/python.yml
+  pull_request:
+    paths:
+      - bindings/python/**
+      - crates/freeqrent/**
+      - crates/freeqrent-doc/**
+      - crates/freeqrent-ffi/**
+      - conformance/**
+      - schema/**
+      - deny.toml
+      - .github/workflows/python.yml
+
+env:
+  CARGO_TERM_COLOR: always
+  MATURIN_VERSION: "1.15.0"
+
+defaults:
+  run:
+    shell: bash
+    working-directory: bindings/python
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: bindings/python/Cargo.toml
+          arguments: --config deny.toml
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.9", "3.x"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Tools
+        run: |
+          python -m pip install "maturin==$MATURIN_VERSION" pytest
+          # mypy 2 runs on 3.10 and later; the typing test skips without it.
+          if python -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+            python -m pip install mypy
+          fi
+      - name: Build and install the wheel
+        run: |
+          maturin build --release --out dist
+          python -m pip install dist/*.whl
+          echo "FREEQRENT_WHEEL=$(ls dist/*.whl)" >> "$GITHUB_ENV"
+      - name: Tests (conformance, typed styles, errors, threads, the wheel in a fresh venv)
+        run: python -m pytest -v
+      - name: Typed styles are fresh
+        run: python tools/generate_styles.py --check
+
+  wheels:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64, manylinux: auto, name: manylinux-x86_64, smoke: true }
+          - { os: ubuntu-latest, target: aarch64, manylinux: auto, name: manylinux-aarch64 }
+          - { os: ubuntu-latest, target: x86_64, manylinux: musllinux_1_2, name: musllinux-x86_64 }
+          - { os: ubuntu-latest, target: aarch64, manylinux: musllinux_1_2, name: musllinux-aarch64 }
+          - { os: macos-latest, target: universal2-apple-darwin, manylinux: "", name: macos-universal2, smoke: true }
+          - { os: windows-latest, target: x64, manylinux: "", name: windows-x64, smoke: true }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: PyO3/maturin-action@v1
+        with:
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          working-directory: bindings/python
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out dist
+      - name: Install and import
+        if: matrix.smoke
+        run: |
+          python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          python -c 'import freeqrent as fq; assert fq.render("https://example.com", fq.Style(preset="ink")).startswith("<svg"); print(fq.__version__)'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.name }}
+          path: bindings/python/dist/*.whl
+          if-no-files-found: error

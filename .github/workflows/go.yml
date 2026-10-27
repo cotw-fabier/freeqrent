@@ -1,0 +1,88 @@
+name: Go
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - bindings/go/**
+      - crates/freeqrent/**
+      - crates/freeqrent-doc/**
+      - crates/freeqrent-ffi/**
+      - conformance/**
+      - schema/**
+      - scripts/build-prebuilt.sh
+      - .github/workflows/go.yml
+  pull_request:
+    paths:
+      - bindings/go/**
+      - crates/freeqrent/**
+      - crates/freeqrent-doc/**
+      - crates/freeqrent-ffi/**
+      - conformance/**
+      - schema/**
+      - scripts/build-prebuilt.sh
+      - .github/workflows/go.yml
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          # cgo links with MinGW, so Windows uses the gnu target.
+          - os: windows-latest
+            target: x86_64-pc-windows-gnu
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}, wasm32-unknown-unknown
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: bindings/go/go.mod
+          cache-dependency-path: bindings/go/go.sum
+      - name: MinGW for cgo (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+          path-type: inherit
+      - name: Put MinGW on the PATH (Windows)
+        if: runner.os == 'Windows'
+        run: echo "${{ runner.temp }}/msys64/mingw64/bin" >> "$GITHUB_PATH"
+      # The static library for this runner and the .wasm, copied into the
+      # module; --go also checks the cgo link flags against rustc's list.
+      - name: Build the libraries
+        run: scripts/build-prebuilt.sh --go --strict ${{ matrix.target }} wasm32-unknown-unknown
+      - name: gofmt
+        working-directory: bindings/go
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: go vet (cgo)
+        working-directory: bindings/go
+        run: go vet ./...
+      - name: go vet (wasm)
+        working-directory: bindings/go
+        run: CGO_ENABLED=0 go vet -tags freeqrent_wasm ./...
+      - name: go test (cgo)
+        working-directory: bindings/go
+        run: go test -race -count=1 ./...
+      - name: go test (wasm, CGO_ENABLED=0)
+        working-directory: bindings/go
+        run: CGO_ENABLED=0 go test -tags freeqrent_wasm -count=1 ./...
+      - name: Benchmarks (one pass each)
+        working-directory: bindings/go
+        run: |
+          go test -run '^$' -bench RenderV10 -benchtime 200x .
+          CGO_ENABLED=0 go test -tags freeqrent_wasm -run '^$' -bench RenderV10 -benchtime 200x .

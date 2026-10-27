@@ -1,0 +1,27 @@
+[package]
+name = "freeqrent-py"
+description = "freeQRent for Python: the native module freeqrent._native over freeqrent-doc"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+publish = false
+
+# Its own workspace: the root workspace's lockfile and dependency checks stay
+# as they are (the core crates stay dependency-free).
+[workspace]
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+# freeqrent-doc's default feature set is the binding feature set (SPEC §10.3).
+freeqrent-doc = { path = "../../crates/freeqrent-doc" }
+# abi3-py39: one wheel per platform for every CPython from 3.9 on.
+pyo3 = { version = "=0.30.1", default-features = false, features = ["macros", "abi3-py39", "extension-module"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

@@ -1,0 +1,11 @@
+# Build outputs and tools, never committed.
+.venv/
+/target/
+/dist/
+*.so
+*.pyd
+*.dylib
+*.whl
+__pycache__/
+.pytest_cache/
+.mypy_cache/

@@ -2,6 +2,14 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026235449 · M8 · The Python binding
+
+- Landed: `bindings/python`, the `freeqrent` package over a PyO3 abi3 module (CPython ≥ 3.9). `render`, `render_frame`, `check` (a frozen `Report`), `plan`, `Palette.from_image/from_css/from_html` (raw RGBA or a Pillow-like image, duck-typed), `presets`, `version`; `FreeQrentError` with `code`, `message` and `detail`. Typed styles are dataclasses generated from the schema (`tools/generate_styles.py`, checked for staleness). Wheels CI: manylinux and musllinux x86_64/aarch64, macOS universal2, Windows x64 (built, never run: nothing pushed).
+- Decisions: renders run detached from the GIL; a `str` with lone surrogates is `invalid_argument`; `plan` stays a dict (the schema doesn't describe plans).
+- Found: plans weren't JSON (fixed in W20261026234730), and PyO3's build needs a license exception for `target-lexicon`.
+- Measured (Apple silicon): v10 render 0.28 ms from Python (0.27 ms raw); 1.94×, 3.85× and 7.44× on 2, 4 and 8 threads; macOS arm64 wheel 564 KiB, universal2 1.17 MB.
+- Checks: 235 Python tests (all 77 conformance cases, every conformance style rebuilt as typed objects, every reachable error code, threads, `mypy --strict`, a wheel installed into a fresh venv); `cargo deny` clean. Tested on 3.14 and 3.11 locally; 3.9 only in CI.
+
 ## 20261026234730 · M8 · Plans are JSON
 
 - Fixed: `AnimationPlan::to_json` wrote numbers the way the SVG writer does, without the leading zero (`.22`, `-.5`), so no JSON parser took a plan with a fraction in it. Found by the Python binding. `json_num` writes the zero; SVG output is unchanged.
