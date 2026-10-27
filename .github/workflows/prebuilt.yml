@@ -1,0 +1,82 @@
+name: Prebuilt libraries
+
+# freeqrent-ffi as static and dynamic libraries for every platform (SPEC
+# §10.3), each packaged with include/freeqrent.h and checksummed, uploaded as
+# workflow artifacts. Nothing is published.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            targets: x86_64-unknown-linux-gnu
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+            targets: aarch64-unknown-linux-gnu
+          - name: android
+            os: ubuntu-latest
+            targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          - name: wasm32
+            os: ubuntu-latest
+            targets: wasm32-unknown-unknown
+          # Both macOS slices (and the universal lipo), and iOS device and
+          # simulator (and the xcframework).
+          - name: apple
+            os: macos-latest
+            targets: aarch64-apple-darwin x86_64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+          # msvc for C hosts; gnu for MinGW hosts such as Go's cgo.
+          - name: windows
+            os: windows-latest
+            targets: x86_64-pc-windows-msvc aarch64-pc-windows-msvc x86_64-pc-windows-gnu
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      PREBUILT_OUT: ${{ github.workspace }}/prebuilt-out
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust targets
+        run: |
+          for t in ${{ matrix.targets }}; do rustup target add "$t"; done
+      - name: Build, package and checksum
+        # The runners' NDK is $ANDROID_NDK_LATEST_HOME, which the script finds.
+        run: scripts/build-prebuilt.sh --package --strict ${{ matrix.targets }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freeqrent-ffi-${{ matrix.name }}
+          path: |
+            prebuilt-out/dist/*.tar.gz
+            prebuilt-out/dist/*.zip
+            prebuilt-out/dist/*.sha256
+          if-no-files-found: error
+
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Verify and collect the checksums
+        working-directory: dist
+        run: |
+          sha256sum -c ./*.sha256
+          cat ./*.sha256 | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freeqrent-ffi-SHA256SUMS
+          path: dist/SHA256SUMS

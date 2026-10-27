@@ -1,0 +1,7 @@
+# Built by scripts/build-prebuilt.sh --go; never committed.
+/lib/
+/wasm/
+*.a
+*.wasm
+*.test
+*.prof
