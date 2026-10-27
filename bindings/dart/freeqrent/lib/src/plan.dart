@@ -560,9 +560,8 @@ final class AnimationPlan {
       ];
 
   /// Parses the plan JSON `FreeQrent.planJson` returns.
-  factory AnimationPlan.parse(String text) => AnimationPlan._fromJson(
-    jsonDecode(text) as Map<String, Object?>,
-  );
+  factory AnimationPlan.parse(String text) =>
+      AnimationPlan._fromJson(jsonDecode(text) as Map<String, Object?>);
 
   /// The parsed JSON, for fields this model doesn't name.
   final Map<String, Object?> json;

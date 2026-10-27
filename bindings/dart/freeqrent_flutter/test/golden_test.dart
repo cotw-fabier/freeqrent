@@ -26,22 +26,45 @@ void main() {
 
       // The logo's picture comes from outside the plan, and a caption's
       // glyphs from the platform's fonts: neither is compared.
-      final plate = scene.logoIndex >= 0 ? scene.paths[scene.logoIndex].getBounds().inflate(0.5) : null;
+      final plate = scene.logoIndex >= 0
+          ? scene.paths[scene.logoIndex].getBounds().inflate(0.5)
+          : null;
       final caption = plan.caption;
       bool skip(double x, double y) =>
           (plate != null && plate.contains(ui.Offset(x, y))) ||
           (caption != null && (y - caption.center.y).abs() < caption.size);
 
       // FREEQRENT_DUMP=1 writes the widget's frames to test/failures/.
-      final dump = Platform.environment['FREEQRENT_DUMP'] == null ? null : 'test/failures/$name';
+      final dump = Platform.environment['FREEQRENT_DUMP'] == null
+          ? null
+          : 'test/failures/$name';
       for (final (label, frame) in [
-        ('at rest', await draw(scene, atRest: true, scale: scale, dumpTo: dump == null ? null : '$dump-rest.png')),
+        (
+          'at rest',
+          await draw(
+            scene,
+            atRest: true,
+            scale: scale,
+            dumpTo: dump == null ? null : '$dump-rest.png',
+          ),
+        ),
         (
           'at the end of the intro',
-          await draw(scene, timeMs: plan.totalMs.toDouble(), scale: scale, dumpTo: dump == null ? null : '$dump-end.png'),
+          await draw(
+            scene,
+            timeMs: plan.totalMs.toDouble(),
+            scale: scale,
+            dumpTo: dump == null ? null : '$dump-end.png',
+          ),
         ),
       ]) {
-        final diff = compareModules(frame, reference, vb, scale: scale, skip: skip);
+        final diff = compareModules(
+          frame,
+          reference,
+          vb,
+          scale: scale,
+          skip: skip,
+        );
         // ignore: avoid_print
         print('$name, $label: $diff');
         expect(diff.mismatched, isEmpty, reason: '$name, $label: $diff');

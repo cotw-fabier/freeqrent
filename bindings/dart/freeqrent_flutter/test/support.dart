@@ -14,7 +14,8 @@ class Gray {
   final int width, height;
   final Uint8List pixels;
 
-  int at(int x, int y) => pixels[y.clamp(0, height - 1) * width + x.clamp(0, width - 1)];
+  int at(int x, int y) =>
+      pixels[y.clamp(0, height - 1) * width + x.clamp(0, width - 1)];
 
   /// Rec. 601 luma over white, as freeqrent-verify rasterizes.
   static Gray fromRgba(int width, int height, ByteData straight) {
@@ -34,7 +35,9 @@ class Gray {
   static Future<Gray> png(File file) async {
     final codec = await ui.instantiateImageCodec(file.readAsBytesSync());
     final frame = await codec.getNextFrame();
-    final data = await frame.image.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
+    final data = await frame.image.toByteData(
+      format: ui.ImageByteFormat.rawStraightRgba,
+    );
     final g = Gray.fromRgba(frame.image.width, frame.image.height, data!);
     frame.image.dispose();
     return g;
@@ -43,7 +46,8 @@ class Gray {
 
 /// The golden cases.
 final goldenSuite =
-    jsonDecode(File('test/goldens/cases.json').readAsStringSync()) as Map<String, Object?>;
+    jsonDecode(File('test/goldens/cases.json').readAsStringSync())
+        as Map<String, Object?>;
 
 /// [scene] drawn at [scale] pixels a module, at [timeMs] (or at rest).
 Future<Gray> draw(
@@ -66,7 +70,9 @@ Future<Gray> draw(
   ).paint(canvas, ui.Size(vb.x * scale, vb.y * scale));
   final picture = recorder.endRecording();
   final image = await picture.toImage(w, h);
-  final data = await image.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
+  final data = await image.toByteData(
+    format: ui.ImageByteFormat.rawStraightRgba,
+  );
   if (dumpTo != null) {
     final png = await image.toByteData(format: ui.ImageByteFormat.png);
     File(dumpTo)
