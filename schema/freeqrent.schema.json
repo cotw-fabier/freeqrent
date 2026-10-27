@@ -68,6 +68,13 @@
           "description": "A hard shadow's offset down and right, in modules (0.25–3).",
           "type": "number"
         },
+        "color_spread": {
+          "description": "How data modules share fg and the data colors fg.2 to fg.4.",
+          "enum": [
+            "modules",
+            "regions"
+          ]
+        },
         "seed": {
           "type": "integer",
           "minimum": 0,
@@ -470,7 +477,10 @@
           "finder.top-right.eye",
           "finder.bottom-left.eye",
           "logo.frame",
-          "shadow"
+          "shadow",
+          "fg.2",
+          "fg.3",
+          "fg.4"
         ]
       },
       "additionalProperties": {
@@ -1556,7 +1566,10 @@
                   "finder.top-right.eye",
                   "finder.bottom-left.eye",
                   "logo.frame",
-                  "shadow"
+                  "shadow",
+                  "fg.2",
+                  "fg.3",
+                  "fg.4"
                 ]
               },
               "color": {

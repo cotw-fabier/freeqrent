@@ -345,6 +345,46 @@
       }
     },
     {
+      "name": "data colors by region",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "modules": "liquid",
+        "color_spread": "regions",
+        "palette": {
+          "fg.2": "oklch(35% .16 27)",
+          "fg.3": "oklch(35% .18 265)"
+        },
+        "seed": 5
+      },
+      "expect": {
+        "sha256": "031bb55a4ccd8254dee23a1edaa18a43585b66d303f63da11d44b96b71172461",
+        "length": 9608
+      }
+    },
+    {
+      "name": "data colors rippling",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "modules": "dots",
+        "palette": {
+          "fg.2": "#7a0000",
+          "fg.3": "#1e3a8a",
+          "fg.4": "#065f46"
+        },
+        "intro": "ripple"
+      },
+      "expect": {
+        "sha256": "4895939985dfce6f851cba552d483a67a86bbd71f4d223d6870a3650742d8ed3",
+        "length": 18167
+      }
+    },
+    {
       "name": "round border settling",
       "fn": "render",
       "payload": {

@@ -3,9 +3,9 @@
 //! `cargo insta review` and say why in the wave log.
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Axis, Border, Corner, Ecc, Emphasis, EyeShape, FinderStyle,
-    Frame, FrameRing, Intro, Logo, LogoShape, ModuleShape, Palette, Preset, QrCode, QrMatrix,
-    RingShape, Style, TimingStyle, Version,
+    AlignmentShape, AlignmentStyle, Axis, Border, ColorSpread, Corner, Ecc, Emphasis, EyeShape,
+    FinderStyle, Frame, FrameRing, Intro, Logo, LogoShape, ModuleShape, Palette, Preset, QrCode,
+    QrMatrix, RingShape, Style, TimingStyle, Version,
 };
 
 fn code(version: u8) -> QrMatrix {
@@ -194,5 +194,20 @@ fn double_border_and_shadow() {
         .border(Border::Double { width: 1.5 })
         .shadow(1.0)
         .palette(Palette::from_tokens([("frame", "#b8860b"), ("shadow", "#1a1a1a")]).unwrap());
+    insta::assert_snapshot!(render(style, 1));
+}
+
+#[test]
+fn data_colors_by_region() {
+    let style = Style::new()
+        .modules(ModuleShape::Liquid { smoothness: 0.8 })
+        .color_spread(ColorSpread::Regions)
+        .palette(
+            Palette::from_tokens([
+                ("fg.2", "oklch(35% .16 27)"),
+                ("fg.3", "oklch(35% .18 265)"),
+            ])
+            .unwrap(),
+        );
     insta::assert_snapshot!(render(style, 1));
 }

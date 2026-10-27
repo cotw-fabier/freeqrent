@@ -114,6 +114,20 @@ pub enum FrameRing {
     Dashed,
 }
 
+/// How data modules are spread across `fg` and the data colors `fg.2`
+/// to `fg.4` that are set (SPEC §6.1). Picks are seeded (`Style::seed`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ColorSpread {
+    /// Each module takes a color of its own.
+    #[default]
+    Modules,
+    /// Each run of touching modules takes one color: a liquid blob, a
+    /// bar, a rounded cluster. Modules that don't touch in their shape
+    /// (dots, gapped squares) are picked one by one.
+    Regions,
+}
+
 /// A border at the edge of the frame, in the `frame` token (SPEC §7.4).
 /// It lies outside the quiet zone: the canvas grows to make room, so the
 /// code never loses margin to it.
@@ -173,6 +187,7 @@ pub struct Style {
     pub(crate) frame: Frame,
     pub(crate) border: Option<Border>,
     pub(crate) shadow: Option<f32>,
+    pub(crate) spread: ColorSpread,
     pub(crate) seed: Option<u64>,
     pub(crate) logo: Option<Logo>,
     #[cfg(feature = "halftone")]
@@ -204,6 +219,7 @@ impl Default for Style {
             frame: Frame::Square,
             border: None,
             shadow: None,
+            spread: ColorSpread::Modules,
             seed: None,
             logo: None,
             #[cfg(feature = "halftone")]
@@ -337,6 +353,19 @@ impl Style {
     pub fn shadow(mut self, offset: f32) -> Style {
         self.shadow = Some(offset);
         self
+    }
+
+    /// How data modules are spread across the data colors (`fg`, and
+    /// `fg.2` to `fg.4` where set): one module at a time (the default) or
+    /// one touching region at a time.
+    pub fn color_spread(mut self, spread: ColorSpread) -> Style {
+        self.spread = spread;
+        self
+    }
+
+    /// How data modules are spread across the data colors.
+    pub fn color_spread_style(&self) -> ColorSpread {
+        self.spread
     }
 
     /// Seeds the generator behind decorative choices such as filler

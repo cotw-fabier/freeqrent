@@ -9,8 +9,8 @@ use freeqrent::Style;
 use crate::json::{self, Value};
 use crate::style::{
     BORDERS, CORNERS, EASES, ECCS, ECIS, EMPHASES, EYES, FITS, FRAME_RINGS, FRAMES, GRIDS, INKS,
-    LOGO_SHAPES, MODULE_SHAPES, RINGS, STAGGERS, STYLE_KEYS, TARGETS, TIMINGS, TRIGGERS, idles,
-    intro_presets, logo_frames, logo_intros, logo_sizes, logo_timings, tokens,
+    LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS, STAGGERS, STYLE_KEYS, TARGETS, TIMINGS, TRIGGERS,
+    idles, intro_presets, logo_frames, logo_intros, logo_sizes, logo_timings, tokens,
 };
 
 fn s(text: &str) -> Value {
@@ -213,6 +213,13 @@ fn style() -> Value {
             described(
                 number(),
                 "A hard shadow's offset down and right, in modules (0.25–3).",
+            ),
+        ),
+        (
+            "color_spread",
+            described(
+                one_of(SPREADS),
+                "How data modules share fg and the data colors fg.2 to fg.4.",
             ),
         ),
         ("seed", int(u64::MAX)),

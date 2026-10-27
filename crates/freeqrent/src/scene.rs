@@ -11,7 +11,7 @@ use crate::matrix::{Corner, ModuleRole, QrMatrix};
 use crate::palette::Token;
 use crate::rng::SplitMix64;
 use crate::scanbox::{Emphasis, TimingStyle, Toward};
-use crate::style::{Frame, FrameRing, Style};
+use crate::style::{ColorSpread, Frame, FrameRing, ModuleShape, Style};
 #[cfg(feature = "halftone")]
 use crate::version::Version;
 
@@ -166,6 +166,51 @@ pub(crate) fn filler(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Grid {
         }
     }
     grid
+}
+
+/// Whether neighboring modules of `shape` touch, so a region must stay in
+/// one element (and, spread by region, in one color).
+pub(crate) fn touches(shape: &ModuleShape) -> bool {
+    match *shape {
+        ModuleShape::Square { gap } => crate::geometry::units(gap) == 0,
+        ModuleShape::Dots { .. } => false,
+        ModuleShape::Rounded { .. } | ModuleShape::Liquid { .. } | ModuleShape::Bars { .. } => true,
+    }
+}
+
+/// The 4-connected regions of `grid` (or its single cells), row-major.
+pub(crate) fn regions(grid: &Grid, size: usize, connected: bool) -> Vec<Vec<(u16, u16)>> {
+    let mut seen = alloc::vec![false; size * size];
+    let mut out = Vec::new();
+    let mut stack = Vec::new();
+    for start in 0..size * size {
+        let (sx, sy) = ((start % size) as i64, (start / size) as i64);
+        if seen[start] || !grid.get(sx, sy) {
+            continue;
+        }
+        seen[start] = true;
+        if !connected {
+            out.push(alloc::vec![(sx as u16, sy as u16)]);
+            continue;
+        }
+        let mut cells = Vec::new();
+        stack.push((sx, sy));
+        while let Some((x, y)) = stack.pop() {
+            cells.push((x as u16, y as u16));
+            for (nx, ny) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
+                if grid.get(nx, ny) {
+                    let i = ny as usize * size + nx as usize;
+                    if !seen[i] {
+                        seen[i] = true;
+                        stack.push((nx, ny));
+                    }
+                }
+            }
+        }
+        crate::sort::sort_by_key(&mut cells, |&(x, y)| (y, x));
+        out.push(cells);
+    }
+    out
 }
 
 /// What a drawn layer is, in an [`AnimationPlan`](crate::AnimationPlan).
@@ -428,6 +473,52 @@ pub(crate) fn alignment_centers_drawn(style: &Style, qr: &QrMatrix) -> Vec<(u16,
     centers
 }
 
+/// The data colors in use: `fg`, then each of `fg.2` to `fg.4` that is
+/// set.
+pub(crate) fn data_tokens(style: &Style) -> Vec<Token> {
+    let mut tokens = alloc::vec![Token::Fg];
+    tokens.extend(
+        [Token::Fg2, Token::Fg3, Token::Fg4]
+            .into_iter()
+            .filter(|&t| style.palette.get(t).is_some()),
+    );
+    tokens
+}
+
+/// Splits the data modules across the data colors (SPEC §6.1), one module
+/// or one touching region at a time, in row-major order from a generator
+/// of its own (so filler picks stay as they were). Empty colors are left
+/// out.
+fn spread(style: &Style, qr: &QrMatrix, data: Grid) -> Vec<(Token, Grid)> {
+    let tokens = data_tokens(style);
+    if tokens.len() == 1 {
+        return if data.is_empty() {
+            Vec::new()
+        } else {
+            alloc::vec![(Token::Fg, data)]
+        };
+    }
+    let size = qr.size() as usize;
+    let mut grids: Vec<Grid> = tokens.iter().map(|_| Grid::new(size)).collect();
+    let connected = style.spread == ColorSpread::Regions && touches(&style.modules);
+    let mut rng = SplitMix64::new(seed(style, qr) ^ SPREAD_SALT);
+    for region in regions(&data, size, connected) {
+        let pick = (rng.next_f64() * tokens.len() as f64) as usize;
+        let grid = &mut grids[pick.min(tokens.len() - 1)];
+        for (x, y) in region {
+            grid.set(x as usize, y as usize);
+        }
+    }
+    tokens
+        .into_iter()
+        .zip(grids)
+        .filter(|(_, g)| !g.is_empty())
+        .collect()
+}
+
+/// Keeps the data-color picks apart from the filler's.
+const SPREAD_SALT: u64 = 0x005e_ed0f_c010;
+
 /// The layers in paint order: frame ring, filler, data, timing,
 /// alignment, finder rings, eyes. Empty layers are left out.
 pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
@@ -474,10 +565,10 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
         }
     }
 
-    if !data.is_empty() {
+    for (token, grid) in spread(style, qr, data) {
         layers.push(Layer {
-            token: Token::Fg,
-            part: Part::Modules(data),
+            token,
+            part: Part::Modules(grid),
         });
     }
     if !timing.is_empty() {
@@ -562,6 +653,61 @@ mod tests {
             assert!(c.side as f64 >= 2.0 * r.radius);
             assert_eq!((c.side - 21) % 2, 0);
             assert_eq!(c.origin * 2 + 21, c.side);
+        }
+    }
+
+    #[test]
+    fn data_colors_split_the_data_modules() {
+        let qr = QrCode::encode("https://example.com/menu", Ecc::M).unwrap();
+        let palette =
+            crate::Palette::from_tokens([("fg.2", "#7a0000"), ("fg.4", "#1e3a8a")]).unwrap();
+        let data = |l: &Layer| match &l.part {
+            Part::Modules(g) if l.role() == LayerRole::Data => Some(g.clone()),
+            _ => None,
+        };
+        let plain: Vec<Grid> = layers(&Style::new(), &qr).iter().filter_map(data).collect();
+        for spread in [ColorSpread::Modules, ColorSpread::Regions] {
+            let style = Style::new()
+                .palette(palette.clone())
+                .modules(ModuleShape::Liquid { smoothness: 1.0 })
+                .color_spread(spread);
+            let split: Vec<(Token, Grid)> = layers(&style, &qr)
+                .iter()
+                .filter_map(|l| data(l).map(|g| (l.token, g)))
+                .collect();
+            let tokens: Vec<Token> = split.iter().map(|(t, _)| *t).collect();
+            assert_eq!(tokens, [Token::Fg, Token::Fg2, Token::Fg4]);
+            // Every data module lands in exactly one color.
+            let n = qr.size() as i64;
+            for y in 0..n {
+                for x in 0..n {
+                    let count = split.iter().filter(|(_, g)| g.get(x, y)).count();
+                    assert_eq!(count, usize::from(plain[0].get(x, y)), "({x}, {y})");
+                }
+            }
+            if spread == ColorSpread::Regions {
+                // Touching modules share a color.
+                for (_, g) in &split {
+                    for y in 0..n {
+                        for x in 0..n {
+                            if g.get(x, y) && plain[0].get(x + 1, y) {
+                                assert!(g.get(x + 1, y));
+                            }
+                        }
+                    }
+                }
+            }
+            assert_eq!(layers(&style, &qr).len(), layers(&style, &qr).len());
+        }
+        // Spreading leaves the round frame's filler where it was.
+        let round = round(0.5, FrameRing::None);
+        let c = canvas(&round, &qr);
+        let before = filler(&round, &qr, &c);
+        let after = filler(&round.clone().palette(palette), &qr, &c);
+        for y in 0..c.side {
+            for x in 0..c.side {
+                assert_eq!(before.get(x, y), after.get(x, y));
+            }
         }
     }
 

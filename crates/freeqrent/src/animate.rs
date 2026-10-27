@@ -882,51 +882,6 @@ struct Piece {
     group: u8,
 }
 
-/// Whether neighboring modules of `shape` touch, so a region must stay in
-/// one element.
-fn touches(shape: &ModuleShape) -> bool {
-    match *shape {
-        ModuleShape::Square { gap } => crate::geometry::units(gap) == 0,
-        ModuleShape::Dots { .. } => false,
-        ModuleShape::Rounded { .. } | ModuleShape::Liquid { .. } | ModuleShape::Bars { .. } => true,
-    }
-}
-
-/// The 4-connected regions of `grid` (or its single cells), row-major.
-fn regions(grid: &Grid, size: usize, connected: bool) -> Vec<Vec<(u16, u16)>> {
-    let mut seen = alloc::vec![false; size * size];
-    let mut out = Vec::new();
-    let mut stack = Vec::new();
-    for start in 0..size * size {
-        let (sx, sy) = ((start % size) as i64, (start / size) as i64);
-        if seen[start] || !grid.get(sx, sy) {
-            continue;
-        }
-        seen[start] = true;
-        if !connected {
-            out.push(alloc::vec![(sx as u16, sy as u16)]);
-            continue;
-        }
-        let mut cells = Vec::new();
-        stack.push((sx, sy));
-        while let Some((x, y)) = stack.pop() {
-            cells.push((x as u16, y as u16));
-            for (nx, ny) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
-                if grid.get(nx, ny) {
-                    let i = ny as usize * size + nx as usize;
-                    if !seen[i] {
-                        seen[i] = true;
-                        stack.push((nx, ny));
-                    }
-                }
-            }
-        }
-        crate::sort::sort_by_key(&mut cells, |&(x, y)| (y, x));
-        out.push(cells);
-    }
-    out
-}
-
 /// Every piece of the style's layers, grouped by `intro`'s order.
 fn pieces(
     style: &Style,
@@ -948,7 +903,7 @@ fn pieces(
             })
         };
         let cells = |grid: &Grid, size: usize, offset: f64, connected: bool| {
-            regions(grid, size, connected)
+            scene::regions(grid, size, connected)
                 .into_iter()
                 .map(move |cells| {
                     let mut b = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
@@ -961,12 +916,17 @@ fn pieces(
         };
         match &layer.part {
             Part::Modules(grid) => {
-                for (c, b) in cells(grid, n as usize, o, touches(&style.modules)) {
+                for (c, b) in cells(grid, n as usize, o, scene::touches(&style.modules)) {
                     push(Unit::Cells(c), b);
                 }
             }
             Part::Filler(grid) => {
-                for (c, b) in cells(grid, canvas.side as usize, 0.0, touches(&style.modules)) {
+                for (c, b) in cells(
+                    grid,
+                    canvas.side as usize,
+                    0.0,
+                    scene::touches(&style.modules),
+                ) {
                     push(Unit::Cells(c), b);
                 }
             }
@@ -3103,7 +3063,7 @@ mod tests {
         for (x, y) in [(0, 0), (1, 0), (1, 1), (2, 2), (3, 2)] {
             grid.set(x, y);
         }
-        let r = regions(&grid, 4, true);
+        let r = scene::regions(&grid, 4, true);
         assert_eq!(
             r,
             alloc::vec![
@@ -3111,7 +3071,7 @@ mod tests {
                 alloc::vec![(2, 2), (3, 2)]
             ]
         );
-        assert_eq!(regions(&grid, 4, false).len(), 5);
+        assert_eq!(scene::regions(&grid, 4, false).len(), 5);
     }
 
     #[test]

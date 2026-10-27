@@ -5,7 +5,7 @@
 mod common;
 
 use common::assert_scans;
-use freeqrent::{Axis, Ecc, ModuleShape, Palette, QrCode, Style, Token, Warning};
+use freeqrent::{Axis, ColorSpread, Ecc, ModuleShape, Palette, QrCode, Style, Token, Warning};
 use freeqrent_verify::rasterize;
 
 fn shapes() -> Vec<ModuleShape> {
@@ -135,4 +135,37 @@ fn resvg_skips_supports_blocks_and_keeps_attributes() {
         "resvg learned var(); the paint form could be simpler"
     );
     assert_eq!(luma(supports), blue);
+}
+
+#[test]
+fn data_colors_scan() {
+    // Three hues near the warning band (ΔL ≈ 0.62 from the default bg),
+    // one module or one region at a time, and as their dark twin.
+    let palette = Palette::from_tokens([
+        ("fg", "oklch(36% .16 27)"),
+        ("fg.2", "oklch(36% .18 265)"),
+        ("fg.3", "oklch(36% .12 145)"),
+        ("fg.4", "#17161c"),
+    ])
+    .unwrap();
+    let shapes = [
+        ModuleShape::SQUARE,
+        ModuleShape::Dots { size: 0.85 },
+        ModuleShape::Liquid { smoothness: 1.0 },
+        ModuleShape::Bars {
+            axis: Axis::Vertical,
+            radius: 0.5,
+        },
+    ];
+    for spread in [ColorSpread::Modules, ColorSpread::Regions] {
+        for shape in shapes {
+            let style = Style::new()
+                .palette(palette.clone())
+                .modules(shape)
+                .color_spread(spread);
+            assert_scans(&style, &format!("{spread:?} {shape:?}"));
+            let twin = style.palette(palette.dark_twin()).allow_inverted(true);
+            assert_scans(&twin, &format!("{spread:?} {shape:?} dark"));
+        }
+    }
 }

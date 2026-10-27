@@ -8,9 +8,9 @@
 //! schema (`schema/freeqrent.schema.json`) is generated from these tables.
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Axis, Border, Corner, CubicBezier, Ease, Ecc, EciPolicy,
-    Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink, Intro, Logo,
-    LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette,
+    AlignmentShape, AlignmentStyle, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc,
+    EciPolicy, Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink, Intro,
+    Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette,
     Preset, QrBuilder, QrCode, RasterFormat, RingShape, StaggerOrder, Style, TargetSize,
     TimingStyle, Token, TrackingGrid, Trigger, Version,
 };
@@ -48,6 +48,7 @@ pub const STYLE_KEYS: &[&str] = &[
     "frame",
     "border",
     "shadow",
+    "color_spread",
     "seed",
     "logo",
     "halftone",
@@ -79,6 +80,8 @@ pub const TIMINGS: &[&str] = &["plain", "dotted", "dashed"];
 pub const FRAMES: &[&str] = &["square", "rounded", "circle", "none"];
 /// `frame.ring`.
 pub const FRAME_RINGS: &[&str] = &["none", "solid", "dashed"];
+/// `color_spread`.
+pub const SPREADS: &[&str] = &["modules", "regions"];
 /// `border.kind`; a bare name takes the default width.
 pub const BORDERS: &[&str] = &["solid", "double"];
 /// `logo.shape.kind`.
@@ -215,6 +218,14 @@ fn document(v: &Value) -> Result<Document, DocError> {
     }
     if let Some(offset) = o.opt("shadow", f32_of)? {
         style = style.shadow(offset);
+    }
+    if let Some(spread) = o.opt("color_spread", |v, p| {
+        Ok(match name_of(v, p, SPREADS)? {
+            "modules" => ColorSpread::Modules,
+            _ => ColorSpread::Regions,
+        })
+    })? {
+        style = style.color_spread(spread);
     }
     if let Some(seed) = o.opt("seed", u64_of)? {
         style = style.seed(seed);

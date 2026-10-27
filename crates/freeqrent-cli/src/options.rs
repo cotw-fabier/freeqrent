@@ -2,9 +2,9 @@
 //! text after the flag, e.g. `dots:0.8` for `--shape`.
 
 use freeqrent::{
-    AlignmentShape, Axis, Border, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape, Fit, Frame,
-    FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape,
-    Preset, RingShape, StaggerOrder, Style, TimingStyle, TrackingGrid, Trigger,
+    AlignmentShape, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape,
+    Fit, Frame, FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming,
+    ModuleShape, Preset, RingShape, StaggerOrder, Style, TimingStyle, TrackingGrid, Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -215,6 +215,15 @@ pub fn border(value: &str) -> Result<Border, String> {
             width: param.unwrap_or(1.0),
         }),
         _ => Err(format!("unknown border {name:?}: try solid or double")),
+    }
+}
+
+/// `modules` or `regions`.
+pub fn spread(value: &str) -> Result<ColorSpread, String> {
+    match value {
+        "modules" => Ok(ColorSpread::Modules),
+        "regions" => Ok(ColorSpread::Regions),
+        _ => Err(format!("unknown spread {value:?}: try modules or regions")),
     }
 }
 

@@ -145,6 +145,14 @@ pub fn inputs() -> Vec<String> {
             r##"{"frame":{"kind":"rounded","radius":2},"border":{"kind":"double","width":1.5},"shadow":1.5,"palette":{"frame":"#b8860b","shadow":"#1a1a1a"}}"##,
         ),
         render(
+            "data colors by region",
+            r##"{"modules":"liquid","color_spread":"regions","palette":{"fg.2":"oklch(35% .16 27)","fg.3":"oklch(35% .18 265)"},"seed":5}"##,
+        ),
+        render(
+            "data colors rippling",
+            r##"{"modules":"dots","palette":{"fg.2":"#7a0000","fg.3":"#1e3a8a","fg.4":"#065f46"},"intro":"ripple"}"##,
+        ),
+        render(
             "round border settling",
             r#"{"modules":"dots","frame":{"kind":"circle","ring":"solid"},"border":"solid","shadow":1,"seed":3,"intro":"settle"}"#,
         ),

@@ -42,10 +42,17 @@ pub enum Token {
     LogoFrame,
     /// A frame's hard shadow (default: `fg`, SPEC §7.4).
     Shadow,
+    /// A second data color (default: `fg`). Data modules are spread
+    /// across `fg` and every data color that is set (SPEC §6.1).
+    Fg2,
+    /// A third data color (default: `fg`).
+    Fg3,
+    /// A fourth data color (default: `fg`).
+    Fg4,
 }
 
 const CORNERS: [Corner; 3] = [Corner::TopLeft, Corner::TopRight, Corner::BottomLeft];
-const NUM_TOKENS: usize = 17;
+const NUM_TOKENS: usize = 20;
 
 impl Token {
     /// Every token, in a fixed order.
@@ -67,6 +74,9 @@ impl Token {
         Token::CornerEye(Corner::BottomLeft),
         Token::LogoFrame,
         Token::Shadow,
+        Token::Fg2,
+        Token::Fg3,
+        Token::Fg4,
     ];
 
     fn index(self) -> usize {
@@ -85,6 +95,9 @@ impl Token {
             Token::CornerEye(c) => 12 + corner(c),
             Token::LogoFrame => 15,
             Token::Shadow => 16,
+            Token::Fg2 => 17,
+            Token::Fg3 => 18,
+            Token::Fg4 => 19,
         }
     }
 
@@ -109,6 +122,9 @@ impl Token {
             "finder.bottom-left.eye",
             "logo.frame",
             "shadow",
+            "fg.2",
+            "fg.3",
+            "fg.4",
         ][self.index()]
     }
 
@@ -138,6 +154,9 @@ impl Token {
             "--qr-finder-bottom-left-eye",
             "--qr-logo-frame",
             "--qr-shadow",
+            "--qr-fg-2",
+            "--qr-fg-3",
+            "--qr-fg-4",
         ][self.index()]
     }
 
@@ -151,7 +170,10 @@ impl Token {
             | Token::Filler
             | Token::Frame
             | Token::LogoFrame
-            | Token::Shadow => Some(Token::Fg),
+            | Token::Shadow
+            | Token::Fg2
+            | Token::Fg3
+            | Token::Fg4 => Some(Token::Fg),
             Token::Alignment => Some(Token::FinderOuter),
             Token::LogoBackdrop => Some(Token::Bg),
             Token::CornerOuter(_) => Some(Token::FinderOuter),
@@ -159,12 +181,15 @@ impl Token {
         }
     }
 
-    /// True for the tokens that accept gradients: `fg`, the finder tokens
-    /// and `logo.frame`.
+    /// True for the tokens that accept gradients: `fg` and the data
+    /// colors, the finder tokens and `logo.frame`.
     pub fn accepts_gradient(self) -> bool {
         matches!(
             self,
             Token::Fg
+                | Token::Fg2
+                | Token::Fg3
+                | Token::Fg4
                 | Token::LogoFrame
                 | Token::FinderOuter
                 | Token::FinderEye

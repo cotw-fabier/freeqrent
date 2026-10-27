@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026210723 · M7.5 · Data colors
+
+- Landed: tokens `fg.2`, `fg.3`, `fg.4`. Data modules are spread across `fg` and each one that's set, per module or, with `Style::color_spread(ColorSpread::Regions)`, per run of touching modules (a liquid blob, a bar). Each color is a layer of its own, so contrast checks, intros, plans, dark twins, re-theming and gradients apply to it unchanged. Style document `color_spread`, schema, CLI `--spread`. The 4-connected region finder moved from `animate` to `scene` for it.
+- Decision: picks come from their own seeded generator (the style's seed salted), so round-frame filler keeps its cells; finders, alignment and timing keep their tokens.
+- Measured: three hues at ΔL 0.63 and near-black, by module and by region, in square, dots, liquid and bars, light and dark twin, v1/5/10/25: all pass the full bar.
+- Checks: all clean; new snapshot `data_colors_by_region`, the others unchanged; two new conformance cases, no existing hash changed.
+
 ## 20261026204907 · M7.5 · Frame borders and hard shadows
 
 - Landed: `Style::border(Border::Solid | Double { width })` in the `frame` token and `Style::shadow(offset)` in a new `shadow` token, on square, rounded and round frames. The border lies outside the quiet zone (square frames gain whole modules of margin, so the code stays on whole modules); the shadow widens the canvas and the background covers only the card. Shadow, background and border are the frame's "chrome", which intros, reveals and Develop leave still, and plans list as `shadow` and `border` layers. Style document `border`/`shadow`, schema, CLI `--border`/`--shadow`, error `shadow_needs_background`.

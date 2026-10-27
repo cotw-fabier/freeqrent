@@ -3,11 +3,11 @@
 //! core.
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Axis, Border, Corner, CubicBezier, Ease, Ecc, EciPolicy,
-    Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink, Intro, Logo,
-    LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette, Preset,
-    QrCode, Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, TimingStyle, TrackingGrid,
-    Trigger, Version,
+    AlignmentShape, AlignmentStyle, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc,
+    EciPolicy, Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink, Intro,
+    Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette,
+    Preset, QrCode, Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, TimingStyle,
+    TrackingGrid, Trigger, Version,
 };
 use freeqrent_doc::{Payload, parse};
 
@@ -225,6 +225,12 @@ fn colors_frames_and_text() {
     assert_eq!(
         style(r#"{"border":"double"}"#).border_style(),
         Some(Border::Double { width: 1.0 })
+    );
+    assert_eq!(
+        style(r##"{"palette":{"fg.2":"#7a0000"},"color_spread":"regions"}"##),
+        Style::new()
+            .palette(tokens(&[("fg.2", "#7a0000")]))
+            .color_spread(ColorSpread::Regions)
     );
 }
 
