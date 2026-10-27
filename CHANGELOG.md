@@ -14,7 +14,7 @@ New options, all additive; 1.0 styles render byte for byte as before (snapshots 
 - **Fix:** animation plans (`AnimationPlan::to_json`) are valid JSON again; numbers below 1 had lost their leading zero. Plan output changes; SVG output doesn't.
 - Every option is in the Style document, the schema, the conformance suite (16 new cases, 74 in all) and the CLI, and plans carry what other players need (`effect`, `textures`, `caption`, layers' `fillOpacity`).
 
-## Unreleased (Phase 2, M7)
+## Unreleased (Phase 2, M7 and M8)
 
 Not part of the 1.0 core release. These crates are `publish = false` until the bindings ship together (M9).
 
@@ -24,6 +24,7 @@ Not part of the 1.0 core release. These crates are `publish = false` until the b
 - **npm:** `bindings/js`, WASM for Node and browsers with generated TypeScript types, and an npm `freeqrent` bin.
 - **Go:** `bindings/go`, cgo by default and pure Go with `-tags freeqrent_wasm`.
 - **Prebuilt binaries:** the C ABI for every platform (`scripts/build-prebuilt.sh`, `.github/workflows/prebuilt.yml`).
+- **Dart and Flutter:** `bindings/dart/freeqrent` (FFI through Native Assets) and `bindings/dart/freeqrent_flutter` with the `FreeQrentAnimated` widget.
 - **Python:** `bindings/python`, the `freeqrent` package (PyO3, abi3 wheels for CPython ≥ 3.9) with typed styles generated from the schema.
 - **M8 groundwork:** `render_frame` (the CLI's `--frame-at`) at the boundary and the C ABI, `freeqrent_alloc`/`freeqrent_dealloc` for WebAssembly hosts, 77 conformance cases, and `bindings/SURFACE.md`, the CLI's whole surface mapped onto the Style document and checked against the CLI byte for byte.
 

@@ -2,6 +2,19 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261027000203 · M8 · The Dart and Flutter bindings
+
+- Landed: `bindings/dart/freeqrent`, pure Dart over the C ABI through a Native Assets hook (`native_toolchain_rust`), typed styles generated from the schema (sealed `kind` unions), typed reports, palettes and plans, isolate-based async variants. `bindings/dart/freeqrent_flutter`, the `FreeQrentAnimated` widget: plan paths parsed once into `ui.Path`, a `CustomPainter` on an `AnimationController`, reduced motion, build/visible/manual triggers, idle loops, palette tweens in OKLab.
+- Decision: two packages instead of the spec's one, so Dart servers and CLIs don't need Flutter; the Flutter package re-exports the Dart one.
+- Approximated in the widget: sketch without noise displacement, grain as seeded speckles, captions in platform fonts.
+- Measured (Apple silicon): v10 render 0.52 ms from Dart, dylib 1.18 MB, Android `.so` 0.87–1.25 MB. Built locally for macOS, the iOS simulator and Android (three ABIs); iOS device, Linux and Windows not built here.
+- Checks: `dart test` 112 (all 77 conformance cases), `flutter test` 34 (26 goldens against resvg with no module differing, triggers, reduced motion, OKLab tweens); analyzers clean; `cargo deny` clean for both crates.
+- Follow-up (M9): pub.dev needs vendored sources or prebuilt-library download; Dart web through the WASM build.
+
+## M8 complete · 2026-10-27
+
+The bindings: npm (WASM, with an npm `bin`), Python (PyO3 abi3), Dart and Flutter (FFI with Native Assets, `FreeQrentAnimated`), Go (cgo and `wazero`), and prebuilt C ABI binaries for every platform, each passing all 77 conformance cases byte for byte. On the way: `bindings/SURFACE.md`, the CLI's surface checked against the Style document, `render_frame`, and plans made valid JSON. Not yet run: any of the new CI workflows (nothing pushed), so Linux, Windows and Node 18 are untested. Waves 20261026231417, 20261026234730, 20261026235449, 20261026235737, 20261027000203.
+
 ## 20261026235737 · M8 · The npm and Go bindings, and prebuilt binaries
 
 - Landed: `bindings/js`, the npm `freeqrent` package (ESM and CJS, Node ≥ 18 and browsers, no runtime dependencies), `.d.ts` generated from the schema, and an npm `bin` that takes the CLI's flags. `bindings/go`, module `github.com/freeqrent/freeqrent-go`: cgo over prebuilt static libraries by default, pure Go on wazero with `-tags freeqrent_wasm`, typed styles generated from the schema with functional options. `scripts/build-prebuilt.sh` and `.github/workflows/prebuilt.yml` build the C ABI for every platform with checksums; `js.yml` and `go.yml` test them.
