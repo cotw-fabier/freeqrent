@@ -1,0 +1,7 @@
+# Build outputs: never committed.
+/node_modules/
+/dist/
+/build/
+/crate/target/
+*.wasm
+*.tgz
