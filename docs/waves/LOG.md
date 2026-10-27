@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026220634 · M7.5 · Hand-drawn sketch
+
+- Landed: `Effect::Sketch { roughness }`, seeded fractal noise displacing the code so every edge wobbles like a marker drawing (0.02–0.15 modules); it works with every module shape, finder, frame and intro. Style document `effect: "sketch"`, CLI `--effect sketch:R`, plan `effect`.
+- Decision: the effect filter now goes on one group around the code's layers rather than on each element, so touching elements (data against timing, say) share one displacement field with no seams; the group sits inside a reveal's mask group, and it takes in a picture's sub-cells too. That changed the previous wave's glow and emboss output: the `glow_effect` snapshot and two conformance cases (neon glow settling, clay emboss). No 1.0 output changed.
+- Measured: sketch at 0.1 and 0.15, and glow and emboss at their limits again with the group filter, on every module shape, light and inverted, seven payloads v1–v25: all pass.
+- Checks: all clean; new snapshot `sketch_effect`; one new conformance case.
+
 ## 20261026212751 · M7.5 · Glow and emboss
 
 - Landed: `Style::effect(Effect::Glow { radius, strength } | Effect::Emboss { depth })`, one SVG filter on the code's layers (not the frame's chrome, the logo, the shimmer or a picture's sub-cells). Glow blurs the shape in its own colors under it; emboss adds a dark soft shadow down-right and a light one up-left, and keeps the dark one only on inverted codes. Plans carry `effect`. Style document `effect`, schema, CLI `--effect`.

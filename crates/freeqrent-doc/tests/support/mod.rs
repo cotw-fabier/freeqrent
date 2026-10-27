@@ -164,6 +164,10 @@ pub fn inputs() -> Vec<String> {
             "clay emboss",
             r##"{"palette":{"bg":"#e0e5ec","fg":"#2b333b"},"modules":"dots","effect":"emboss","frame":{"kind":"rounded","radius":4}}"##,
         ),
+        render(
+            "sketch with leaf finders",
+            r##"{"modules":{"kind":"rounded","radius":0.3},"finders":{"ring":"leaf"},"effect":{"kind":"sketch","roughness":0.12},"seed":11}"##,
+        ),
         case("plan glow", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"effect":"glow","intro":"ripple"}}"#)),
         render(
             "round border settling",

@@ -425,8 +425,8 @@
         "intro": "settle"
       },
       "expect": {
-        "sha256": "77b622cd8d7ae90d540cbb9da02334bce4859474671143dcf9b3b3b65b04f707",
-        "length": 8863
+        "sha256": "af192f392d42c90b5dbe79bfedd7b4dcb71f4bb4e5823d36a950476fe76a316c",
+        "length": 8087
       }
     },
     {
@@ -448,8 +448,33 @@
         }
       },
       "expect": {
-        "sha256": "aa269f82fa7f425bb7e6e18a2c303f0361974298820484dc67c482f1bea68422",
-        "length": 10126
+        "sha256": "6b3ab4b70bdfc5bc75ba03b5a8ef707dab9f539af3dfad59033b9e6aa31181cc",
+        "length": 10017
+      }
+    },
+    {
+      "name": "sketch with leaf finders",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "modules": {
+          "kind": "rounded",
+          "radius": 0.3
+        },
+        "finders": {
+          "ring": "leaf"
+        },
+        "effect": {
+          "kind": "sketch",
+          "roughness": 0.12
+        },
+        "seed": 11
+      },
+      "expect": {
+        "sha256": "a144f7dbff052ceef4373b0f5d304184949a0e79ab4c09bd544c689d8f0d0c65",
+        "length": 12752
       }
     },
     {

@@ -67,8 +67,9 @@ Style:
                            (0.25-3), in the shadow token
   --effect EFFECT          glow:RADIUS[:STRENGTH] (the code glows in its own
                            colors: blur 0.05-0.5 modules, opacity 0-0.25,
-                           default 0.25) or emboss:DEPTH (raised like soft
-                           clay, 0.05-0.12 modules)
+                           default 0.25), emboss:DEPTH (raised like soft
+                           clay, 0.05-0.12 modules) or sketch:ROUGHNESS
+                           (hand-drawn wobble, 0.02-0.15 modules, seeded)
   --spread modules|regions how data modules share fg and the data colors
                            fg.2-fg.4 (set them with --token): one module or
                            one touching run at a time (default modules)

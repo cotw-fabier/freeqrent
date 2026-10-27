@@ -582,7 +582,7 @@ pub(crate) fn write<W: Write + ?Sized>(
         out.w.write_str("<defs>")?;
         if effects {
             out.nested_line()?;
-            write_effects(out.w, style, &prefix, n)?;
+            write_effects(out.w, style, &prefix, n, scene::seed(style, qr))?;
         }
         let defs = gradients.iter().map(|&t| (t, false));
         for (source, fifths) in defs.chain(stroke_gradients.iter().map(|&t| (t, true))) {
@@ -605,6 +605,15 @@ pub(crate) fn write<W: Write + ?Sized>(
 
     #[cfg(feature = "animate")]
     let masked = motion.as_ref().and_then(|m| m.reveal_layers());
+    // The code's elements are contiguous: after the chrome, before the
+    // logo and the shimmer.
+    let fx = effects
+        .then(|| {
+            let first = elements.iter().position(|e| takes_effects(e.role))?;
+            let last = elements.iter().rposition(|e| takes_effects(e.role))?;
+            Some((first, last))
+        })
+        .flatten();
     for (i, e) in elements.iter().enumerate() {
         out.line()?;
         #[cfg(feature = "animate")]
@@ -621,7 +630,12 @@ pub(crate) fn write<W: Write + ?Sized>(
             }
             out.line()?;
         }
-        let _ = i;
+        // The effect filters the code as one group, so touching elements
+        // share one field (a sketch's wobble, a glow's halo).
+        if fx.is_some_and(|(first, _)| first == i) {
+            write!(out.w, "<g filter=\"url(#{prefix}-fx)\">")?;
+            out.line()?;
+        }
         match e.role {
             LayerRole::Background => {
                 match (&canvas.round, style.frame) {
@@ -708,12 +722,13 @@ pub(crate) fn write<W: Write + ?Sized>(
                 if e.evenodd {
                     out.w.write_str(" fill-rule=\"evenodd\"")?;
                 }
-                if effects && takes_effects(e.role) {
-                    write!(out.w, " filter=\"url(#{prefix}-fx)\"")?;
-                }
                 write_pose(out.w, e)?;
                 write!(out.w, " d=\"{}\"/>", e.path.data())?;
             }
+        }
+        if fx.is_some_and(|(_, last)| last == i) {
+            out.line()?;
+            out.w.write_str("</g>")?;
         }
         #[cfg(feature = "animate")]
         if masked.is_some_and(|(_, last)| last == i) {
@@ -1388,23 +1403,23 @@ pub(crate) fn has_effects(style: &Style) -> bool {
     style.effect.is_some()
 }
 
-/// The layers the effects filter applies to: the code, not the frame's
-/// chrome, the logo or the shimmer. (A picture's sub-cells sit in a
-/// viewport of their own and keep clear of it.)
+/// The layers the effect filters, as one group: the code, a picture's
+/// sub-cells included, but not the frame's chrome, the logo or the
+/// shimmer.
 pub(crate) fn takes_effects(role: LayerRole) -> bool {
-    !role.is_chrome()
-        && !role.is_logo()
-        && !matches!(role, LayerRole::Shimmer | LayerRole::Halftone)
+    !role.is_chrome() && !role.is_logo() && role != LayerRole::Shimmer
 }
 
 /// The effect's filter, over the whole canvas in its own units: an emboss
-/// (soft dark and light shadows of the shape under it), or a glow (the
-/// shape blurred in its own colors, under it).
+/// (soft dark and light shadows of the shape under it), a glow (the shape
+/// blurred in its own colors, under it), or a sketch (the shape displaced
+/// by seeded noise).
 fn write_effects<W: Write + ?Sized>(
     w: &mut W,
     style: &Style,
     prefix: &str,
     side: i64,
+    seed: u64,
 ) -> fmt::Result {
     let num = |w: &mut W, v: f32| write_scaled(w, math::round(v as f64 * 1000.0) as i64, 3);
     write!(
@@ -1443,6 +1458,17 @@ fn write_effects<W: Write + ?Sized>(
         w.write_str(
             " 0\" result=\"gg\"/><feMerge><feMergeNode in=\"gg\"/><feMergeNode in=\"SourceGraphic\"/></feMerge>",
         )?;
+    }
+    if let Some(Effect::Sketch { roughness }) = style.effect {
+        // Noise about a wobble a module moves each edge by up to
+        // `roughness` either way (the map is centered on half).
+        write!(
+            w,
+            "<feTurbulence type=\"fractalNoise\" baseFrequency=\"1.2\" numOctaves=\"2\" seed=\"{}\" result=\"sn\"/><feDisplacementMap in=\"SourceGraphic\" in2=\"sn\" scale=\"",
+            seed % 1000
+        )?;
+        num(w, 2.0 * roughness)?;
+        w.write_str("\" xChannelSelector=\"R\" yChannelSelector=\"G\"/>")?;
     }
     w.write_str("</filter>")
 }
@@ -1672,11 +1698,11 @@ mod tests {
         let svg = style.render(&qr()).unwrap();
         let prefix = prefix_of(&svg);
         assert!(svg.contains(&alloc::format!("<filter id=\"{prefix}-fx\"")));
-        for line in svg.split("<path").skip(1) {
-            let filtered = line.contains("-fx)");
-            let chrome = line.contains("-shadow") || line.contains("-frame");
-            assert_ne!(filtered, chrome, "{line}");
-        }
+        // One group around the code, after the chrome.
+        let (before, group) = svg.split_once("<g filter=").unwrap();
+        assert!(before.contains("-shadow") && before.contains("-frame"));
+        let code = group.split("</g>").next().unwrap();
+        assert!(code.contains("-fg") && !code.contains("-shadow"));
         // An inverted emboss keeps its dark shadow only.
         let dark = Style::new()
             .effect(crate::Effect::Emboss { depth: 0.1 })

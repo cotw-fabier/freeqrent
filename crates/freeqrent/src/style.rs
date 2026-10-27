@@ -151,6 +151,13 @@ pub enum Effect {
         /// How far the shadows reach.
         depth: f32,
     },
+    /// Hand-drawn: every edge wobbles, as if inked with a marker, by up
+    /// to `roughness` modules (0.02–0.15). The wobble is seeded
+    /// (`Style::seed`), so it's the same every time.
+    Sketch {
+        /// How far edges stray.
+        roughness: f32,
+    },
 }
 
 /// A border at the edge of the frame, in the `frame` token (SPEC §7.4).

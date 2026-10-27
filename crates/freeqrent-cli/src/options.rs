@@ -219,7 +219,8 @@ pub fn border(value: &str) -> Result<Border, String> {
     }
 }
 
-/// `glow:RADIUS[:STRENGTH]` (strength 0.25 by default) or `emboss:DEPTH`.
+/// `glow:RADIUS[:STRENGTH]` (strength 0.25 by default), `emboss:DEPTH` or
+/// `sketch:ROUGHNESS`.
 pub fn effect(value: &str) -> Result<Effect, String> {
     let num = |v: &str| {
         v.parse::<f32>()
@@ -234,8 +235,11 @@ pub fn effect(value: &str) -> Result<Effect, String> {
             })
         }
         Some(("emboss", depth)) => Ok(Effect::Emboss { depth: num(depth)? }),
+        Some(("sketch", roughness)) => Ok(Effect::Sketch {
+            roughness: num(roughness)?,
+        }),
         _ => Err(format!(
-            "unknown effect {value:?}: try glow:RADIUS[:STRENGTH] or emboss:DEPTH"
+            "unknown effect {value:?}: try glow:RADIUS[:STRENGTH], emboss:DEPTH or sketch:ROUGHNESS"
         )),
     }
 }

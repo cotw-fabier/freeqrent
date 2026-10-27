@@ -3019,6 +3019,11 @@ impl AnimationPlan {
                 json_num(w, depth)?;
                 w.write_char('}')?;
             }
+            Some(crate::Effect::Sketch { roughness }) => {
+                w.write_str(",\"effect\":{\"kind\":\"sketch\",\"roughness\":")?;
+                json_num(w, roughness)?;
+                w.write_char('}')?;
+            }
             _ => {}
         }
         w.write_char('}')

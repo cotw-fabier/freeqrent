@@ -391,6 +391,8 @@ impl ScanReport {
 pub const GLOW_MAX: f32 = 0.25;
 /// The deepest emboss (SPEC §7.5).
 pub const EMBOSS_MAX: f32 = 0.12;
+/// The roughest sketch (SPEC §7.5).
+pub const SKETCH_MAX: f32 = 0.15;
 
 fn in_range(errors: &mut Vec<RenderError>, option: &'static str, value: f32, min: f32, max: f32) {
     // Written so that NaN fails.
@@ -475,6 +477,13 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         Some(Effect::Emboss { depth }) => {
             in_range(&mut errors, "Effect::Emboss depth", depth, 0.05, EMBOSS_MAX)
         }
+        Some(Effect::Sketch { roughness }) => in_range(
+            &mut errors,
+            "Effect::Sketch roughness",
+            roughness,
+            0.02,
+            SKETCH_MAX,
+        ),
         _ => {}
     }
     if let Some(offset) = style.shadow {

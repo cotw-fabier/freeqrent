@@ -236,3 +236,12 @@ fn glow_effect() {
         .allow_inverted(true);
     insta::assert_snapshot!(render(style, 1));
 }
+
+#[test]
+fn sketch_effect() {
+    let style = Style::new()
+        .modules(ModuleShape::Rounded { radius: 0.3 })
+        .effect(Effect::Sketch { roughness: 0.12 })
+        .seed(11);
+    insta::assert_snapshot!(render(style, 1));
+}

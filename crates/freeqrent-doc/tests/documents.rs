@@ -238,6 +238,10 @@ fn colors_frames_and_text() {
         Style::new().effect(Effect::Emboss { depth: 0.08 })
     );
     assert_eq!(
+        style(r#"{"effect":"sketch"}"#).effect_style(),
+        Some(Effect::Sketch { roughness: 0.08 })
+    );
+    assert_eq!(
         style(r##"{"palette":{"fg.2":"#7a0000"},"color_spread":"regions"}"##),
         Style::new()
             .palette(tokens(&[("fg.2", "#7a0000")]))

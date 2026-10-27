@@ -207,9 +207,10 @@ fn gradient_backgrounds_scan() {
 
 #[test]
 fn effects_scan_at_their_limits() {
-    // Measured (W20261026212751, every module shape at v1-v25): glow is
-    // safe at strength 0.25 at any radius, emboss to 0.12; at 0.4 and
-    // 0.15 rqrr lost codes. Filters are slow to rasterize, so this keeps
+    // Measured (W20261026212751, W20261026220634, every module shape at
+    // v1-v25): glow is safe at strength 0.25 at any radius, emboss to
+    // 0.12, sketch to 0.15; glow at 0.4 and emboss at 0.15 lost codes to
+    // rqrr. Filters are slow to rasterize, so this keeps
     // to square and dot modules up to v10, light and inverted (where the
     // emboss keeps its dark shadow only).
     let effects = [
@@ -222,6 +223,7 @@ fn effects_scan_at_their_limits() {
             strength: 0.25,
         },
         Effect::Emboss { depth: 0.12 },
+        Effect::Sketch { roughness: 0.15 },
     ];
     let neon = Palette::from_tokens([("bg", "#0a0a0f"), ("fg", "#7dffb0")]).unwrap();
     let payloads = &common::PAYLOADS[..3];

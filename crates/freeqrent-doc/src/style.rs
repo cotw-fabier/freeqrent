@@ -82,7 +82,7 @@ pub const FRAMES: &[&str] = &["square", "rounded", "circle", "none"];
 /// `frame.ring`.
 pub const FRAME_RINGS: &[&str] = &["none", "solid", "dashed"];
 /// `effect.kind`; a bare name takes the defaults.
-pub const EFFECTS: &[&str] = &["glow", "emboss"];
+pub const EFFECTS: &[&str] = &["glow", "emboss", "sketch"];
 /// `color_spread`.
 pub const SPREADS: &[&str] = &["modules", "regions"];
 /// `border.kind`; a bare name takes the default width.
@@ -491,8 +491,11 @@ fn effect(v: &Value, path: &str) -> Result<Effect, DocError> {
             radius: num_or(&mut o, "radius", 0.3)?,
             strength: num_or(&mut o, "strength", 0.25)?,
         },
-        _ => Effect::Emboss {
+        "emboss" => Effect::Emboss {
             depth: num_or(&mut o, "depth", 0.1)?,
+        },
+        _ => Effect::Sketch {
+            roughness: num_or(&mut o, "roughness", 0.08)?,
         },
     };
     o.finish()?;

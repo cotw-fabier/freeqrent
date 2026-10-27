@@ -312,9 +312,10 @@ fn effect() -> Value {
                     &[],
                 ),
                 variant("emboss", vec![("depth", number())], &[]),
+                variant("sketch", vec![("roughness", number())], &[]),
             ],
         ),
-        "A filter on the code: a glow in its own colors (radius 0.05–0.5 modules, default 0.3; strength 0–0.25, default 0.25) or an emboss (depth 0.05–0.12, default 0.1).",
+        "A filter on the code: a glow in its own colors (radius 0.05–0.5 modules, default 0.3; strength 0–0.25, default 0.25) an emboss (depth 0.05–0.12, default 0.1), or a hand-drawn sketch (roughness 0.02–0.15 modules, default 0.08, seeded).",
     )
 }
 
