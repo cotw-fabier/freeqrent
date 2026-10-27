@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026234730 · M8 · Plans are JSON
+
+- Fixed: `AnimationPlan::to_json` wrote numbers the way the SVG writer does, without the leading zero (`.22`, `-.5`), so no JSON parser took a plan with a fraction in it. Found by the Python binding. `json_num` writes the zero; SVG output is unchanged.
+- Output change: the five plan conformance hashes (plan textures, caption, glow, ripple, sweep with a logo); no render hash moved. A new conformance test parses every plan in the suite with `freeqrent-doc`'s strict parser.
+- `deny.toml`: a license exception for `target-lexicon` (Apache-2.0 WITH LLVM-exception), which PyO3's build needs.
+- Checks: all clean.
+
 ## 20261026231724 · M7.5 · Design systems in the README showcase
 
 - Landed: a fourth showcase row, Maximalism, Neo-brutalism and Terminal, taken from their gallery cards with their own payloads, intros replaying every 5 s like the rest. `scripts/showcase.sh` renders them; the README spoiler table has their commands.
