@@ -2817,12 +2817,21 @@ fn json_str<W: Write + ?Sized>(w: &mut W, s: &str) -> fmt::Result {
     w.write_char('"')
 }
 
+/// A number as JSON: like [`write_number`], but with the leading zero
+/// JSON requires (`0.22`, `-0.5`, where SVG takes `.22`).
 fn json_num<W: Write + ?Sized>(w: &mut W, v: f32) -> fmt::Result {
-    if v.is_finite() {
-        write_number(w, v as f64)
-    } else {
-        w.write_char('0')
+    if !v.is_finite() {
+        return w.write_char('0');
     }
+    let scaled = math::round(v as f64 * 1000.0) as i64;
+    if scaled < 0 {
+        w.write_char('-')?;
+    }
+    let magnitude = scaled.abs();
+    if magnitude > 0 && magnitude < 1000 {
+        w.write_char('0')?;
+    }
+    write_scaled(w, magnitude, 3)
 }
 
 fn role_name(role: LayerRole) -> &'static str {
@@ -3108,6 +3117,22 @@ impl AnimationPlan {
 mod tests {
     use super::*;
     use crate::{Ecc, QrCode};
+
+    #[test]
+    fn json_numbers_have_their_leading_zero() {
+        let num = |v: f32| {
+            let mut out = String::new();
+            json_num(&mut out, v).unwrap();
+            out
+        };
+        assert_eq!(num(0.22), "0.22");
+        assert_eq!(num(-0.5), "-0.5");
+        assert_eq!(num(1.5), "1.5");
+        assert_eq!(num(-2.0), "-2");
+        assert_eq!(num(0.0), "0");
+        assert_eq!(num(-0.0001), "0");
+        assert_eq!(num(f32::NAN), "0");
+    }
 
     #[test]
     fn curves_ease_out() {
