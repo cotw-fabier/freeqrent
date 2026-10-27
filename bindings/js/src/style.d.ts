@@ -402,6 +402,7 @@ export interface IntroOptions {
   logo_timing?: LogoTiming;
   frame?: LogoIntro;
   frame_timing?: LogoTiming;
+  palette_from?: never;
 }
 
 /** A palette shift: the code's colors cross-fade from palette_from. */
@@ -410,6 +411,14 @@ export interface PaletteShift {
   duration_ms?: number;
   ease?: Ease;
   trigger?: Trigger;
+  preset?: never;
+  delay_ms?: never;
+  stagger?: never;
+  groups?: never;
+  logo?: never;
+  logo_timing?: never;
+  frame?: never;
+  frame_timing?: never;
 }
 
 export type Intro = IntroPreset | IntroOptions | PaletteShift;

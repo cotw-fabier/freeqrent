@@ -131,21 +131,25 @@ export function generate(schema) {
     return node.type === 'object' && node.properties !== undefined;
   }
 
-  // The members of an object type, one per line.
-  function members(node, name, indent) {
+  const key = (k) => (/^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k));
+
+  // The members of an object type, one per line, then `never` for the keys
+  // only its sibling variants have (`excluded`), so TypeScript refuses a
+  // mix of two variants that no `kind` tells apart.
+  function members(node, name, indent, excluded = []) {
     const required = new Set(node.required ?? []);
     const lines = [];
-    for (const [key, prop] of Object.entries(node.properties)) {
-      const t = type(prop, `${name}${pascal(key)}`);
-      const k = /^[A-Za-z_$][\w$]*$/.test(key) ? key : JSON.stringify(key);
-      lines.push(`${comment(prop.description, indent)}${indent}${k}${required.has(key) ? '' : '?'}: ${t};\n`);
+    for (const [k, prop] of Object.entries(node.properties)) {
+      const t = type(prop, `${name}${pascal(k)}`);
+      lines.push(`${comment(prop.description, indent)}${indent}${key(k)}${required.has(k) ? '' : '?'}: ${t};\n`);
     }
+    for (const k of excluded) lines.push(`${indent}${key(k)}?: never;\n`);
     return lines.join('');
   }
 
-  function iface(node, name) {
+  function iface(node, name, excluded) {
     const n = rename(name);
-    declare(n, `${comment(node.description)}export interface ${n} {\n${members(node, n, '  ')}}\n`);
+    declare(n, `${comment(node.description)}export interface ${n} {\n${members(node, n, '  ', excluded)}}\n`);
     return n;
   }
 
@@ -174,13 +178,20 @@ export function generate(schema) {
       if (m.enum) return namedEnum(m.enum, `${n}Name`, m.description);
       if (isObject(m)) {
         const kind = m.properties.kind?.const;
+        // Keys of the other untagged variants that this one lacks.
+        const excluded =
+          kind === undefined
+            ? [...new Set(objects.filter((o) => o !== m && o.properties.kind === undefined).flatMap((o) => Object.keys(o.properties)))].filter(
+                (k) => !(k in m.properties),
+              )
+            : [];
         const variant =
           kind !== undefined
             ? `${n}${pascal(kind)}`
             : objects.length === 1
               ? `${n}Object`
               : `${n}${objects.indexOf(m) + 1}`;
-        return iface(m, variant);
+        return iface(m, variant, excluded);
       }
       return type(m, `${n}${i + 1}`);
     });

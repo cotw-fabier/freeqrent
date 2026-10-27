@@ -1,4 +1,4 @@
-// Loader fragment for browsers (and any runtime without `node:fs`): the
+// Loader fragment for browsers (and any runtime without Node's fs): the
 // module is fetched from next to this file, compiled while it streams in,
 // once, by `await init()`. Pass `init(source)` to load it from elsewhere:
 // a URL or string, a Response or its promise, bytes, or a compiled

@@ -2,7 +2,13 @@
   "name": "freeqrent",
   "version": "1.0.0",
   "description": "Styled and animated SVG QR codes: freeQRent's Rust core as WebAssembly, for Node 18+ and browsers",
-  "keywords": ["qr", "qrcode", "svg", "wasm", "animation"],
+  "keywords": [
+    "qr",
+    "qrcode",
+    "svg",
+    "wasm",
+    "animation"
+  ],
   "license": "MIT",
   "author": "Dan Kolansky",
   "homepage": "https://github.com/freeqrent/freeqrent",
@@ -44,10 +50,11 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "types": "node scripts/gen-types.mjs",
-    "test": "node --test test/",
-    "size": "node scripts/size.mjs"
+    "test": "node --test test/*.test.mjs test/*.test.cjs",
+    "bench": "node scripts/bench.mjs"
   },
   "devDependencies": {
-    "binaryen": "132.0.0"
+    "binaryen": "132.0.0",
+    "typescript": "5.9.3"
   }
 }
