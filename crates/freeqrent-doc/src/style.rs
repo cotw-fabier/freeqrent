@@ -12,7 +12,7 @@ use freeqrent::{
     EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink,
     Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint,
     Palette, Preset, QrBuilder, QrCode, RasterFormat, RingShape, StaggerOrder, Style, TargetSize,
-    TimingStyle, Token, TrackingGrid, Trigger, Version,
+    Texture, TimingStyle, Token, TrackingGrid, Trigger, Version,
 };
 
 use crate::error::{DocError, logo_error};
@@ -50,6 +50,7 @@ pub const STYLE_KEYS: &[&str] = &[
     "shadow",
     "color_spread",
     "effect",
+    "textures",
     "seed",
     "logo",
     "halftone",
@@ -83,6 +84,8 @@ pub const FRAMES: &[&str] = &["square", "rounded", "circle", "none"];
 pub const FRAME_RINGS: &[&str] = &["none", "solid", "dashed"];
 /// `effect.kind`; a bare name takes the defaults.
 pub const EFFECTS: &[&str] = &["glow", "emboss", "sketch"];
+/// `textures[].kind`; a bare name takes the default.
+pub const TEXTURES: &[&str] = &["grain", "scanlines", "ink"];
 /// `color_spread`.
 pub const SPREADS: &[&str] = &["modules", "regions"];
 /// `border.kind`; a bare name takes the default width.
@@ -232,6 +235,11 @@ fn document(v: &Value) -> Result<Document, DocError> {
     }
     if let Some(e) = o.opt("effect", effect)? {
         style = style.effect(e);
+    }
+    if let Some((value, path)) = o.get("textures") {
+        for (i, item) in array_of(value, &path)?.iter().enumerate() {
+            style = style.texture(texture(item, &format!("{path}[{i}]"))?);
+        }
     }
     if let Some(seed) = o.opt("seed", u64_of)? {
         style = style.seed(seed);
@@ -500,6 +508,24 @@ fn effect(v: &Value, path: &str) -> Result<Effect, DocError> {
     };
     o.finish()?;
     Ok(effect)
+}
+
+fn texture(v: &Value, path: &str) -> Result<Texture, DocError> {
+    let (kind, o) = tagged(v, path, TEXTURES)?;
+    let mut o = or_empty(o, &EMPTY);
+    let texture = match kind {
+        "grain" => Texture::Grain {
+            amount: num_or(&mut o, "amount", 0.08)?,
+        },
+        "scanlines" => Texture::Scanlines {
+            opacity: num_or(&mut o, "opacity", 0.15)?,
+        },
+        _ => Texture::Ink {
+            fade: num_or(&mut o, "fade", 0.2)?,
+        },
+    };
+    o.finish()?;
+    Ok(texture)
 }
 
 fn border(v: &Value, path: &str) -> Result<Border, DocError> {

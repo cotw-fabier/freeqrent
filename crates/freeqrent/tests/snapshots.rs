@@ -5,7 +5,7 @@
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, ColorSpread, Corner, Ecc, Effect, Emphasis,
     EyeShape, FinderStyle, Frame, FrameRing, Intro, Logo, LogoShape, ModuleShape, Palette, Preset,
-    QrCode, QrMatrix, RingShape, Style, TimingStyle, Version,
+    QrCode, QrMatrix, RingShape, Style, Texture, TimingStyle, Version,
 };
 
 fn code(version: u8) -> QrMatrix {
@@ -243,5 +243,16 @@ fn sketch_effect() {
         .modules(ModuleShape::Rounded { radius: 0.3 })
         .effect(Effect::Sketch { roughness: 0.12 })
         .seed(11);
+    insta::assert_snapshot!(render(style, 1));
+}
+
+#[test]
+fn textures() {
+    let style = Style::new()
+        .modules(ModuleShape::Dots { size: 0.85 })
+        .texture(Texture::Grain { amount: 0.08 })
+        .texture(Texture::Ink { fade: 0.2 })
+        .texture(Texture::Scanlines { opacity: 0.2 })
+        .seed(4);
     insta::assert_snapshot!(render(style, 1));
 }

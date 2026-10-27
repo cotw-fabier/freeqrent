@@ -9,8 +9,9 @@ use freeqrent::Style;
 use crate::json::{self, Value};
 use crate::style::{
     BORDERS, CORNERS, EASES, ECCS, ECIS, EFFECTS, EMPHASES, EYES, FITS, FRAME_RINGS, FRAMES, GRIDS,
-    INKS, LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS, STAGGERS, STYLE_KEYS, TARGETS, TIMINGS,
-    TRIGGERS, idles, intro_presets, logo_frames, logo_intros, logo_sizes, logo_timings, tokens,
+    INKS, LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS, STAGGERS, STYLE_KEYS, TARGETS, TEXTURES,
+    TIMINGS, TRIGGERS, idles, intro_presets, logo_frames, logo_intros, logo_sizes, logo_timings,
+    tokens,
 };
 
 fn s(text: &str) -> Value {
@@ -223,6 +224,7 @@ fn style() -> Value {
             ),
         ),
         ("effect", r("Effect")),
+        ("textures", array(r("Texture"))),
         ("seed", int(u64::MAX)),
         ("logo", r("Logo")),
         ("halftone", r("Halftone")),
@@ -316,6 +318,20 @@ fn effect() -> Value {
             ],
         ),
         "A filter on the code: a glow in its own colors (radius 0.05–0.5 modules, default 0.3; strength 0–0.25, default 0.25) an emboss (depth 0.05–0.12, default 0.1), or a hand-drawn sketch (roughness 0.02–0.15 modules, default 0.08, seeded).",
+    )
+}
+
+fn texture() -> Value {
+    described(
+        union(
+            TEXTURES,
+            vec![
+                variant("grain", vec![("amount", number())], &[]),
+                variant("scanlines", vec![("opacity", number())], &[]),
+                variant("ink", vec![("fade", number())], &[]),
+            ],
+        ),
+        "A surface texture: paper grain (amount 0.02–0.1, default 0.08), scanlines (opacity 0.05–0.3, 0.15) or uneven ink (fade 0.05–0.3, 0.2). One of each kind.",
     )
 }
 
@@ -645,6 +661,7 @@ pub fn schema() -> Value {
         ("Frame", frame()),
         ("Border", border()),
         ("Effect", effect()),
+        ("Texture", texture()),
         ("Logo", logo()),
         ("Base64", base64),
         ("Image", image()),

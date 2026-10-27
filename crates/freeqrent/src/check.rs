@@ -13,7 +13,7 @@ use crate::matrix::{QrMatrix, misdecode_protection};
 use crate::palette::Token;
 use crate::scanbox::{AlignmentShape, EyeShape, RingShape};
 use crate::scene;
-use crate::style::{Border, Effect, Frame, ModuleShape, Style, TargetSize};
+use crate::style::{Border, Effect, Frame, ModuleShape, Style, TargetSize, Texture};
 use crate::version::BlockLayout;
 
 /// The OKLab lightness difference below which a code isn't rendered. At
@@ -486,6 +486,35 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         ),
         _ => {}
     }
+    for texture in &style.textures {
+        match *texture {
+            Texture::Grain { amount } => {
+                in_range(&mut errors, "Texture::Grain amount", amount, 0.02, 0.1)
+            }
+            Texture::Scanlines { opacity } => in_range(
+                &mut errors,
+                "Texture::Scanlines opacity",
+                opacity,
+                0.05,
+                0.3,
+            ),
+            Texture::Ink { fade } => in_range(&mut errors, "Texture::Ink fade", fade, 0.05, 0.3),
+        }
+    }
+    // Measured: lines over faded modules lose codes when both are strong.
+    if let (Some(lines), Some(fade)) = (style.scanlines(), style.ink_fade())
+        && lines >= 0.05
+        && fade >= 0.05
+    {
+        let both = lines + fade;
+        in_range(
+            &mut errors,
+            "Texture::Scanlines opacity + Texture::Ink fade",
+            both,
+            0.0,
+            0.4,
+        );
+    }
     if let Some(offset) = style.shadow {
         in_range(&mut errors, "Style.shadow offset", offset, 0.25, 3.0);
         if style.frame == Frame::None || style.palette.background().alpha() < 1.0 {
@@ -526,7 +555,11 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         .filter(|l| !matches!(l.token, Token::Filler | Token::Frame));
     for layer in read {
         let token = layer.token;
-        let contrast = palette.contrast(token);
+        let contrast = if layer.fade < 1.0 {
+            palette.contrast_faded(token, layer.fade)
+        } else {
+            palette.contrast(token)
+        };
         min_contrast = min_contrast.min(contrast.delta_l);
         if contrast.delta_l < CONTRAST_FLOOR {
             errors.push(RenderError::ContrastTooLow {
@@ -913,6 +946,26 @@ mod tests {
     }
 
     #[cfg(feature = "halftone")]
+    #[test]
+    fn scanlines_and_ink_share_a_limit() {
+        let qr = crate::QrCode::encode("HELLO", crate::Ecc::M).unwrap();
+        let both = |lines, fade| {
+            Style::new()
+                .texture(Texture::Scanlines { opacity: lines })
+                .texture(Texture::Ink { fade })
+                .check(&qr)
+                .ok()
+        };
+        assert!(both(0.25, 0.15));
+        assert!(!both(0.3, 0.3));
+        assert!(
+            Style::new()
+                .texture(Texture::Ink { fade: 0.3 })
+                .check(&qr)
+                .ok()
+        );
+    }
+
     #[test]
     fn effects_keep_to_their_measured_limits() {
         let qr = crate::QrCode::encode("HELLO", crate::Ecc::M).unwrap();

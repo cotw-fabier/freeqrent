@@ -4,8 +4,8 @@
 use freeqrent::{
     AlignmentShape, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc, Effect, Emphasis,
     EyeShape, Fit, Frame, FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape, LogoSize,
-    LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder, Style, TimingStyle, TrackingGrid,
-    Trigger,
+    LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder, Style, Texture, TimingStyle,
+    TrackingGrid, Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -241,6 +241,22 @@ pub fn effect(value: &str) -> Result<Effect, String> {
         _ => Err(format!(
             "unknown effect {value:?}: try glow:RADIUS[:STRENGTH], emboss:DEPTH or sketch:ROUGHNESS"
         )),
+    }
+}
+
+/// `grain:AMOUNT`, `scanlines:OPACITY` or `ink:FADE`.
+pub fn texture(value: &str) -> Result<Texture, String> {
+    let bad =
+        || format!("unknown texture {value:?}: try grain:AMOUNT, scanlines:OPACITY or ink:FADE");
+    let (name, v) = value.split_once(':').ok_or_else(bad)?;
+    let v: f32 = v
+        .parse()
+        .map_err(|_| format!("{value:?}: {v:?} isn't a number"))?;
+    match name {
+        "grain" => Ok(Texture::Grain { amount: v }),
+        "scanlines" => Ok(Texture::Scanlines { opacity: v }),
+        "ink" => Ok(Texture::Ink { fade: v }),
+        _ => Err(bad()),
     }
 }
 

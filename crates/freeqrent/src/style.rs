@@ -3,7 +3,6 @@
 //! [`Style::render`] refuses to draw a code that might not scan.
 
 use alloc::string::String;
-#[cfg(feature = "animate")]
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -160,6 +159,44 @@ pub enum Effect {
     },
 }
 
+/// A surface texture (SPEC §7.5). A style can have one of each kind.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum Texture {
+    /// Paper grain: seeded speckles in the ink's lightness over the
+    /// background, up to `amount` opaque (0.02–0.1; at 0.15 rqrr lost
+    /// codes at 4 px a module).
+    Grain {
+        /// The densest speckle's opacity.
+        amount: f32,
+    },
+    /// CRT scanlines over the card: three lines a module in the
+    /// background's color at `opacity` (0.05–0.3; with ink, the two
+    /// together at most 0.4).
+    Scanlines {
+        /// The lines' opacity.
+        opacity: f32,
+    },
+    /// Printed ink: data modules fade toward the background by up to
+    /// `fade` (0.05–0.3), at seeded levels, as if the press ran unevenly
+    /// (SPEC §7.5's opacity jitter).
+    Ink {
+        /// The most a module fades.
+        fade: f32,
+    },
+}
+
+impl Texture {
+    /// Which kind this is, for keeping one of each.
+    fn kind(self) -> u8 {
+        match self {
+            Texture::Grain { .. } => 0,
+            Texture::Scanlines { .. } => 1,
+            Texture::Ink { .. } => 2,
+        }
+    }
+}
+
 /// A border at the edge of the frame, in the `frame` token (SPEC §7.4).
 /// It lies outside the quiet zone: the canvas grows to make room, so the
 /// code never loses margin to it.
@@ -221,6 +258,7 @@ pub struct Style {
     pub(crate) shadow: Option<f32>,
     pub(crate) spread: ColorSpread,
     pub(crate) effect: Option<Effect>,
+    pub(crate) textures: Vec<Texture>,
     pub(crate) seed: Option<u64>,
     pub(crate) logo: Option<Logo>,
     #[cfg(feature = "halftone")]
@@ -254,6 +292,7 @@ impl Default for Style {
             shadow: None,
             spread: ColorSpread::Modules,
             effect: None,
+            textures: Vec::new(),
             seed: None,
             logo: None,
             #[cfg(feature = "halftone")]
@@ -411,6 +450,41 @@ impl Style {
     /// The effect, if any.
     pub fn effect_style(&self) -> Option<Effect> {
         self.effect
+    }
+
+    /// Adds a surface texture (SPEC §7.5): grain on the background,
+    /// scanlines over the card, or uneven ink. A second texture of the
+    /// same kind replaces the first.
+    pub fn texture(mut self, texture: Texture) -> Style {
+        self.textures.retain(|t| t.kind() != texture.kind());
+        self.textures.push(texture);
+        self
+    }
+
+    /// The textures, in the order they were added.
+    pub fn textures(&self) -> &[Texture] {
+        &self.textures
+    }
+
+    pub(crate) fn grain(&self) -> Option<f32> {
+        self.textures.iter().find_map(|t| match t {
+            Texture::Grain { amount } => Some(*amount),
+            _ => None,
+        })
+    }
+
+    pub(crate) fn scanlines(&self) -> Option<f32> {
+        self.textures.iter().find_map(|t| match t {
+            Texture::Scanlines { opacity } => Some(*opacity),
+            _ => None,
+        })
+    }
+
+    pub(crate) fn ink_fade(&self) -> Option<f32> {
+        self.textures.iter().find_map(|t| match t {
+            Texture::Ink { fade } => Some(*fade),
+            _ => None,
+        })
     }
 
     /// Seeds the generator behind decorative choices such as filler

@@ -16,8 +16,8 @@ use freeqrent::{
     Emphasis, EyeShape, FinderStyle, Fit, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame,
     LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape, Origin, Paint, Palette, PaletteOpts,
     PaletteReport, Preset, QrBuilder, QrCode, QrMatrix, RasterFormat, Rgba8Image, RingShape,
-    ScanReport, StaggerOrder, Style, TargetSize, TimingStyle, Token, TrackingGrid, Trigger,
-    Version,
+    ScanReport, StaggerOrder, Style, TargetSize, Texture, TimingStyle, Token, TrackingGrid,
+    Trigger, Version,
 };
 
 const HELP: &str = "\
@@ -70,6 +70,10 @@ Style:
                            default 0.25), emboss:DEPTH (raised like soft
                            clay, 0.05-0.12 modules) or sketch:ROUGHNESS
                            (hand-drawn wobble, 0.02-0.15 modules, seeded)
+  --texture TEXTURE        grain:AMOUNT (paper speckles, 0.02-0.1),
+                           scanlines:OPACITY (CRT lines, 0.05-0.3) or
+                           ink:FADE (uneven ink, 0.05-0.3; with scanlines,
+                           the two together at most 0.4); repeatable
   --spread modules|regions how data modules share fg and the data colors
                            fg.2-fg.4 (set them with --token): one module or
                            one touching run at a time (default modules)
@@ -189,6 +193,7 @@ pub struct StyleArgs {
     shadow: Option<f32>,
     spread: Option<ColorSpread>,
     effect: Option<Effect>,
+    textures: Vec<Texture>,
     seed: Option<u64>,
     logo: Option<String>,
     logo_scale: Option<f32>,
@@ -366,6 +371,7 @@ impl StyleArgs {
             "shadow" => self.shadow = Some(options::number(flag, value)?),
             "spread" => self.spread = Some(options::spread(value)?),
             "effect" => self.effect = Some(options::effect(value)?),
+            "texture" => self.textures.push(options::texture(value)?),
             "seed" => {
                 self.seed = Some(
                     value
@@ -612,6 +618,9 @@ impl StyleArgs {
         }
         if let Some(effect) = self.effect {
             style = style.effect(effect);
+        }
+        for &texture in &self.textures {
+            style = style.texture(texture);
         }
         if let Some(seed) = self.seed {
             style = style.seed(seed);

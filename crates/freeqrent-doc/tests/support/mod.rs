@@ -168,6 +168,15 @@ pub fn inputs() -> Vec<String> {
             "sketch with leaf finders",
             r##"{"modules":{"kind":"rounded","radius":0.3},"finders":{"ring":"leaf"},"effect":{"kind":"sketch","roughness":0.12},"seed":11}"##,
         ),
+        render(
+            "newsprint textures",
+            r##"{"modules":{"kind":"dots","size":0.8},"palette":{"bg":"#f9f9f7","fg":"#111111"},"textures":[{"kind":"ink","fade":0.2},"grain"],"seed":2}"##,
+        ),
+        render(
+            "terminal scanlines",
+            r#"{"preset":"terminal","textures":[{"kind":"scanlines","opacity":0.25}],"intro":"raster"}"#,
+        ),
+        case("plan textures", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"textures":["ink","grain","scanlines"],"intro":"settle"}}"#)),
         case("plan glow", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"effect":"glow","intro":"ripple"}}"#)),
         render(
             "round border settling",

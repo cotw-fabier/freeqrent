@@ -263,6 +263,12 @@ pub enum LayerRole {
     /// takes that layer's motion as well as its own, and the window moves
     /// with the plate, not with the content.
     LogoArt,
+    /// Paper grain over the background ([`Texture::Grain`](crate::Texture::Grain)):
+    /// its path is the card, filtered into seeded speckles.
+    Grain,
+    /// Scanlines over the whole card ([`Texture::Scanlines`](crate::Texture::Scanlines)),
+    /// painted last: its path is the card, filled with lines in `bg`.
+    Scanlines,
     /// A frame's hard shadow ([`Style::shadow`](crate::Style::shadow)),
     /// painted first.
     Shadow,
@@ -272,13 +278,18 @@ pub enum LayerRole {
 }
 
 impl LayerRole {
-    /// The frame's own layers (shadow, background, border), which hold
-    /// still while the code animates.
+    /// The frame's own layers (shadow, background, grain, border, and the
+    /// scanlines over everything), which hold still while the code
+    /// animates.
     #[cfg_attr(not(feature = "animate"), allow(dead_code))]
     pub(crate) fn is_chrome(self) -> bool {
         matches!(
             self,
-            LayerRole::Shadow | LayerRole::Background | LayerRole::Border
+            LayerRole::Shadow
+                | LayerRole::Background
+                | LayerRole::Grain
+                | LayerRole::Border
+                | LayerRole::Scanlines
         )
     }
 
@@ -333,6 +344,9 @@ impl Part {
 pub(crate) struct Layer {
     pub(crate) token: Token,
     pub(crate) part: Part,
+    /// The share of its paint the layer keeps, 0–1: below 1 for uneven
+    /// ink (`Texture::Ink`), as `fill-opacity`.
+    pub(crate) fade: f32,
 }
 
 impl Layer {
@@ -516,6 +530,34 @@ fn spread(style: &Style, qr: &QrMatrix, data: Grid) -> Vec<(Token, Grid)> {
         .collect()
 }
 
+/// Uneven ink (`Texture::Ink`): a color's modules (or touching regions,
+/// spread by region) split across three seeded levels, keeping all of
+/// their paint, `fade / 2` less, or `fade` less. Without it, the grid as
+/// it is.
+fn ink(style: &Style, rng: &mut SplitMix64, size: usize, grid: Grid) -> Vec<(f32, Grid)> {
+    let Some(fade) = style.ink_fade() else {
+        return alloc::vec![(1.0, grid)];
+    };
+    let levels = [1.0, 1.0 - fade / 2.0, 1.0 - fade];
+    let mut grids: Vec<Grid> = levels.iter().map(|_| Grid::new(size)).collect();
+    // Like the colors, by touching region when the spread is.
+    let connected = style.spread == ColorSpread::Regions && touches(&style.modules);
+    for region in regions(&grid, size, connected) {
+        let pick = (rng.next_f64() * levels.len() as f64) as usize;
+        for (x, y) in region {
+            grids[pick.min(levels.len() - 1)].set(x as usize, y as usize);
+        }
+    }
+    levels
+        .into_iter()
+        .zip(grids)
+        .filter(|(_, g)| !g.is_empty())
+        .collect()
+}
+
+/// Keeps the ink's picks apart from the others.
+const INK_SALT: u64 = 0x0000_1a4c_f00d;
+
 /// Keeps the data-color picks apart from the filler's.
 const SPREAD_SALT: u64 = 0x005e_ed0f_c010;
 
@@ -527,6 +569,7 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
     let mut layers = Vec::new();
     if canvas.round.as_ref().is_some_and(|r| r.ring.is_some()) {
         layers.push(Layer {
+            fade: 1.0,
             token: Token::Frame,
             part: Part::Ring,
         });
@@ -534,6 +577,7 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
     let filler = filler(style, qr, &canvas);
     if !filler.is_empty() {
         layers.push(Layer {
+            fade: 1.0,
             token: Token::Filler,
             part: Part::Filler(filler),
         });
@@ -545,6 +589,7 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
     let pictured = false;
     if pictured {
         layers.push(Layer {
+            fade: 1.0,
             token: Token::Fg,
             part: Part::Halftone,
         });
@@ -565,14 +610,19 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
         }
     }
 
+    let mut rng = SplitMix64::new(seed(style, qr) ^ INK_SALT);
     for (token, grid) in spread(style, qr, data) {
-        layers.push(Layer {
-            token,
-            part: Part::Modules(grid),
-        });
+        for (fade, grid) in ink(style, &mut rng, qr.size() as usize, grid) {
+            layers.push(Layer {
+                fade,
+                token,
+                part: Part::Modules(grid),
+            });
+        }
     }
     if !timing.is_empty() {
         layers.push(Layer {
+            fade: 1.0,
             token: Token::Timing,
             part: match style.timing {
                 TimingStyle::Plain => Part::Modules(timing),
@@ -583,6 +633,7 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
     let centers = alignment_centers_drawn(style, qr);
     if !centers.is_empty() {
         layers.push(Layer {
+            fade: 1.0,
             token: match style.alignment.emphasis {
                 Emphasis::None => Token::Fg,
                 Emphasis::Accent | Emphasis::Outline => Token::Alignment,
@@ -608,12 +659,14 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
         {
             for c in CORNERS {
                 layers.push(Layer {
+                    fade: 1.0,
                     token: per_corner(c),
                     part: part(alloc::vec![c]),
                 });
             }
         } else {
             layers.push(Layer {
+                fade: 1.0,
                 token: shared,
                 part: part(CORNERS.to_vec()),
             });
@@ -709,6 +762,40 @@ mod tests {
                 assert_eq!(before.get(x, y), after.get(x, y));
             }
         }
+    }
+
+    #[test]
+    fn ink_fades_every_data_module_once() {
+        let qr = QrCode::encode("https://example.com/menu", Ecc::M).unwrap();
+        let style = Style::new().texture(crate::Texture::Ink { fade: 0.2 });
+        let data: Vec<Layer> = layers(&style, &qr)
+            .into_iter()
+            .filter(|l| l.role() == LayerRole::Data)
+            .collect();
+        let fades: Vec<f32> = data.iter().map(|l| l.fade).collect();
+        assert_eq!(fades, [1.0, 0.9, 0.8]);
+        let plain = layers(&Style::new(), &qr);
+        let Part::Modules(all) = &plain
+            .iter()
+            .find(|l| l.role() == LayerRole::Data)
+            .unwrap()
+            .part
+        else {
+            unreachable!()
+        };
+        let n = qr.size() as i64;
+        for y in 0..n {
+            for x in 0..n {
+                let count = data
+                    .iter()
+                    .filter(|l| matches!(&l.part, Part::Modules(g) if g.get(x, y)))
+                    .count();
+                assert_eq!(count, usize::from(all.get(x, y)));
+            }
+        }
+        // One texture of each kind: the second replaces the first.
+        let twice = style.texture(crate::Texture::Ink { fade: 0.1 });
+        assert_eq!(twice.textures(), [crate::Texture::Ink { fade: 0.1 }]);
     }
 
     #[test]

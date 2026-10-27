@@ -6,8 +6,8 @@ mod common;
 
 use common::{assert_scans, assert_scans_at};
 use freeqrent::{
-    Axis, ColorSpread, Ecc, Effect, Frame, FrameRing, ModuleShape, Palette, QrCode, Style, Token,
-    Warning,
+    Axis, ColorSpread, Ecc, Effect, Frame, FrameRing, ModuleShape, Palette, QrCode, Style, Texture,
+    Token, Warning,
 };
 use freeqrent_verify::rasterize;
 
@@ -235,5 +235,25 @@ fn effects_scan_at_their_limits() {
             let label = format!("{effect:?} {shape:?} dark");
             assert_scans_at(&dark, &label, payloads, Ecc::M);
         }
+    }
+}
+
+#[test]
+fn textures_scan_at_their_limits() {
+    // Measured (W20261026221457, every module shape, seven payloads
+    // v1-v25): grain passes to 0.1 (0.15 lost codes to rqrr at 4 px a
+    // module), scanlines and ink to 0.3 each, and together to 0.4 (0.3
+    // and 0.3 lost codes to ZXing). All three at once here, light and
+    // inverted.
+    let neon = Palette::from_tokens([("bg", "#0a0a0f"), ("fg", "#7dffb0")]).unwrap();
+    for shape in [ModuleShape::SQUARE, ModuleShape::Dots { size: 0.85 }] {
+        let style = Style::new()
+            .modules(shape)
+            .texture(Texture::Grain { amount: 0.1 })
+            .texture(Texture::Scanlines { opacity: 0.25 })
+            .texture(Texture::Ink { fade: 0.15 });
+        assert_scans(&style, &format!("textures {shape:?}"));
+        let dark = style.palette(neon.clone()).allow_inverted(true);
+        assert_scans(&dark, &format!("textures {shape:?} dark"));
     }
 }

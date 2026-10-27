@@ -6,7 +6,7 @@ use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc,
     EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink,
     Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette,
-    Preset, QrCode, Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, TimingStyle,
+    Preset, QrCode, Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle,
     TrackingGrid, Trigger, Version,
 };
 use freeqrent_doc::{Payload, parse};
@@ -240,6 +240,15 @@ fn colors_frames_and_text() {
     assert_eq!(
         style(r#"{"effect":"sketch"}"#).effect_style(),
         Some(Effect::Sketch { roughness: 0.08 })
+    );
+    assert_eq!(
+        style(
+            r#"{"textures":["grain",{"kind":"ink","fade":0.1},{"kind":"scanlines","opacity":0.2}]}"#
+        ),
+        Style::new()
+            .texture(Texture::Grain { amount: 0.08 })
+            .texture(Texture::Ink { fade: 0.1 })
+            .texture(Texture::Scanlines { opacity: 0.2 })
     );
     assert_eq!(
         style(r##"{"palette":{"fg.2":"#7a0000"},"color_spread":"regions"}"##),

@@ -478,6 +478,75 @@
       }
     },
     {
+      "name": "newsprint textures",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "modules": {
+          "kind": "dots",
+          "size": 0.8
+        },
+        "palette": {
+          "bg": "#f9f9f7",
+          "fg": "#111111"
+        },
+        "textures": [
+          {
+            "kind": "ink",
+            "fade": 0.2
+          },
+          "grain"
+        ],
+        "seed": 2
+      },
+      "expect": {
+        "sha256": "464d45b05298f5eb71f1a84387c95ab7eb396af716fdad684b867912a8555c14",
+        "length": 8744
+      }
+    },
+    {
+      "name": "terminal scanlines",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "preset": "terminal",
+        "textures": [
+          {
+            "kind": "scanlines",
+            "opacity": 0.25
+          }
+        ],
+        "intro": "raster"
+      },
+      "expect": {
+        "sha256": "4d4fb54359a24cfbe41625fa140859921c6663c67623faf5adadf79bfe00b5e9",
+        "length": 7702
+      }
+    },
+    {
+      "name": "plan textures",
+      "fn": "plan",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "textures": [
+          "ink",
+          "grain",
+          "scanlines"
+        ],
+        "intro": "settle"
+      },
+      "expect": {
+        "sha256": "1957c2ec1e3adc02b383cb591c72e91f5244f0c96a06103a90622ea6368ad59f",
+        "length": 18044
+      }
+    },
+    {
       "name": "plan glow",
       "fn": "plan",
       "payload": {

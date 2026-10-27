@@ -229,7 +229,7 @@ pub use scanbox::{
 pub use scene::LayerRole;
 pub use segment::{ECI_UTF8, EciPolicy, Mode, Segment};
 pub use style::{
-    Axis, Border, ColorSpread, Effect, Frame, FrameRing, ModuleShape, Style, TargetSize,
+    Axis, Border, ColorSpread, Effect, Frame, FrameRing, ModuleShape, Style, TargetSize, Texture,
 };
 pub use version::{Ecc, TrackingGrid, Version};
 

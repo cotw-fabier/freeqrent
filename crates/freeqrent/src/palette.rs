@@ -804,6 +804,15 @@ impl Palette {
         }
     }
 
+    /// [`contrast`](Palette::contrast) of `token` keeping only `share` of
+    /// its paint (uneven ink, SPEC §7.5).
+    pub(crate) fn contrast_faded(&self, token: Token, share: f32) -> Contrast {
+        let mut faded = self.clone();
+        let paint = self.resolve(token).map_alpha(share);
+        faded.paints[token.index()] = Some(paint);
+        faded.contrast(token)
+    }
+
     /// Contrast of `token`'s resolved paint against the background. A
     /// translucent background is judged over white; against a gradient,
     /// every point of the paint is judged against every point of the

@@ -78,6 +78,12 @@
         "effect": {
           "$ref": "#/$defs/Effect"
         },
+        "textures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Texture"
+          }
+        },
         "seed": {
           "type": "integer",
           "minimum": 0,
@@ -654,6 +660,63 @@
               "const": "sketch"
             },
             "roughness": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Texture": {
+      "description": "A surface texture: paper grain (amount 0.02–0.1, default 0.08), scanlines (opacity 0.05–0.3, 0.15) or uneven ink (fade 0.05–0.3, 0.2). One of each kind.",
+      "oneOf": [
+        {
+          "enum": [
+            "grain",
+            "scanlines",
+            "ink"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "grain"
+            },
+            "amount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "scanlines"
+            },
+            "opacity": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "ink"
+            },
+            "fade": {
               "type": "number"
             }
           },

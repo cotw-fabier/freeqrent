@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026221457 · M7.5 · Textures: grain, scanlines, ink
+
+- Landed: `Style::texture(Texture::Grain | Scanlines | Ink)`, one of each kind. Grain is seeded speckles in the ink's lightness over the background; scanlines are lines in `bg` over the whole card, painted last; ink is the spec's planned opacity jitter, with data modules (or regions) at three seeded `fill-opacity` levels, contrast-checked at the faintest. Grain and scanlines are chrome (still while the code animates, outside the reveal mask). Plans list the textures and each layer's `fillOpacity`. Style document `textures`, schema, CLI `--texture` (repeatable).
+- Decision: ink as `fill-opacity`, not a fixed color, so gradients, re-theming and intros keep working; hue drift is left to the data colors.
+- Measured on pinned codes (every module shape, light and inverted, seven payloads v1–v25): grain passed to 0.1 and lost 10 of 70 to rqrr from 0.15 (a first pass, whose filter doubled the speckles' alpha, lost 20 of 70 at a nominal 0.1); scanlines and ink passed at 0.3 each, but 0.3 + 0.3 together lost 10 of 70 to ZXing, so the two sum to at most 0.4 (every split of 0.4 passed, with grain at 0.1).
+- Checks: all clean; new snapshot `textures`; three new conformance cases, no existing hash changed.
+
 ## 20261026220634 · M7.5 · Hand-drawn sketch
 
 - Landed: `Effect::Sketch { roughness }`, seeded fractal noise displacing the code so every edge wobbles like a marker drawing (0.02–0.15 modules); it works with every module shape, finder, frame and intro. Style document `effect: "sketch"`, CLI `--effect sketch:R`, plan `effect`.

@@ -33,16 +33,16 @@ fn build_paths(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
         }
         let evenodd = layer.part.evenodd();
         let i = match paths.iter().position(|e| {
-            e.token == layer.token && e.evenodd == evenodd && e.role != LayerRole::Halftone
+            e.token == layer.token
+                && e.evenodd == evenodd
+                && e.fade == layer.fade
+                && e.role != LayerRole::Halftone
         }) {
             Some(i) => i,
             None => {
-                paths.push(Element::new(
-                    layer.role(),
-                    layer.token,
-                    evenodd,
-                    Path::new(),
-                ));
+                let mut e = Element::new(layer.role(), layer.token, evenodd, Path::new());
+                e.fade = layer.fade;
+                paths.push(e);
                 paths.len() - 1
             }
         };
@@ -242,6 +242,8 @@ pub(crate) struct Element {
     /// inside its animated group rather than in a group of their own.
     #[cfg_attr(not(feature = "animate"), allow(dead_code))]
     pub(crate) joins: bool,
+    /// The share of its paint it keeps (`Texture::Ink`), 1 for all.
+    pub(crate) fade: f32,
 }
 
 impl Element {
@@ -260,6 +262,7 @@ impl Element {
             stroke: None,
             outline: None,
             joins: false,
+            fade: 1.0,
         }
     }
 }
@@ -346,6 +349,11 @@ pub(crate) fn chrome_elements(style: &Style, canvas: &Canvas) -> Vec<Element> {
             background_path(style, canvas),
         ));
     }
+    if style.grain().is_some() {
+        let mut path = Path::new();
+        card_outline(&mut path, style, canvas, 0.0, 0.0);
+        elements.push(Element::new(LayerRole::Grain, Token::Fg, false, path));
+    }
     if let Some(border) = style.border.filter(|_| canvas.border > 0.0) {
         let b = canvas.border;
         let edges: &[f64] = match border {
@@ -388,6 +396,19 @@ fn logo_window(p: &logo::Placement, origin: f64) -> (Path, f64) {
     (path, radius)
 }
 
+/// Scanlines over the whole card, if the style has them: painted last.
+pub(crate) fn scanline_elements(style: &Style, canvas: &Canvas) -> Vec<Element> {
+    if style.scanlines().is_none() {
+        return Vec::new();
+    }
+    let mut path = Path::new();
+    card_outline(&mut path, style, canvas, 0.0, 0.0);
+    let mut e = Element::new(LayerRole::Scanlines, Token::Bg, false, path);
+    let mid = canvas.card as f64 / 2.0;
+    e.origin = (mid, mid);
+    alloc::vec![e]
+}
+
 /// The elements of a code that doesn't animate: one path per (token,
 /// fill rule), between the background and the logo.
 pub(crate) fn static_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
@@ -399,6 +420,7 @@ pub(crate) fn static_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> 
     }
     elements.extend(code);
     elements.extend(logo_elements(style, qr, canvas));
+    elements.extend(scanline_elements(style, canvas));
     elements
 }
 
@@ -700,6 +722,28 @@ pub(crate) fn write<W: Write + ?Sized>(
                 write_pose(out.w, e)?;
                 write!(out.w, " d=\"{}\"/></g>", e.path.data())?;
             }
+            LayerRole::Grain => {
+                write_grain(out.w, style, &prefix, n, scene::seed(style, qr))?;
+                write!(
+                    out.w,
+                    "<path filter=\"url(#{prefix}-grain)\" d=\"{}\"/>",
+                    e.path.data()
+                )?;
+            }
+            LayerRole::Scanlines => {
+                let opacity = style.scanlines().unwrap_or(0.0);
+                write!(
+                    out.w,
+                    "<pattern id=\"{prefix}-scan\" patternUnits=\"userSpaceOnUse\" width=\"1\" height=\".333\"><rect width=\"1\" height=\".167\" fill=\""
+                )?;
+                write_hex(out.w, palette.background())?;
+                write!(
+                    out.w,
+                    "\"/></pattern><path fill=\"url(#{prefix}-scan)\" opacity=\""
+                )?;
+                write_scaled(out.w, math::round(opacity as f64 * 1000.0) as i64, 3)?;
+                write!(out.w, "\" d=\"{}\"/>", e.path.data())?;
+            }
             LayerRole::Shimmer => {
                 write!(
                     out.w,
@@ -888,9 +932,9 @@ fn write_element_paint<W: Write + ?Sized>(
         w.write_str(" fill=\"")?;
         write_hex(w, color)?;
         w.write_char('"')?;
-        return write_opacity(w, "fill-opacity", color);
+        return write_opacity(w, "fill-opacity", color.with_alpha(color.alpha() * e.fade));
     }
-    write_paint(w, palette, e.token, prefix, e.anim)
+    write_paint(w, palette, e.token, prefix, e.anim, e.fade)
 }
 
 /// A frame's opacity and transform, when they aren't the natural state.
@@ -1181,6 +1225,7 @@ fn write_paint<W: Write + ?Sized>(
     token: Token,
     prefix: &str,
     anim: Option<usize>,
+    fade: f32,
 ) -> fmt::Result {
     match palette.resolve(token) {
         Paint::Solid(color) => {
@@ -1192,7 +1237,7 @@ fn write_paint<W: Write + ?Sized>(
             w.write_str("\" fill=\"")?;
             write_hex(w, color)?;
             w.write_char('"')?;
-            write_opacity(w, "fill-opacity", color)
+            write_opacity(w, "fill-opacity", color.with_alpha(color.alpha() * fade))
         }
         Paint::Gradient(_) => {
             if let Some(n) = anim {
@@ -1200,7 +1245,8 @@ fn write_paint<W: Write + ?Sized>(
             }
             write!(w, " fill=\"url(#{prefix}-")?;
             write_dashed(w, paint_source(palette, token).name())?;
-            w.write_str(")\"")
+            w.write_str(")\"")?;
+            write_opacity(w, "fill-opacity", Color::TRANSPARENT.with_alpha(fade))
         }
     }
 }
@@ -1471,6 +1517,35 @@ fn write_effects<W: Write + ?Sized>(
         w.write_str("\" xChannelSelector=\"R\" yChannelSelector=\"G\"/>")?;
     }
     w.write_str("</filter>")
+}
+
+/// Paper grain (SPEC §7.5): seeded fine noise turned into speckles of
+/// the ink's lightness (black on a light code, white on an inverted one),
+/// at most `amount` opaque, clipped to the element's shape.
+fn write_grain<W: Write + ?Sized>(
+    w: &mut W,
+    style: &Style,
+    prefix: &str,
+    side: i64,
+    seed: u64,
+) -> fmt::Result {
+    let amount = style.grain().unwrap_or(0.0) as f64;
+    let ink = if style.palette.contrast(Token::Fg).inverted {
+        "1"
+    } else {
+        "0"
+    };
+    let num = |w: &mut W, v: f64| write_scaled(w, math::round(v * 1000.0) as i64, 3);
+    write!(
+        w,
+        "<filter id=\"{prefix}-grain\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"{side}\" height=\"{side}\" color-interpolation-filters=\"sRGB\"><feTurbulence type=\"fractalNoise\" baseFrequency=\"3\" numOctaves=\"2\" seed=\"{}\"/><feColorMatrix values=\"0 0 0 0 {ink} 0 0 0 0 {ink} 0 0 0 0 {ink} ",
+        (seed / 1000) % 1000
+    )?;
+    // Speckles where the noise rises past its middle, `amount` at most.
+    num(w, 2.0 * amount)?;
+    w.write_str(" 0 0 0 ")?;
+    num(w, -amount)?;
+    w.write_str("\"/><feComposite in2=\"SourceGraphic\" operator=\"in\"/></filter>")
 }
 
 /// XML-escapes text for element content and double-quoted attributes.

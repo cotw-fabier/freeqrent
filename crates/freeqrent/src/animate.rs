@@ -789,6 +789,9 @@ pub struct PlanLayer {
     pub opacity: f32,
     /// Whether the path uses the even-odd fill rule.
     pub evenodd: bool,
+    /// The share of its paint the layer keeps, as `fill-opacity` (uneven
+    /// ink, SPEC §7.5); 1 for all of it.
+    pub fill_opacity: f32,
     /// The stagger group, for split layers.
     pub group: Option<u8>,
     /// The finder corner, for a finder layer.
@@ -834,10 +837,13 @@ pub struct AnimationPlan {
     pub trigger: Trigger,
     /// What to show with motion off.
     pub reduced_motion: Fallback,
-    /// The effect on the code's layers (SPEC §7.5): every layer but the
-    /// frame's (`shadow`, `background`, `border`), the logo's, the shimmer
-    /// and a picture's.
+    /// The effect on the code's layers, as one group (SPEC §7.5): every
+    /// layer but the frame's chrome, the logo's and the shimmer.
     pub effect: Option<crate::Effect>,
+    /// The textures (SPEC §7.5). Ink shows as layers'
+    /// [`fill_opacity`](PlanLayer::fill_opacity); grain and scanlines are
+    /// `grain` and `scanlines` layers whose path is the card.
+    pub textures: Vec<crate::Texture>,
 }
 
 /// The animation part of a document: its tracks, by element index.
@@ -1141,6 +1147,7 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
                 continue;
             }
             let mut e = Element::new(layer.role(), layer.token, layer.part.evenodd(), path);
+            e.fade = layer.fade;
             e.group = Some(group);
             e.corner = corner;
             e.origin = ((b.0 + b.2) / 2.0, (b.1 + b.3) / 2.0);
@@ -1148,6 +1155,7 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
         }
     }
     elements.extend(svg::logo_elements(style, qr, canvas));
+    elements.extend(svg::scanline_elements(style, canvas));
     elements
 }
 
@@ -1473,7 +1481,7 @@ fn reveal(style: &Style, intro: &Intro, canvas: &Canvas, elements: &[Element]) -
         (intro.logo != LogoIntro::None || intro.frame_intro().is_some()) && style.logo.is_some();
     let last = elements
         .iter()
-        .rposition(|e| !(e.role.is_logo() && logo_apart))?;
+        .rposition(|e| e.role != LayerRole::Scanlines && !(e.role.is_logo() && logo_apart))?;
     if last < first {
         return None;
     }
@@ -2749,6 +2757,7 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
             }),
             opacity: rest(e.role).opacity as f32,
             evenodd: e.evenodd,
+            fill_opacity: e.fade,
             group: e.group,
             corner: e.corner,
             origin: (e.origin.0 as f32, e.origin.1 as f32),
@@ -2768,6 +2777,7 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
         trigger,
         reduced_motion: Fallback::FinalState,
         effect: style.effect,
+        textures: style.textures.clone(),
     }
 }
 
@@ -2799,6 +2809,8 @@ fn role_name(role: LayerRole) -> &'static str {
     match role {
         LayerRole::Background => "background",
         LayerRole::Shadow => "shadow",
+        LayerRole::Grain => "grain",
+        LayerRole::Scanlines => "scanlines",
         LayerRole::Border => "border",
         LayerRole::Ring => "ring",
         LayerRole::Filler => "filler",
@@ -2899,6 +2911,10 @@ impl AnimationPlan {
             }
             if l.evenodd {
                 w.write_str(",\"evenodd\":true")?;
+            }
+            if l.fill_opacity != 1.0 {
+                w.write_str(",\"fillOpacity\":")?;
+                json_num(w, l.fill_opacity)?;
             }
             if let Some(g) = l.group {
                 write!(w, ",\"group\":{g}")?;
@@ -3025,6 +3041,23 @@ impl AnimationPlan {
                 w.write_char('}')?;
             }
             _ => {}
+        }
+        if !self.textures.is_empty() {
+            w.write_str(",\"textures\":[")?;
+            for (i, t) in self.textures.iter().enumerate() {
+                if i > 0 {
+                    w.write_char(',')?;
+                }
+                let (kind, key, v) = match *t {
+                    crate::Texture::Grain { amount } => ("grain", "amount", amount),
+                    crate::Texture::Scanlines { opacity } => ("scanlines", "opacity", opacity),
+                    crate::Texture::Ink { fade } => ("ink", "fade", fade),
+                };
+                write!(w, "{{\"kind\":\"{kind}\",\"{key}\":")?;
+                json_num(w, v)?;
+                w.write_char('}')?;
+            }
+            w.write_char(']')?;
         }
         w.write_char('}')
     }
