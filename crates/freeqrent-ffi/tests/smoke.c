@@ -1,6 +1,6 @@
-/* A C host calling the library: render, a refused style, a report, the
- * presets and the version. Built with -Wall -Wextra -Werror -pedantic by
- * scripts/ffi-smoke.sh, so the header stays valid C99. */
+/* A C host calling the library: render, a refused style, a still frame,
+ * a report, the presets and the version. Built with -Wall -Wextra -Werror
+ * -pedantic by scripts/ffi-smoke.sh, so the header stays valid C99. */
 #include <stdio.h>
 #include <string.h>
 
@@ -30,6 +30,10 @@ int main(void) {
     code = freeqrent_render((const uint8_t *)text, strlen(text), FREEQRENT_TEXT, "{\"palette\":{\"fg\":\"#ddd\"}}", &out, NULL);
     expect(code == FREEQRENT_ERROR, "a pale fg is refused");
     expect(out != NULL && strstr(out, "\"code\":\"contrast_too_low\"") != NULL, "the error says why");
+    freeqrent_free(out);
+
+    code = freeqrent_render_frame((const uint8_t *)text, strlen(text), FREEQRENT_TEXT, style, 300, &out, &len);
+    expect(code == FREEQRENT_OK && strstr(out, "@keyframes") == NULL, "a frame is still");
     freeqrent_free(out);
 
     code = freeqrent_check((const uint8_t *)text, strlen(text), FREEQRENT_TEXT, NULL, &out, &len);

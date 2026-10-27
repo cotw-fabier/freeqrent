@@ -101,6 +101,29 @@ fn run(case: &Value) -> (i32, String) {
             };
             call_payload(function, &data, kind, Some(&compact(field(case, "style"))))
         }
+        "render_frame" => {
+            let Value::Object(p) = field(case, "payload") else {
+                panic!()
+            };
+            let Value::String(t) = &p[0].1 else { panic!() };
+            let Value::Number(t_ms) = field(case, "t_ms") else {
+                panic!()
+            };
+            let style = CString::new(compact(field(case, "style"))).unwrap();
+            // SAFETY: valid pointers for the call.
+            let code = unsafe {
+                freeqrent_render_frame(
+                    t.as_ptr(),
+                    t.len(),
+                    FREEQRENT_TEXT,
+                    style.as_ptr(),
+                    t_ms.parse().unwrap(),
+                    &mut out,
+                    &mut len,
+                )
+            };
+            (code, take(out, len))
+        }
         "palette_from_css" | "palette_from_html" => {
             let text = CString::new(string(field(case, "text"))).unwrap();
             let f = if string(field(case, "fn")) == "palette_from_css" {
@@ -266,6 +289,16 @@ fn edge_cases() {
     };
     assert_eq!(code, FREEQRENT_ERROR);
     assert!(take(out, len).contains("the style isn't UTF-8"));
+
+    // Memory for hosts that can't allocate here themselves.
+    assert!(freeqrent_alloc(0).is_null());
+    let p = freeqrent_alloc(5);
+    // SAFETY: five fresh bytes, zeroed, freed once with their length.
+    unsafe {
+        assert_eq!(std::slice::from_raw_parts(p, 5), &[0; 5]);
+        freeqrent_dealloc(p, 5);
+        freeqrent_dealloc(null_mut(), 0);
+    }
 
     // SAFETY: a static NUL-terminated string.
     let version = unsafe { CStr::from_ptr(freeqrent_version()) };

@@ -186,6 +186,9 @@ pub fn inputs() -> Vec<String> {
             r#"{"frame":{"kind":"circle","ring":"solid"},"caption":{"text":"menu & more","font":"serif","bold":false,"tracking":10,"size":1.5}}"#,
         ),
         case("plan caption", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"caption":{{"text":"$ scan","font":"mono"}},"intro":"sweep"}}"#)),
+        case("frame mid ripple", "render_frame", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"preset":"candy","intro":"ripple"}},"t_ms":400"#)),
+        case("frame after the intro", "render_frame", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"intro":{{"preset":"sweep","duration_ms":800}},"effect":"glow"}},"t_ms":5000"#)),
+        case("frame without an intro", "render_frame", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"preset":"ink"}},"t_ms":0"#)),
         case("plan glow", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"effect":"glow","intro":"ripple"}}"#)),
         render(
             "round border settling",
@@ -297,7 +300,7 @@ pub fn run(case: &Value) -> Result<String, DocError> {
     };
     let function = text(get("fn"));
     match function.as_str() {
-        "render" | "check" | "plan" => {
+        "render" | "render_frame" | "check" | "plan" => {
             let style = compact(get("style"));
             let Some(Value::Object(payload)) = get("payload") else {
                 panic!("payload")
@@ -313,6 +316,13 @@ pub fn run(case: &Value) -> Result<String, DocError> {
             };
             match function.as_str() {
                 "render" => freeqrent_doc::render(payload, &style),
+                "render_frame" => {
+                    let t_ms = match get("t_ms") {
+                        Some(Value::Number(n)) => n.parse().expect("t_ms"),
+                        other => panic!("t_ms {other:?}"),
+                    };
+                    freeqrent_doc::render_frame(payload, &style, t_ms)
+                }
                 "check" => freeqrent_doc::check(payload, &style),
                 _ => freeqrent_doc::plan(payload, &style),
             }

@@ -8,6 +8,13 @@ One short entry per W wave, newest first. The protocol is in `README.md`.
 - Decisions: Maximalism uses `--groups 10` (the default 12 animated 65 elements over three data colors, one past the smooth-animation warning) and drops its idle loop; Neo-brutalism gets a diagonal assemble intro (its card has none).
 - Checks: each verified with `--verify` before writing: Maximalism decodes with ZXing (read inverted; rounded rings keep rqrr out), Neo-brutalism and Terminal with ZXing and rqrr. No library output changed.
 
+## 20261026231417 · M8 · The CLI's surface, and groundwork for the bindings
+
+- Landed: `bindings/SURFACE.md`, every CLI flag and what it is in the Style document or which boundary function. `crates/freeqrent-cli/tests/surface.rs` checks every flag in `--help` is on it and renders each of its 69 equivalence lines through the CLI binary and through `freeqrent-doc`: all the same bytes. `--palette-from-*` is checked as two calls.
+- Gap closed: `--frame-at` had no boundary function. `render_frame(payload, style, t_ms)` in `freeqrent-doc` and `freeqrent_render_frame` in the C ABI, with three conformance cases (77; no hash changed). `freeqrent_alloc`/`freeqrent_dealloc` for WebAssembly hosts (Go's `wazero` build).
+- Decision: binding crates live under `bindings/<lang>/` with their own `[workspace]`, so the root's checks and dependency tree stay as they are. Only `--verify`, the gallery, the scan sheet and `-o`/`--help` stay CLI-only.
+- Checks: all clean (355 tests); C smoke test passes. Found, not fixed: `cargo publish --dry-run --workspace` fails verifying `freeqrent-cli` against M7.5's new types while the workspace is still 1.0.0 (from M7.5; a 1.1.0 bump should fix it).
+
 ## 20261026230624 · M7.5 · The gallery in the repository
 
 - Landed: `gallery.html` is tracked (no longer in `.gitignore`), regenerated at M7.5 for `https://example.com/menu` (113 cards, all 226 codes decode), and the README links it, with a rendered view through raw.githack.com since GitHub shows HTML as source.

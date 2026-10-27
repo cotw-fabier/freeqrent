@@ -13,7 +13,7 @@ A zero-dependency Rust library for styled and animated SVG QR codes. `SPEC.md` i
 ## Rules
 
 - **Phase 1 is the Rust core only.** Don't build language bindings until Phase 2 (SPEC §2, §12). Do keep the core binding-friendly: options are plain data, there are no callbacks on hot paths, and errors are structured.
-- **Bindings go through `freeqrent-doc`** (SPEC §10.1). The JSON schema and the conformance suite are generated: `cargo run -p freeqrent-doc --example generate`. A changed conformance hash is an output change. Only `freeqrent-ffi` may use `unsafe`.
+- **Bindings go through `freeqrent-doc`** (SPEC §10.1). The JSON schema and the conformance suite are generated: `cargo run -p freeqrent-doc --example generate`. A changed conformance hash is an output change. Only `freeqrent-ffi` may use `unsafe`. A new CLI flag goes on `bindings/SURFACE.md` with an equivalence line, or it has no way into the bindings.
 - **The core crate has zero dependencies** and is `no_std` + `alloc`, with `#![forbid(unsafe_code)]`. Dev-dependencies (`rqrr`, `insta`, `resvg`) are fine. Anything else needs a spec change first.
 - **Output is deterministic.** The same input produces byte-identical SVG. All randomness comes from the seeded PRNG.
 - **Scannability is a hard constraint.** A style that can't be verified to scan doesn't ship. Round-trip decode tests cover every new style option: render it, then `freeqrent_verify::verify_style` (resvg + ZXing + rqrr, held to the bar the style's own `ScanReport` implies). Limits and warnings come from measurements, recorded in the spec and the wave log.

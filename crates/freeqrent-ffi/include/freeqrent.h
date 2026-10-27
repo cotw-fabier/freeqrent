@@ -35,6 +35,12 @@ extern "C" {
 int32_t freeqrent_render(const uint8_t *data, size_t len, int32_t kind,
                          const char *style_json, char **out, size_t *out_len);
 
+/* The intro stopped at t_ms, as a still SVG with no animation (the
+ * finished code for a style without an intro). */
+int32_t freeqrent_render_frame(const uint8_t *data, size_t len, int32_t kind,
+                               const char *style_json, uint32_t t_ms,
+                               char **out, size_t *out_len);
+
 /* The scan report as JSON. A style freeqrent_render would refuse still gets
  * a report, with "ok" false. */
 int32_t freeqrent_check(const uint8_t *data, size_t len, int32_t kind,
@@ -63,6 +69,12 @@ int32_t freeqrent_presets(char **out, size_t *out_len);
 
 /* The library version, e.g. "1.0.0". Static; don't free it. */
 const char *freeqrent_version(void);
+
+/* len bytes of zeroed memory, for a host that can't allocate in this
+ * library's memory itself (a WebAssembly host passing a payload in); NULL
+ * when len is 0. Free it with freeqrent_dealloc(ptr, len). */
+uint8_t *freeqrent_alloc(size_t len);
+void freeqrent_dealloc(uint8_t *ptr, size_t len);
 
 /* Frees a string this library returned. NULL is ignored. */
 void freeqrent_free(char *s);

@@ -767,3 +767,26 @@ fn documents_render_codes_that_scan() {
             .unwrap_or_else(|e| panic!("{doc}: {e:?}"));
     }
 }
+
+/// `render_frame` is the core's still frame, and the frame after the
+/// intro scans, held to the style's own bar.
+#[test]
+fn frames_are_the_cores_still_frames() {
+    let text = "https://example.com/frame";
+    let doc = r#"{"preset":"candy","intro":{"preset":"ripple","duration_ms":900}}"#;
+    let (style, qr) = freeqrent_doc::prepare(Payload::Text(text), doc).unwrap();
+    for t in [0, 300, 900, 4000] {
+        assert_eq!(
+            freeqrent_doc::render_frame(Payload::Text(text), doc, t).unwrap(),
+            style.render_frame(&qr, t).unwrap()
+        );
+    }
+    let total = style.plan(&qr).unwrap().total_ms;
+    let after = freeqrent_doc::render_frame(Payload::Text(text), doc, total).unwrap();
+    assert!(!after.contains("@keyframes"));
+    let bar = freeqrent_verify::Bar::for_report(&style.check(&qr));
+    freeqrent_verify::verify_with(&after, text, bar).unwrap();
+    let e = freeqrent_doc::render_frame(Payload::Text(text), r##"{"palette":{"fg":"#ccc"}}"##, 0)
+        .unwrap_err();
+    assert_eq!(e.code, "contrast_too_low");
+}

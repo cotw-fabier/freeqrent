@@ -82,7 +82,9 @@ fn documents_and_results_fit_the_schema() {
         let name = field(&case, "name").clone();
         let result = support::run(&case);
         let problems = match field(&case, "fn") {
-            Value::String(f) if ["render", "check", "plan"].contains(&f.as_str()) => {
+            Value::String(f)
+                if ["render", "render_frame", "check", "plan"].contains(&f.as_str()) =>
+            {
                 let style = field(&case, "style");
                 let problems = validate(&schema, &schema, style, "style");
                 // A document the parser takes fits the schema, and one the

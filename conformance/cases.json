@@ -612,6 +612,56 @@
       }
     },
     {
+      "name": "frame mid ripple",
+      "fn": "render_frame",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "preset": "candy",
+        "intro": "ripple"
+      },
+      "t_ms": 400,
+      "expect": {
+        "sha256": "164204cfde0974eccde9d11b6a92a2b95c298820e4f3578a477d520cbf39583d",
+        "length": 12423
+      }
+    },
+    {
+      "name": "frame after the intro",
+      "fn": "render_frame",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "intro": {
+          "preset": "sweep",
+          "duration_ms": 800
+        },
+        "effect": "glow"
+      },
+      "t_ms": 5000,
+      "expect": {
+        "sha256": "96d96a1f940759d6d45acd9865802cb3ac1f7d2ef7ae8a5aa39dfc982951ba9d",
+        "length": 3767
+      }
+    },
+    {
+      "name": "frame without an intro",
+      "fn": "render_frame",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "preset": "ink"
+      },
+      "t_ms": 0,
+      "expect": {
+        "sha256": "296033b3dee891210ea5031e8607883121306816462edf050b66bdcfcc29e422",
+        "length": 8897
+      }
+    },
+    {
       "name": "plan glow",
       "fn": "plan",
       "payload": {

@@ -32,3 +32,5 @@ workspace = true
 
 [dev-dependencies]
 png = "0.18.1"
+# The surface test runs every CLI equivalence through the Style document too.
+freeqrent-doc = { path = "../freeqrent-doc" }

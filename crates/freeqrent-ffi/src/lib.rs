@@ -179,6 +179,33 @@ pub unsafe extern "C" fn freeqrent_render(
     }
 }
 
+/// The intro stopped at `t_ms`, as a still SVG with no animation (the
+/// finished code for a style without an intro).
+///
+/// # Safety
+/// As for [`freeqrent_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn freeqrent_render_frame(
+    data: *const u8,
+    len: usize,
+    kind: i32,
+    style_json: *const c_char,
+    t_ms: u32,
+    out: *mut *mut c_char,
+    out_len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's promises about every pointer pass through.
+    unsafe {
+        deliver(out, out_len, || {
+            freeqrent_doc::render_frame(
+                payload(data, len, kind)?,
+                text(style_json, "{}", "the style")?,
+                t_ms,
+            )
+        })
+    }
+}
+
 /// The scan report for `payload` and `style_json`, as JSON. A style
 /// [`freeqrent_render`] would refuse still gets a report, with `ok` false.
 ///
@@ -323,6 +350,31 @@ pub unsafe extern "C" fn freeqrent_presets(out: *mut *mut c_char, out_len: *mut 
 #[unsafe(no_mangle)]
 pub extern "C" fn freeqrent_version() -> *const c_char {
     concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr().cast()
+}
+
+/// `len` bytes of zeroed memory for a host that can't allocate in this
+/// library's memory itself (a WebAssembly host passing a payload in), or
+/// NULL when `len` is 0. Free it with [`freeqrent_dealloc`].
+#[unsafe(no_mangle)]
+pub extern "C" fn freeqrent_alloc(len: usize) -> *mut u8 {
+    if len == 0 {
+        return std::ptr::null_mut();
+    }
+    Box::into_raw(vec![0u8; len].into_boxed_slice()).cast()
+}
+
+/// Frees memory from [`freeqrent_alloc`]. NULL is ignored.
+///
+/// # Safety
+/// `ptr` is NULL or came from `freeqrent_alloc(len)` with this `len`, not
+/// yet freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn freeqrent_dealloc(ptr: *mut u8, len: usize) {
+    if !ptr.is_null() {
+        // SAFETY: the caller promised it's a boxed slice of `len` bytes
+        // from `freeqrent_alloc`.
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) });
+    }
 }
 
 /// Frees a string this library returned. NULL is ignored.

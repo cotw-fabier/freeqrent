@@ -69,6 +69,14 @@ pub fn render(payload: Payload<'_>, style_json: &str) -> Result<String, DocError
     Ok(style.render(&qr)?)
 }
 
+/// The intro stopped at `t_ms`, as a still SVG with no animation: what
+/// the CLI's `--frame-at` writes. A style without an intro gives its
+/// finished code.
+pub fn render_frame(payload: Payload<'_>, style_json: &str, t_ms: u32) -> Result<String, DocError> {
+    let (style, qr) = prepare(payload, style_json)?;
+    Ok(style.render_frame(&qr, t_ms)?)
+}
+
 /// The scan report as JSON ([`report_json`]). A style that would be refused
 /// still has a report, with `ok` false; only a bad document or a payload
 /// that doesn't fit is an error.
