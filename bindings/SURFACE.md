@@ -84,6 +84,11 @@ A payload is text (UTF-8, segmented like the CLI's `TEXT`) or bytes. Every funct
 | `--show-palette` | the palette result's `swatches` and `choices` |
 | | palette options `seed`, `logo_colors` (the CLI fills `logo_colors` from `--logo`), `allow_inverted` (the CLI passes `--allow-inverted`) |
 
+Two gaps remain here (found by the npm bin, W20261026235449), both waiting on a decision:
+
+- **With `--preset`, the CLI replaces the preset's palette** with the extracted one, while the document merges the extracted tokens onto the preset's. So a preset token the extraction doesn't set (`filler`, say) survives through the document. Without `--preset` the two agree, which is what `palette_flags_are_two_calls` checks; the npm bin's tests pin the difference so they fail when it's closed.
+- **`--logo FILE.svg` with `--palette-from-*`:** the CLI passes the SVG's paints as `logo_colors`, and the boundary has no way to read a logo's colors. A binding can pass `logo_colors` itself; a PNG logo's colors come from `palette_from_image`.
+
 ```equivalences
 --fg '#1d3b72' --bg '#f8f5ee'                   => {"palette":{"fg":"#1d3b72","bg":"#f8f5ee"}}
 --token 'finder.eye=oklch(55% .2 30)'           => {"palette":{"finder.eye":"oklch(55% .2 30)"}}

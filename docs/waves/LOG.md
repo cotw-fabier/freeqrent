@@ -2,6 +2,22 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026235737 · M8 · The npm and Go bindings, and prebuilt binaries
+
+- Landed: `bindings/js`, the npm `freeqrent` package (ESM and CJS, Node ≥ 18 and browsers, no runtime dependencies), `.d.ts` generated from the schema, and an npm `bin` that takes the CLI's flags. `bindings/go`, module `github.com/freeqrent/freeqrent-go`: cgo over prebuilt static libraries by default, pure Go on wazero with `-tags freeqrent_wasm`, typed styles generated from the schema with functional options. `scripts/build-prebuilt.sh` and `.github/workflows/prebuilt.yml` build the C ABI for every platform with checksums; `js.yml` and `go.yml` test them.
+- Decisions: the npm `.wasm` ships as a file (inlined it was 284 KB gzipped against 208). Go's libraries stay out of git until the module's release tag; Windows links the `-gnu` libraries; optional scalars are pointers.
+- Found: two places the Style document can't yet say what the CLI does (a preset's palette under `--palette-from-*`, and an SVG logo's colors as `logo_colors`), now listed in `bindings/SURFACE.md`.
+- Measured (Apple silicon): npm `.wasm` 208 KB gzipped (core default features: 176), v10 render 0.49 ms in Node; Go v10 render 0.43 ms (cgo), 1.12 ms (wazero, 2.6×); static libraries about 20 MB, `.wasm` 835 KB.
+- Checks: npm 139 tests (all 77 conformance cases, the bin byte for byte against the Rust CLI on every equivalence line plus 21 more, a browser-style load over HTTP); Go 21 tests and 252 subtests in both builds, `-race` clean. Not run here: Node 18, Linux and Windows (CI only; Go's Linux and Windows link flags are unverified).
+
+## 20261026235449 · M8 · The Python binding
+
+- Landed: `bindings/python`, the `freeqrent` package over a PyO3 abi3 module (CPython ≥ 3.9). `render`, `render_frame`, `check` (a frozen `Report`), `plan`, `Palette.from_image/from_css/from_html` (raw RGBA or a Pillow-like image, duck-typed), `presets`, `version`; `FreeQrentError` with `code`, `message` and `detail`. Typed styles are dataclasses generated from the schema (`tools/generate_styles.py`, checked for staleness). Wheels CI: manylinux and musllinux x86_64/aarch64, macOS universal2, Windows x64 (built, never run: nothing pushed).
+- Decisions: renders run detached from the GIL; a `str` with lone surrogates is `invalid_argument`; `plan` stays a dict (the schema doesn't describe plans).
+- Found: plans weren't JSON (fixed in W20261026234730), and PyO3's build needs a license exception for `target-lexicon`.
+- Measured (Apple silicon): v10 render 0.28 ms from Python (0.27 ms raw); 1.94×, 3.85× and 7.44× on 2, 4 and 8 threads; macOS arm64 wheel 564 KiB, universal2 1.17 MB.
+- Checks: 235 Python tests (all 77 conformance cases, every conformance style rebuilt as typed objects, every reachable error code, threads, `mypy --strict`, a wheel installed into a fresh venv); `cargo deny` clean. Tested on 3.14 and 3.11 locally; 3.9 only in CI.
+
 ## 20261026234730 · M8 · Plans are JSON
 
 - Fixed: `AnimationPlan::to_json` wrote numbers the way the SVG writer does, without the leading zero (`.22`, `-.5`), so no JSON parser took a plan with a fraction in it. Found by the Python binding. `json_num` writes the zero; SVG output is unchanged.
