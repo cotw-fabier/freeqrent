@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")/.."
 target=$(cargo metadata --format-version 1 --no-deps | sed 's/.*"target_directory":"\([^"]*\)".*/\1/')
 # The system libraries a Rust static library needs on this platform.
-libs=$(cargo rustc -q -p freeqrent-ffi --release --crate-type staticlib -- --print native-static-libs 2>&1 \
+libs=$(cargo rustc -q --color never -p freeqrent-ffi --release --crate-type staticlib -- --print native-static-libs 2>&1 \
     | sed -n 's/.*native-static-libs: //p' | tail -1)
 version=$(cargo metadata --format-version 1 --no-deps | sed 's/.*"name":"freeqrent-ffi","version":"\([^"]*\)".*/\1/')
 out="$target/ffi-smoke"

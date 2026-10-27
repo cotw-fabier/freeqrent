@@ -158,7 +158,9 @@ build_native() {
     # staticlib is always rebuilt here (it's quick after the first build).
     touch crates/freeqrent-ffi/src/lib.rs
     log="$dir/rustc-static.log"
-    if ! cargo rustc -q -p freeqrent-ffi --release --target "$t" --crate-type staticlib \
+    # --color never: CI sets CARGO_TERM_COLOR=always, which would wrap the
+    # last flag in escape codes.
+    if ! cargo rustc -q --color never -p freeqrent-ffi --release --target "$t" --crate-type staticlib \
         -- --print native-static-libs >"$log" 2>&1; then
         cat "$log" >&2
         skip "$t: the static library didn't build"
