@@ -10,7 +10,7 @@ import (
 )
 
 // SchemaVersion is the x-freeqrent-version of the schema these types were generated from.
-const SchemaVersion = "1.0.0"
+const SchemaVersion = "1.1.0"
 
 // Style: a Style document (SPEC §10.1). Every key is optional.
 type Style struct {

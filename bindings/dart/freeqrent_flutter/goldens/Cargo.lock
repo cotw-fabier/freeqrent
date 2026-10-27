@@ -221,18 +221,18 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "freeqrent"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "freeqrent-doc"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent",
 ]
 
 [[package]]
 name = "freeqrent-flutter-goldens"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent-doc",
  "freeqrent-verify",
@@ -241,7 +241,7 @@ dependencies = [
 
 [[package]]
 name = "freeqrent-verify"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent",
  "resvg",

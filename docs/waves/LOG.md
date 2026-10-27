@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261027011038 · M8 · Version 1.1.0
+
+- Landed: every package at 1.1.0 through `scripts/bindings.sh version 1.1.0` (manifests, lockfiles and the generated files only; no output changed). The CHANGELOG's two unreleased sections are 1.1.0, the first GitHub release.
+- Fixed: the Dart Native Assets hook rebuilt on source changes (Cargo's dep-info) but not on manifest ones, so after the bump Dart still loaded a 1.0.0 library; the hook now also depends on the workspace's and crates' `Cargo.toml`. Caught by the Dart conformance runner's version check.
+- Checks: all clean (the root list, `cargo deny` for the root and the four binding crates, npm 143, Python 240, Go both builds, Dart 116, Flutter 34).
+
 ## 20261027004614 · M8 · The CLI's palette flags in the document, and `scripts/bindings.sh`
 
 - Landed: the two gaps the npm bin found. `replace_palette` starts a document's palette from the default instead of the base's (what the CLI does with `--preset` and `--palette-from-*`), and palette options take `logo` (`{"svg"}` or `{"image"}`) in place of `logo_colors`, so the library finds a logo's colors as the CLI does. Both are in the schema, four new conformance cases (81) and every binding; the CLI surface test now checks a preset and an SVG logo under `--palette-from-*` byte for byte, and so does the npm bin's.

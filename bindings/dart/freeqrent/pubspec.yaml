@@ -2,7 +2,7 @@ name: freeqrent
 description: >-
   Styled and animated SVG QR codes that always scan. Dart bindings to the
   freeQRent Rust core over dart:ffi, built with Native Assets.
-version: 1.0.0
+version: 1.1.0
 homepage: https://github.com/freeqrent/freeqrent
 repository: https://github.com/freeqrent/freeqrent
 publish_to: none

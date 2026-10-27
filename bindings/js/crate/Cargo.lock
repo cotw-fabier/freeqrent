@@ -16,18 +16,18 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "freeqrent"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "freeqrent-doc"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent",
 ]
 
 [[package]]
 name = "freeqrent-wasm"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent-doc",
  "wasm-bindgen",

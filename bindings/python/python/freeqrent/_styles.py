@@ -13,7 +13,7 @@ from typing import Any, ClassVar, Literal, Mapping, Optional, Sequence, Tuple, U
 from ._base import Doc
 from ._pixels import rgba_of
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 
 Preset = Literal[
     "classic",

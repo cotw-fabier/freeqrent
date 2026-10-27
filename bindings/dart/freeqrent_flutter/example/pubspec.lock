@@ -52,14 +52,14 @@ packages:
       path: "../../freeqrent"
       relative: true
     source: path
-    version: "1.0.0"
+    version: "1.1.0"
   freeqrent_flutter:
     dependency: "direct main"
     description:
       path: ".."
       relative: true
     source: path
-    version: "1.0.0"
+    version: "1.1.0"
   hooks:
     dependency: transitive
     description:

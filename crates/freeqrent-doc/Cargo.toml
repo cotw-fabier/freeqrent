@@ -17,7 +17,7 @@ publish = false
 [dependencies]
 # Every binding builds on the same feature set, so every language encodes
 # and renders the same bytes (SPEC §10.3). Kanji stays off.
-freeqrent = { path = "../freeqrent", version = "1.0.0", features = ["std", "animate", "palette-extract", "halftone"] }
+freeqrent = { path = "../freeqrent", version = "1.1.0", features = ["std", "animate", "palette-extract", "halftone"] }
 
 [dev-dependencies]
 freeqrent-verify = { path = "../freeqrent-verify" }

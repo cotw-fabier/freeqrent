@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/freeqrent/freeqrent/schema/freeqrent.schema.json",
   "title": "freeQRent Style document",
-  "x-freeqrent-version": "1.0.0",
+  "x-freeqrent-version": "1.1.0",
   "$ref": "#/$defs/Style",
   "$defs": {
     "Style": {

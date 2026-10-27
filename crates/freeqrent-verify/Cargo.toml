@@ -13,7 +13,7 @@ homepage.workspace = true
 authors.workspace = true
 
 [dependencies]
-freeqrent = { path = "../freeqrent", version = "1.0.0" }
+freeqrent = { path = "../freeqrent", version = "1.1.0" }
 resvg = { version = "0.49.0", default-features = false, features = ["raster-images"] }
 rqrr = "0.11.0"
 rxing = { version = "0.9.3", default-features = false, features = ["qrcode", "decoders", "encoding_rs"] }

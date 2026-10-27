@@ -254,7 +254,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "freeqrent"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "insta",
  "qrcodegen",
@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "freeqrent-cli"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent",
  "freeqrent-doc",
@@ -275,7 +275,7 @@ dependencies = [
 
 [[package]]
 name = "freeqrent-doc"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent",
  "freeqrent-verify",
@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "freeqrent-ffi"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent",
  "freeqrent-doc",
@@ -291,7 +291,7 @@ dependencies = [
 
 [[package]]
 name = "freeqrent-image"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent",
  "jpeg-encoder",
@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "freeqrent-verify"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent",
  "resvg",

@@ -4,25 +4,25 @@ version = 4
 
 [[package]]
 name = "freeqrent"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "freeqrent-doc"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent",
 ]
 
 [[package]]
 name = "freeqrent-ffi"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent-doc",
 ]
 
 [[package]]
 name = "freeqrent_dart"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "freeqrent-ffi",
 ]

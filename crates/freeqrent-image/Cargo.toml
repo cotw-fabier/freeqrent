@@ -18,7 +18,7 @@ png = ["dep:zune-png"]
 jpeg = ["dep:zune-jpeg"]
 
 [dependencies]
-freeqrent = { path = "../freeqrent", version = "1.0.0", default-features = false }
+freeqrent = { path = "../freeqrent", version = "1.1.0", default-features = false }
 zune-core = { version = "0.5.3", features = ["std"] }
 zune-png = { version = "0.5.2", optional = true }
 zune-jpeg = { version = "0.5.15", optional = true }

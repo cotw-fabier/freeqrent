@@ -11,5 +11,17 @@ void main(List<String> args) async {
       // Matches the asset id the @Native bindings use (lib/src/ffi.dart).
       assetName: 'src/ffi.dart',
     ).run(input: input, output: output);
+    // Cargo's dep-info lists the Rust sources but not the manifests, so a
+    // version bump (CARGO_PKG_VERSION) wouldn't rebuild without these.
+    output.dependencies.addAll([
+      for (final manifest in const [
+        '../../../Cargo.toml',
+        '../../../crates/freeqrent/Cargo.toml',
+        '../../../crates/freeqrent-doc/Cargo.toml',
+        '../../../crates/freeqrent-ffi/Cargo.toml',
+        'rust/Cargo.toml',
+      ])
+        input.packageRoot.resolve(manifest),
+    ]);
   });
 }
