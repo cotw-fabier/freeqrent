@@ -1,0 +1,41 @@
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[project]
+name = "freeqrent"
+version = "1.0.0"
+description = "Styled and animated SVG QR codes that scan, from Rust"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+keywords = ["qr", "qrcode", "svg", "animation"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Rust",
+    "Topic :: Multimedia :: Graphics",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/freeqrent/freeqrent"
+
+[tool.maturin]
+# Mixed layout: the Python package lives in python/freeqrent and the
+# extension module is built into it as freeqrent._native.
+python-source = "python"
+module-name = "freeqrent._native"
+manifest-path = "Cargo.toml"
+features = []
+strip = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+# The oldest mypy 2 checks against; the package itself runs on 3.9 (CI).
+python_version = "3.10"
+files = ["python/freeqrent", "tests/typecheck.py"]
