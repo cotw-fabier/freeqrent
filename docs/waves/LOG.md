@@ -2,6 +2,11 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026230624 · M7.5 · The gallery in the repository
+
+- Landed: `gallery.html` is tracked (no longer in `.gitignore`), regenerated at M7.5 for `https://example.com/menu` (113 cards, all 226 codes decode), and the README links it, with a rendered view through raw.githack.com since GitHub shows HTML as source.
+- Checks: docs only; README doctests pass.
+
 ## M7.5 complete · 2026-10-26
 
 Design styles, core 1.1, before the bindings: frame borders and hard shadows, data colors, gradient backgrounds, glow, emboss and sketch effects, grain, scanline and ink textures, and captions, each reaching the Style document, the schema, the conformance suite (58 → 74 cases) and the CLI, with limits measured on pinned codes. 1.0 output is unchanged. The core's WASM build is 176 KB gzipped against 200 KB (165 KB at 1.0). Waves 20261026204907, 20261026210723, 20261026211921, 20261026212751, 20261026220634, 20261026221457, 20261026223536, 20261026224505.

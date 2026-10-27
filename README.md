@@ -38,6 +38,8 @@ Each was rendered by the `freeqrent` CLI and decoded with ZXing (and rqrr, where
 
 </details>
 
+**Gallery:** [`gallery.html`](gallery.html) shows every preset, every style family and a card per design system (Bauhaus, neo-brutalism, terminal, vaporwave and more), each light and dark, with the command that makes it and whether it decodes. GitHub shows HTML as source, so [open it rendered](https://raw.githack.com/cotw-fabier/freeQRent/main/gallery.html) instead. It's regenerated with `freeqrent "https://example.com/menu" --gallery gallery.html`.
+
 - **Styles:** square, rounded, dot, bar and liquid modules; styled finders, alignment and timing patterns; color tokens and gradients; round frames; logos with frames; pictures drawn into the code; art mode.
 - **Motion:** intros that play *into* the finished code as CSS keyframes. Renderers that ignore animation, and viewers who prefer reduced motion, see the static code.
 - **Scannability first:** every style is checked against an error-correction and contrast budget, and the crate refuses what it can't verify. The limits come from measurements with ZXing and rqrr, and from scans on iOS Camera and Google Lens.
@@ -129,7 +131,7 @@ let svg = Style::preset("ink").unwrap()
 cargo install freeqrent-cli
 freeqrent "https://example.com" --preset ink --verify -o code.svg
 freeqrent "https://example.com" --shape dots:0.8 --finder squircle/circle --logo logo.svg --intro ripple -o code.svg
-freeqrent "https://example.com" --gallery gallery.html   # every style family, with the flags for each
+freeqrent "https://example.com" --gallery gallery.html   # every style family, with the flags for each (see gallery.html)
 ```
 
 The CLI covers the whole style surface. `freeqrent --help` lists every flag. It covers palettes from images, style sheets and pages (`curl -s URL | freeqrent … --palette-from-html -`), logos and their frames and motion, pictures and art mode, intros and idle loops, `--check` and `--verify`. It also writes the device scan sheet (`--scan-sheet sheet.html`).
