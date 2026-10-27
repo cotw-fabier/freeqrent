@@ -21,6 +21,9 @@ Not part of the 1.0 core release. These crates are `publish = false` until the b
 - **`freeqrent-doc`:** Style documents (JSON) in; SVG, scan reports, animation plans and palettes out. Errors are structured as `{code, message, detail}`. This is the boundary every binding shares (SPEC §10.1).
 - **Schema and conformance:** `schema/freeqrent.schema.json` is generated from the parser's tables. `conformance/cases.json` has 57 cases every binding has to reproduce byte for byte.
 - **`freeqrent-ffi`:** the C ABI and `include/freeqrent.h`.
+- **npm:** `bindings/js`, WASM for Node and browsers with generated TypeScript types, and an npm `freeqrent` bin.
+- **Go:** `bindings/go`, cgo by default and pure Go with `-tags freeqrent_wasm`.
+- **Prebuilt binaries:** the C ABI for every platform (`scripts/build-prebuilt.sh`, `.github/workflows/prebuilt.yml`).
 - **Python:** `bindings/python`, the `freeqrent` package (PyO3, abi3 wheels for CPython ≥ 3.9) with typed styles generated from the schema.
 - **M8 groundwork:** `render_frame` (the CLI's `--frame-at`) at the boundary and the C ABI, `freeqrent_alloc`/`freeqrent_dealloc` for WebAssembly hosts, 77 conformance cases, and `bindings/SURFACE.md`, the CLI's whole surface mapped onto the Style document and checked against the CLI byte for byte.
 
