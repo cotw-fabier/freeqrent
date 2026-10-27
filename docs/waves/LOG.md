@@ -2,6 +2,12 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261027011830 · M8 · 1.1.0 released; the first CI run
+
+- Landed: GitHub release v1.1.0 with the artifacts from `scripts/bindings.sh build` (the C ABI for macOS, iOS, Android and wasm32, the npm package, the macOS universal2 wheel and the sdist, `SHA256SUMS`); `prebuilt.yml` attached Linux (x86_64, aarch64) and Windows (x86_64 msvc and gnu, aarch64 msvc) with `SHA256SUMS-ci`.
+- Fixed, from the workflows' first run: CI sets `CARGO_TERM_COLOR=always`, which wrapped the last `native-static-libs` flag in escape codes, breaking Go's link check and the C smoke test's link on Linux (now `--color never`); Rust 1.99's Clippy (`question_mark` in the SVG sanitizer, `chunks_exact_to_as_chunks` in `freeqrent-image`); the `logo_svg` fuzz target unwrapped a correct `LogoTooLarge` refusal for a very wide logo, and now renders it at the scale the refusal names (seed `wide.svg`). No output changed.
+- Checks: Prebuilt, Python and js workflows green; the rest re-run with these fixes. Clippy clean on 1.96 and 1.99.
+
 ## 20261027011038 · M8 · Version 1.1.0
 
 - Landed: every package at 1.1.0 through `scripts/bindings.sh version 1.1.0` (manifests, lockfiles and the generated files only; no output changed). The CHANGELOG's two unreleased sections are 1.1.0, the first GitHub release.

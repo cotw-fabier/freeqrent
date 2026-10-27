@@ -132,12 +132,16 @@ fn to_rgba(
     let rgba = match space {
         ColorSpace::RGBA => data,
         ColorSpace::RGB => data
-            .chunks_exact(3)
-            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|&[r, g, b]| [r, g, b, 255])
             .collect(),
         ColorSpace::LumaA => data
-            .chunks_exact(2)
-            .flat_map(|p| [p[0], p[0], p[0], p[1]])
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .flat_map(|&[v, a]| [v, v, v, a])
             .collect(),
         ColorSpace::Luma => data.iter().flat_map(|&v| [v, v, v, 255]).collect(),
         other => {

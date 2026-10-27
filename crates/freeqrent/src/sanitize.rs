@@ -322,10 +322,8 @@ fn decode_references(raw: &str) -> Option<String> {
             _ => {
                 let code = if let Some(hex) = entity.strip_prefix("#x") {
                     u32::from_str_radix(hex, 16).ok()?
-                } else if let Some(dec) = entity.strip_prefix('#') {
-                    dec.parse().ok()?
                 } else {
-                    return None;
+                    entity.strip_prefix('#')?.parse().ok()?
                 };
                 char::from_u32(code)?
             }
