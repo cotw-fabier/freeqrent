@@ -139,7 +139,7 @@ build() {
     [ "$(uname -s)" = Darwin ] && wheel_target="--target universal2-apple-darwin"
     # shellcheck disable=SC2086
     (cd bindings/python && .venv/bin/maturin build --release -q $wheel_target --out "$out" \
-        && .venv/bin/maturin sdist -q --out "$out")
+        && .venv/bin/maturin sdist --out "$out")
     say "checksums"
     (cd "$out" && rm -f SHA256SUMS && shasum -a 256 -- * > SHA256SUMS && cat SHA256SUMS)
     echo "release artifacts: $out"
