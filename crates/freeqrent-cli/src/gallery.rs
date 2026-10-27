@@ -436,6 +436,471 @@ pub(crate) const DARK_FAMILIES: &[(&str, &[(&str, &str)])] = &[(
     ],
 )];
 
+/// One card per design system in the owner's design library, built from
+/// each one's palette and signature shapes. Dark designs keep their
+/// polarity, read inverted. An accent too close to `bg` in lightness for
+/// modules (Bauhaus yellow, Swiss red, electric blue) keeps its hue and
+/// chroma at a lightness that clears the 0.60 warning band, or moves to the
+/// tokens that aren't contrast-checked: a round frame's `filler` and ring.
+pub(crate) const DESIGN_FAMILIES: &[(&str, &[(&str, &str)])] = &[
+    (
+        "Academia",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#1c1714"),
+            ("fg", "#e8dfd4"),
+            ("token", "finder.eye=#d9bf7f"),
+            ("finder", "square/rounded:0.5"),
+            ("shape", "square:0.08"),
+            ("frame", "rounded:1"),
+        ],
+    ),
+    (
+        "American agriculture",
+        &[
+            ("bg", "#fbf6ea"),
+            ("fg", "oklch(36% .08 135)"),
+            ("token", "finder.eye=oklch(36% .07 65)"),
+            ("shape", "rounded:0.3"),
+            ("finder", "rounded:1.5/rounded:0.5"),
+            ("frame", "rounded:2"),
+        ],
+    ),
+    (
+        "Art deco",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#0a0a0a"),
+            (
+                "fg",
+                "linear-gradient(135deg, #e6c65c, #d4af37 50%, #e6c65c)",
+            ),
+            ("token", "finder.eye=#f2f0e4"),
+            ("token", "frame=#d4af37"),
+            ("token", "filler=#1e3d59"),
+            ("shape", "square:0.1"),
+            ("frame", "circle:0.5"),
+            ("frame-ring", "dashed"),
+        ],
+    ),
+    (
+        "Aurora mesh",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#09090b"),
+            (
+                "fg",
+                "linear-gradient(135deg, #c4b5fd, #f0abfc 50%, #67e8f9)",
+            ),
+            ("shape", "liquid:0.9"),
+            ("finder", "squircle/circle"),
+            ("idle", "shimmer"),
+            ("frame", "rounded:3"),
+        ],
+    ),
+    (
+        "Bauhaus",
+        &[
+            ("bg", "#f0f0f0"),
+            ("fg", "#121212"),
+            ("finder", "square/circle"),
+            ("corner", "top-right=squircle/square"),
+            ("token", "finder.top-left.eye=oklch(35% .16 27)"),
+            ("token", "finder.top-right.eye=oklch(35% .18 265)"),
+            ("shape", "dots:0.95"),
+        ],
+    ),
+    (
+        "Bold typography",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#0a0a0a"),
+            ("fg", "#fafafa"),
+            ("token", "finder.eye=#ff9a70"),
+            ("shape", "bars-h:0"),
+        ],
+    ),
+    (
+        "Botanical",
+        &[
+            ("bg", "#f9f8f4"),
+            ("fg", "#2d3a31"),
+            ("token", "finder.eye=oklch(36% .09 38)"),
+            ("shape", "liquid:0.7"),
+            ("finder", "leaf/leaf"),
+            ("frame", "rounded:4"),
+        ],
+    ),
+    (
+        "Cinematic editorial",
+        &[
+            ("bg", "#f2f2f2"),
+            ("fg", "#333333"),
+            ("token", "finder.eye=oklch(34% .14 29)"),
+            ("shape", "square"),
+        ],
+    ),
+    (
+        "Claymorphism",
+        &[
+            ("bg", "#f4f1fa"),
+            (
+                "fg",
+                "linear-gradient(135deg, oklch(34% .17 293), oklch(34% .14 355))",
+            ),
+            ("token", "filler=#a78bfa"),
+            ("token", "frame=#f472b6"),
+            ("shape", "liquid:1"),
+            ("finder", "rounded:2.5/circle"),
+            ("frame", "circle:0.45"),
+            ("frame-ring", "solid"),
+        ],
+    ),
+    (
+        "Cosmic observatory",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#1a0f1f"),
+            ("fg", "#f5ede6"),
+            ("token", "finder.eye=#f7b98a"),
+            ("token", "frame=#e8734a"),
+            ("token", "filler=#9b4b6c"),
+            ("shape", "dots:0.85"),
+            ("finder", "rounded:2/circle"),
+            ("frame", "circle:0.35"),
+            ("frame-ring", "solid"),
+            ("intro", "iris"),
+        ],
+    ),
+    (
+        "Cyberpunk",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#0a0a0f"),
+            ("fg", "#7dffb0"),
+            ("token", "finder.eye=#ff66ff"),
+            ("token", "finder.outer=#66e5ff"),
+            ("shape", "square:0.12"),
+            ("timing", "dashed"),
+            ("intro", "lock-on"),
+            ("idle", "shimmer"),
+        ],
+    ),
+    (
+        "Enterprise",
+        &[
+            ("bg", "#f8fafc"),
+            (
+                "fg",
+                "linear-gradient(135deg, oklch(35% .15 277), oklch(35% .17 293))",
+            ),
+            ("shape", "rounded:0.35"),
+            ("finder", "rounded:2/rounded:1"),
+            ("frame", "rounded:2"),
+        ],
+    ),
+    (
+        "Flat design",
+        &[
+            ("bg", "#ffffff"),
+            ("fg", "#111827"),
+            ("token", "finder.top-left.outer=oklch(37% .14 262)"),
+            ("token", "finder.top-right.outer=oklch(37% .08 165)"),
+            ("token", "finder.bottom-left.outer=oklch(37% .1 55)"),
+            ("shape", "square"),
+        ],
+    ),
+    (
+        "Glassmorphism",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#000000"),
+            (
+                "fg",
+                "linear-gradient(135deg, #f5f5f7, #7cc0ff 55%, #dda0fa)",
+            ),
+            ("shape", "dots:0.9"),
+            ("finder", "rounded:2.5/circle"),
+            ("frame", "rounded:4"),
+            ("idle", "breathe"),
+        ],
+    ),
+    (
+        "Industrial",
+        &[
+            ("bg", "#e0e5ec"),
+            ("fg", "#1f2426"),
+            ("shape", "bars-v:0.5"),
+            ("finder", "rounded:1/circle"),
+            ("logo", "sample"),
+            ("logo-shape", "circle"),
+            ("logo-frame", "ring"),
+            ("logo-frame-color", "#ff4757"),
+            ("frame", "rounded:1.5"),
+        ],
+    ),
+    (
+        "Kinetic",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#09090b"),
+            ("fg", "#fafafa"),
+            ("token", "finder.eye=#dfe104"),
+            ("shape", "bars-h:0"),
+            ("intro", "sweep"),
+            ("stagger", "linear"),
+            ("ease", "expo"),
+        ],
+    ),
+    (
+        "Luxury",
+        &[
+            ("bg", "#f9f8f6"),
+            ("fg", "#1a1a1a"),
+            ("token", "frame=#d4af37"),
+            ("shape", "square:0.2"),
+            ("frame", "circle:0"),
+            ("frame-ring", "solid"),
+            ("intro", "settle"),
+            ("intro-ms", "2000"),
+        ],
+    ),
+    (
+        "Material",
+        &[
+            ("bg", "#f3edf7"),
+            ("fg", "#381e72"),
+            ("token", "finder.eye=#31111d"),
+            ("shape", "bars-v:0.5"),
+            ("finder", "rounded:2.5/rounded:1"),
+            ("frame", "rounded:4"),
+        ],
+    ),
+    (
+        "Maximalism",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#0d0d1a"),
+            ("fg", "linear-gradient(135deg, #00f5d4, #ffe600)"),
+            ("token", "finder.eye=#ff77ff"),
+            ("token", "filler=#ff3af2"),
+            ("token", "frame=#ff6b35"),
+            ("shape", "liquid:1"),
+            ("finder", "leaf/circle"),
+            ("frame", "circle:0.7"),
+            ("frame-ring", "dashed"),
+            ("intro", "ripple"),
+            ("stagger", "random"),
+        ],
+    ),
+    (
+        "Minimal dark",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#0a0a0f"),
+            ("fg", "#fafafa"),
+            ("token", "finder.eye=#f59e0b"),
+            ("shape", "rounded:0.4"),
+            ("finder", "rounded:2/circle"),
+            ("frame", "rounded:3"),
+            ("idle", "breathe"),
+        ],
+    ),
+    (
+        "Modern dark",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#050506"),
+            ("fg", "linear-gradient(160deg, #ededef, #a5acf0)"),
+            ("token", "finder.eye=#a5acf0"),
+            ("shape", "dots:0.85"),
+            ("finder", "squircle/squircle"),
+            ("idle", "shimmer"),
+        ],
+    ),
+    (
+        "Monochrome",
+        &[
+            ("bg", "#ffffff"),
+            ("fg", "#000000"),
+            ("shape", "dots:1"),
+            ("finder", "square/square"),
+        ],
+    ),
+    (
+        "Neo-brutalism",
+        &[
+            ("bg", "#ffd93d"),
+            ("fg", "#000000"),
+            ("shape", "square"),
+            ("timing", "dashed"),
+        ],
+    ),
+    (
+        "Neumorphism",
+        &[
+            ("bg", "#e0e5ec"),
+            ("fg", "#2b333b"),
+            ("shape", "dots:0.9"),
+            ("finder", "rounded:2.5/circle"),
+            ("frame", "rounded:4"),
+        ],
+    ),
+    (
+        "Newsprint",
+        &[
+            ("bg", "#f9f9f7"),
+            ("fg", "#111111"),
+            ("token", "finder.eye=#7a0000"),
+            ("shape", "dots:0.8"),
+            ("timing", "dotted"),
+        ],
+    ),
+    (
+        "Organic",
+        &[
+            ("bg", "#fdfcf8"),
+            ("fg", "#2c2c24"),
+            ("token", "finder.eye=#34402d"),
+            ("token", "filler=#c18c5d"),
+            ("token", "frame=#5d7052"),
+            ("shape", "liquid:1"),
+            ("finder", "leaf/leaf"),
+            ("frame", "circle:0.3"),
+        ],
+    ),
+    (
+        "Playful geometric",
+        &[
+            ("bg", "#fffdf5"),
+            ("fg", "#1e293b"),
+            ("finder", "squircle/circle"),
+            ("corner", "top-right=square/square"),
+            ("corner", "bottom-left=leaf/leaf"),
+            ("token", "finder.top-left.outer=oklch(36% .17 293)"),
+            ("token", "finder.top-right.outer=oklch(36% .13 355)"),
+            ("token", "finder.bottom-left.outer=oklch(36% .08 165)"),
+            ("shape", "dots:0.9"),
+        ],
+    ),
+    (
+        "Professional",
+        &[
+            ("bg", "#fafaf8"),
+            ("fg", "#1a1a1a"),
+            ("token", "finder.eye=oklch(37% .07 75)"),
+            ("shape", "square:0.08"),
+            ("frame", "rounded:1"),
+        ],
+    ),
+    (
+        "Retro",
+        &[
+            ("bg", "#ffffcc"),
+            ("fg", "#000000"),
+            ("token", "finder.eye=#000080"),
+            ("shape", "square"),
+            ("intro", "raster"),
+        ],
+    ),
+    (
+        "SaaS",
+        &[
+            ("bg", "#fafafa"),
+            ("fg", "#0f172a"),
+            (
+                "token",
+                "finder.eye=linear-gradient(135deg, oklch(36% .2 264), oklch(38% .19 264))",
+            ),
+            ("shape", "rounded:0.4"),
+            ("finder", "rounded:2/rounded:1"),
+        ],
+    ),
+    (
+        "Sketch",
+        &[
+            ("bg", "#fdfbf7"),
+            ("fg", "#2d2d2d"),
+            ("token", "finder.eye=#1f4275"),
+            ("shape", "rounded:0.3"),
+            ("finder", "leaf/rounded:0.5"),
+        ],
+    ),
+    (
+        "Swiss minimalist",
+        &[
+            ("bg", "#ffffff"),
+            ("fg", "#000000"),
+            ("token", "finder.top-left.eye=oklch(38% .15 33)"),
+            ("shape", "square:0.1"),
+        ],
+    ),
+    (
+        "Terminal",
+        &[
+            ("preset", "terminal"),
+            ("token", "finder.eye=#ffb000"),
+            ("intro", "raster"),
+        ],
+    ),
+    (
+        "Tooli Rent",
+        &[
+            ("bg", "#ffffff"),
+            ("fg", "#111827"),
+            ("token", "finder.eye=#1e3a8a"),
+            ("shape", "rounded:0.4"),
+            ("finder", "rounded:1.5/rounded:0.5"),
+            ("frame", "rounded:2"),
+        ],
+    ),
+    (
+        "Vaporwave",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#090014"),
+            (
+                "fg",
+                "linear-gradient(180deg, #ffaa33, #ff77ff 50%, #66ffff)",
+            ),
+            ("token", "filler=#2d1b4e"),
+            ("token", "frame=#ff00ff"),
+            ("shape", "square:0.15"),
+            ("frame", "circle:0.6"),
+            ("frame-ring", "solid"),
+            ("intro", "sweep"),
+            ("idle", "shimmer"),
+        ],
+    ),
+    (
+        "VaraCMS",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#0b1217"),
+            ("fg", "#e8e6e3"),
+            ("token", "finder.eye=#dcc08a"),
+            ("token", "frame=#c9a96e"),
+            ("token", "filler=#3d6b54"),
+            ("shape", "liquid:0.8"),
+            ("finder", "leaf/leaf"),
+            ("frame", "circle:0.4"),
+            ("frame-ring", "dashed"),
+        ],
+    ),
+    (
+        "Web3",
+        &[
+            ("allow-inverted", ""),
+            ("bg", "#030304"),
+            ("fg", "linear-gradient(135deg, #ffa940, #ffd600)"),
+            ("token", "finder.outer=#f7931a"),
+            ("shape", "square:0.1"),
+            ("finder", "rounded:1/square"),
+            ("idle", "shimmer"),
+        ],
+    ),
+];
+
 /// Pictures with everything else: art mode, halftones, palettes and
 /// gradients taken from a picture, logos and motion. `{a}` and `{b}` stand
 /// for the pictures given with `--gallery-picture` (`sample` without).
@@ -859,15 +1324,32 @@ pub fn page(
             (format!("{title} preset"), [("preset", name)])
         })
         .collect();
-    let presets = presets
+    let presets: Vec<_> = presets
         .iter()
-        .map(|(name, flags)| (name.as_str(), flags.as_slice()));
-    let families = presets
-        .chain(FAMILIES.iter().copied())
-        .chain(LOGO_FAMILIES.iter().copied())
-        .chain(DARK_FAMILIES.iter().copied())
-        .chain(PICTURE_FAMILIES.iter().copied());
-    for (name, flags) in families {
+        .map(|(name, flags)| (name.as_str(), flags.as_slice()))
+        .collect();
+    let families: Vec<_> = FAMILIES
+        .iter()
+        .chain(LOGO_FAMILIES)
+        .chain(DARK_FAMILIES)
+        .copied()
+        .collect();
+    let sections = [
+        ("Presets", presets.as_slice()),
+        ("Style families", families.as_slice()),
+        ("Design systems", DESIGN_FAMILIES),
+        ("Pictures", PICTURE_FAMILIES),
+    ];
+    for (section, family) in sections.iter().flat_map(|(title, families)| {
+        families
+            .iter()
+            .enumerate()
+            .map(move |(i, family)| ((i == 0).then_some(*title), family))
+    }) {
+        if let Some(title) = section {
+            let _ = writeln!(cards, "<h2 class=\"section\">{}</h2>", escape(title));
+        }
+        let (name, flags) = *family;
         // Every card also has its dark twin (`--dark`).
         cards.push_str("<figure><div class=\"variant light\">");
         variant(
@@ -947,6 +1429,9 @@ main {{
   padding: clamp(28px, 4vw, 48px) clamp(16px, 4vw, 48px) 96px;
 }}
 figure {{ margin: 0; display: grid; }}
+h2.section {{ grid-column: 1 / -1; margin: 24px 0 -16px; font-size: 1.5rem; font-weight: 750;
+  letter-spacing: -.01em; min-height: 0; padding-bottom: 10px; border-bottom: 2px solid var(--ink); }}
+h2.section:first-child {{ margin-top: 0; }}
 .code {{ position: relative; }}
 .code svg {{ display: block; width: 100%; height: auto; border-radius: 6px; }}
 .refused {{ aspect-ratio: 1; margin: 0; display: grid; place-items: center; text-align: center;

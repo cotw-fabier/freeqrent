@@ -2,6 +2,14 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026204201 · M7 · Design-system cards in the gallery
+
+- Landed: 37 gallery cards, one per design system in the owner's design library (`~/Documents/sites/design-system/designs/`), made from existing options only: each design's palette, shapes and finders, round frames for the round designs, and motion for the motion-led ones. The gallery now has section headings. Dark designs keep their polarity and are read inverted.
+- Decision: an accent too close to `bg` in lightness for modules (most designs' accents sit at OKLab L 0.5–0.7) keeps its hue and chroma, drawn darker or lighter until it clears the 0.60 band, or moves to a round frame's `filler` and ring, which aren't contrast-checked. Monochrome keeps a square frame, because the bench can't verify a frameless inverted twin.
+- Measured: an inverted vermillion eye, #ff8a5c on #0a0a0a (ΔL 0.61, no warning), missed ZXing's degraded render on every payload tried; #ff9a70 passes (added to the ROADMAP luma item).
+- Checks: 115 cards, all 230 codes decode (`gallery_shows_every_family` updated); CLI clippy and tests clean.
+- Follow-up: the ROADMAP lists what the designs needed that the library lacks. Top of the list: a border and hard shadow on square frames, several data colors, gradient backgrounds, glow, texture.
+
 ## 20261026203955 · M7 · freeqrent-ffi, the C ABI
 
 - Landed: `freeqrent-ffi` (cdylib, staticlib, rlib) and `include/freeqrent.h`. It exports `freeqrent_render`, `_check`, `_plan`, `_palette_from_image/css/html`, `_presets`, `_version` and `_free`. Every call writes one string to `*out`: the result with 0, or the error JSON with 1. It returns 2 only for a NULL `out`, and `out_len` is optional. Payloads are `(ptr, len, kind)`; text that isn't UTF-8 is `invalid_argument`, and a NULL style means `{}`. Panics are caught as `internal`. `scripts/ffi-smoke.sh` links a C program against the static library under `-std=c99 -Wall -Wextra -Werror -pedantic`; CI runs it on Linux and macOS.
