@@ -297,35 +297,9 @@ function check(payload, style) {
   return JSON.parse(raw.check(payload, style));
 }
 
-// The core writes the plan's numbers the way it writes CSS, so a fraction
-// below one has no leading zero (`.22`, `-.5`), which JSON.parse refuses.
-// This puts the zero back outside strings; text that is already JSON
-// passes through unchanged.
-function planJson(text) {
-  let out = '';
-  let inString = false;
-  let from = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inString) {
-      if (c === '\\') i++;
-      else if (c === '"') inString = false;
-    } else if (c === '"') {
-      inString = true;
-    } else if (c === '.') {
-      const before = text[i - 1];
-      if (before === ',' || before === '[' || before === ':' || before === '-') {
-        out += text.slice(from, i) + '0';
-        from = i;
-      }
-    }
-  }
-  return out + text.slice(from);
-}
-
 /** The animation plan (SPEC §8.5), parsed. */
 function plan(payload, style) {
-  return JSON.parse(planJson(raw.plan(payload, style)));
+  return JSON.parse(raw.plan(payload, style));
 }
 
 /**
