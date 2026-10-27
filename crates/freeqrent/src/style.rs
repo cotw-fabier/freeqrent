@@ -114,6 +114,34 @@ pub enum FrameRing {
     Dashed,
 }
 
+/// A border at the edge of the frame, in the `frame` token (SPEC §7.4).
+/// It lies outside the quiet zone: the canvas grows to make room, so the
+/// code never loses margin to it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum Border {
+    /// One line `width` modules wide, 0.1–2.
+    Solid {
+        /// The line's width.
+        width: f32,
+    },
+    /// Two lines a third of `width` each, a third apart; `width` is
+    /// 0.3–3.
+    Double {
+        /// Across both lines and the gap.
+        width: f32,
+    },
+}
+
+impl Border {
+    /// The border's whole width in modules.
+    pub fn width(self) -> f32 {
+        match self {
+            Border::Solid { width } | Border::Double { width } => width,
+        }
+    }
+}
+
 /// How large a code will be displayed, across the whole symbol including
 /// the quiet zone.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -143,6 +171,8 @@ pub struct Style {
     pub(crate) id_prefix: Option<String>,
     pub(crate) target: Option<TargetSize>,
     pub(crate) frame: Frame,
+    pub(crate) border: Option<Border>,
+    pub(crate) shadow: Option<f32>,
     pub(crate) seed: Option<u64>,
     pub(crate) logo: Option<Logo>,
     #[cfg(feature = "halftone")]
@@ -172,6 +202,8 @@ impl Default for Style {
             id_prefix: None,
             target: None,
             frame: Frame::Square,
+            border: None,
+            shadow: None,
             seed: None,
             logo: None,
             #[cfg(feature = "halftone")]
@@ -288,6 +320,22 @@ impl Style {
     /// none (SPEC §7.4).
     pub fn frame(mut self, frame: Frame) -> Style {
         self.frame = frame;
+        self
+    }
+
+    /// Draws a border at the frame's edge, outside the quiet zone (SPEC
+    /// §7.4): around the square, the rounded square or the disc.
+    pub fn border(mut self, border: Border) -> Style {
+        self.border = Some(border);
+        self
+    }
+
+    /// Draws a hard shadow behind the frame: its shape again in the
+    /// `shadow` token, unblurred, `offset` modules down and to the right
+    /// (0.25–3). It needs an opaque background and a frame
+    /// ([`RenderError::ShadowNeedsBackground`](crate::RenderError::ShadowNeedsBackground)).
+    pub fn shadow(mut self, offset: f32) -> Style {
+        self.shadow = Some(offset);
         self
     }
 
@@ -409,6 +457,16 @@ impl Style {
     /// The frame.
     pub fn frame_style(&self) -> Frame {
         self.frame
+    }
+
+    /// The frame's border, if any.
+    pub fn border_style(&self) -> Option<Border> {
+        self.border
+    }
+
+    /// The hard shadow's offset in modules, if any.
+    pub fn shadow_offset(&self) -> Option<f32> {
+        self.shadow
     }
 
     /// The data module shape.

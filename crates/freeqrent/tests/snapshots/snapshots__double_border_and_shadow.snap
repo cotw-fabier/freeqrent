@@ -1,0 +1,14 @@
+---
+source: crates/freeqrent/tests/snapshots.rs
+expression: "render(style, 1)"
+---
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34 34" class="qr" role="img" aria-label="QR code">
+  <style>@supports (color:var(--a)){.qr0140efa6-shadow{fill:var(--qr-shadow,#1a1a1a)}.qr0140efa6-bg{fill:var(--qr-bg,#fefcf8)}.qr0140efa6-frame{fill:var(--qr-frame,#b8860b)}.qr0140efa6-fg{fill:var(--qr-fg,#17161c)}.qr0140efa6-timing{fill:var(--qr-timing,var(--qr-fg,#17161c))}.qr0140efa6-finder-outer{fill:var(--qr-finder-outer,var(--qr-fg,#17161c))}.qr0140efa6-finder-eye{fill:var(--qr-finder-eye,var(--qr-fg,#17161c))}}</style>
+  <path class="qr0140efa6-shadow" fill="#1a1a1a" d="m3 1h29a2 2 0 0 1 2 2v29a2 2 0 0 1-2 2h-29a2 2 0 0 1-2-2v-29a2 2 0 0 1 2-2z"/>
+  <rect width="33" height="33" rx="2" class="qr0140efa6-bg" fill="#fefcf8"/>
+  <path class="qr0140efa6-frame" fill="#b8860b" fill-rule="evenodd" d="m2 0h29a2 2 0 0 1 2 2v29a2 2 0 0 1-2 2h-29a2 2 0 0 1-2-2v-29a2 2 0 0 1 2-2zm0 .5h29a1.5 1.5 0 0 1 1.5 1.5v29a1.5 1.5 0 0 1-1.5 1.5h-29a1.5 1.5 0 0 1-1.5-1.5v-29a1.5 1.5 0 0 1 1.5-1.5zm0 .5h29a1 1 0 0 1 1 1v29a1 1 0 0 1-1 1h-29a1 1 0 0 1-1-1v-29a1 1 0 0 1 1-1zm0 .5h29a.5.5 0 0 1 .5.5v29a.5.5 0 0 1-.5.5h-29a.5.5 0 0 1-.5-.5v-29a.5.5 0 0 1 .5-.5z"/>
+  <path class="qr0140efa6-fg" fill="#17161c" d="m15 6h1v1h-1zm3 0h1v1h-1zm-2 1h1v1h-1zm2 1h1v1h-1zm-3 1h2v1h-2zm3 0h1v1h-1zm-4 1h2v1h-2zm3 0h2v1h-2zm-2 1h3v1h-3zm-1 2h2v1h-2zm4 0h1v1h-1zm-10 1h2v1h-2zm5 0h2v1h-2zm3 0h5v1h-5zm6 0h1v1h-1zm-15 1h2v1h-2zm3 0h2v1h-2zm4 0h2v1h-2zm3 0h3v1h-3zm4 0h1v1h-1zm2 0h4v1h-4zm-15 1h3v1h-3zm8 0h3v1h-3zm5 0h2v1h-2zm3 0h1v1h-1zm-18 1h3v1h-3zm4 0h2v1h-2zm5 0h1v1h-1zm3 0h1v1h-1zm2 0h1v1h-1zm4 0h2v1h-2zm-18 1h1v1h-1zm3 0h3v1h-3zm4 0h4v1h-4zm5 0h2v1h-2zm4 0h1v1h-1zm2 0h1v1h-1zm-10 1h3v1h-3zm7 0h1v1h-1zm3 0h2v1h-2zm-10 1h1v1h-1zm4 0h1v1h-1zm4 0h1v1h-1zm3 0h2v1h-2zm-10 1h1v1h-1zm2 0h3v1h-3zm6 0h1v1h-1zm3 0h1v1h-1zm-11 1h1v1h-1zm3 0h3v1h-3zm5 0h1v1h-1zm3 0h1v1h-1zm-12 1h1v1h-1zm4 0h3v1h-3zm4 0h1v1h-1zm3 0h1v1h-1zm-11 1h1v1h-1zm2 0h1v1h-1zm2 0h2v1h-2zm4 0h1v1h-1zm2 0h1v1h-1zm-9 1h2v1h-2zm4 0h1v1h-1zm3 0h2v1h-2zm-3 1h1v1h-1zm2 0h1v1h-1zm4 0h1v1h-1z"/>
+  <path class="qr0140efa6-timing" fill="#17161c" d="m14 12h1v1h-1zm2 0h1v1h-1zm2 0h1v1h-1zm-6 2h1v1h-1zm0 2h1v1h-1zm0 2h1v1h-1z"/>
+  <path class="qr0140efa6-finder-outer" fill="#17161c" fill-rule="evenodd" d="m6 6h7v7h-7zm1 1h5v5h-5zm13-1h7v7h-7zm1 1h5v5h-5zm-15 13h7v7h-7zm1 1h5v5h-5z"/>
+  <path class="qr0140efa6-finder-eye" fill="#17161c" d="m8 8h3v3h-3zm14 0h3v3h-3zm-14 14h3v3h-3z"/>
+</svg>

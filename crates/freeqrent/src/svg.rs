@@ -20,7 +20,7 @@ use crate::num::write_scaled;
 use crate::palette::{Gradient, GradientKind, Paint, Palette, Token};
 use crate::scanbox::{self, AlignmentShape};
 use crate::scene::{self, Canvas, LayerRole, Part, Round};
-use crate::style::{Frame, Style};
+use crate::style::{Border, Frame, Style};
 
 /// The paths to draw, one per (token, fill rule), in paint order; a
 /// picture's sub-cells keep their own elements.
@@ -132,7 +132,7 @@ pub(crate) fn draw_part(
         Part::Halftone => {}
         Part::Ring => {
             if let Some(round) = &canvas.round {
-                draw_ring(path, round, canvas.side * UNIT / 2);
+                draw_ring(path, round, canvas.card * UNIT / 2);
             }
         }
         Part::Filler(grid) => geometry::draw_modules(&style.modules, grid, 0, path),
@@ -302,15 +302,66 @@ pub(crate) fn draws_background(style: &Style) -> bool {
 /// `<rect>` or `<circle>`).
 pub(crate) fn background_path(style: &Style, canvas: &Canvas) -> Path {
     let mut path = Path::new();
-    let n = canvas.side * UNIT;
-    match (&canvas.round, style.frame) {
-        (Some(round), _) => {
-            path.circle(n / 2, n / 2, math::round(round.radius * UNIT as f64) as i64)
-        }
-        (None, Frame::RoundedSquare(r)) => path.rounded_rect(0, 0, n, n, [geometry::units(r); 4]),
-        _ => path.rect(0, 0, n, n),
-    }
+    card_outline(&mut path, style, canvas, 0.0, 0.0);
     path
+}
+
+/// Appends the card's outline (square, rounded square or disc) to `path`,
+/// `inset` modules in from its edge and moved `shift` modules down and
+/// right. Corner radii shrink with the inset, so nested outlines stay
+/// parallel.
+fn card_outline(path: &mut Path, style: &Style, canvas: &Canvas, inset: f64, shift: f64) {
+    let u = |v: f64| math::round(v * UNIT as f64) as i64;
+    let card = canvas.card as f64;
+    if let Some(round) = &canvas.round {
+        let c = u(card / 2.0 + shift);
+        path.circle(c, c, u(round.radius - inset));
+        return;
+    }
+    let (at, side) = (u(inset + shift), u(card - 2.0 * inset));
+    match style.frame {
+        Frame::RoundedSquare(r) => {
+            let r = u((r as f64 - inset).max(0.0));
+            path.rounded_rect(at, at, side, side, [r; 4]);
+        }
+        _ => path.rect(at, at, side, side),
+    }
+}
+
+/// The frame's own elements, in paint order: the shadow, the background
+/// and the border (SPEC §7.4). They hold still while the code animates.
+pub(crate) fn chrome_elements(style: &Style, canvas: &Canvas) -> Vec<Element> {
+    let mut elements = Vec::new();
+    let mid = canvas.card as f64 / 2.0;
+    if canvas.shadow > 0.0 {
+        let mut path = Path::new();
+        card_outline(&mut path, style, canvas, 0.0, canvas.shadow);
+        elements.push(Element::new(LayerRole::Shadow, Token::Shadow, false, path));
+    }
+    if draws_background(style) {
+        elements.push(Element::new(
+            LayerRole::Background,
+            Token::Bg,
+            false,
+            background_path(style, canvas),
+        ));
+    }
+    if let Some(border) = style.border.filter(|_| canvas.border > 0.0) {
+        let b = canvas.border;
+        let edges: &[f64] = match border {
+            Border::Solid { .. } => &[0.0, 1.0],
+            _ => &[0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0],
+        };
+        let mut path = Path::new();
+        for &edge in edges {
+            card_outline(&mut path, style, canvas, edge * b, 0.0);
+        }
+        elements.push(Element::new(LayerRole::Border, Token::Frame, true, path));
+    }
+    for e in &mut elements {
+        e.origin = (mid, mid);
+    }
+    elements
 }
 
 /// The logo's plate and its center, in modules.
@@ -340,20 +391,13 @@ fn logo_window(p: &logo::Placement, origin: f64) -> (Path, f64) {
 /// The elements of a code that doesn't animate: one path per (token,
 /// fill rule), between the background and the logo.
 pub(crate) fn static_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
-    let mut elements = Vec::new();
-    let mid = canvas.side as f64 / 2.0;
-    if draws_background(style) {
-        elements.push(Element::new(
-            LayerRole::Background,
-            Token::Bg,
-            false,
-            background_path(style, canvas),
-        ));
-    }
-    elements.extend(build_paths(style, qr, canvas));
-    for e in &mut elements {
+    let mut elements = chrome_elements(style, canvas);
+    let mid = canvas.card as f64 / 2.0;
+    let mut code = build_paths(style, qr, canvas);
+    for e in &mut code {
         e.origin = (mid, mid);
     }
+    elements.extend(code);
     elements.extend(logo_elements(style, qr, canvas));
     elements
 }
@@ -572,19 +616,23 @@ pub(crate) fn write<W: Write + ?Sized>(
                 match (&canvas.round, style.frame) {
                     (Some(round), _) => {
                         out.w.write_str("<circle cx=\"")?;
-                        write_scaled(out.w, n * UNIT / 2, 3)?;
+                        write_scaled(out.w, canvas.card * UNIT / 2, 3)?;
                         out.w.write_str("\" cy=\"")?;
-                        write_scaled(out.w, n * UNIT / 2, 3)?;
+                        write_scaled(out.w, canvas.card * UNIT / 2, 3)?;
                         out.w.write_str("\" r=\"")?;
                         write_scaled(out.w, math::round(round.radius * UNIT as f64) as i64, 3)?;
                         out.w.write_char('"')?;
                     }
                     (None, Frame::RoundedSquare(r)) if geometry::units(r) > 0 => {
-                        write!(out.w, "<rect width=\"{n}\" height=\"{n}\" rx=\"")?;
+                        let c = canvas.card;
+                        write!(out.w, "<rect width=\"{c}\" height=\"{c}\" rx=\"")?;
                         write_scaled(out.w, geometry::units(r), 3)?;
                         out.w.write_char('"')?;
                     }
-                    _ => write!(out.w, "<rect width=\"{n}\" height=\"{n}\"")?,
+                    _ => {
+                        let c = canvas.card;
+                        write!(out.w, "<rect width=\"{c}\" height=\"{c}\"")?
+                    }
                 }
                 write_element_paint(out.w, palette, e, &prefix)?;
                 write_pose(out.w, e)?;
@@ -1261,6 +1309,12 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
         for b in canvas.side.to_le_bytes() {
             eat(b);
         }
+    }
+    // Borders and shadows were added later: only hashed when used.
+    if style.border.is_some() || style.shadow.is_some() {
+        let mut text = String::new();
+        let _ = write!(text, "{:?}{:?}", style.border, style.shadow);
+        text.bytes().for_each(&mut eat);
     }
     for (_, _, dark, _) in qr.modules() {
         eat(dark as u8);

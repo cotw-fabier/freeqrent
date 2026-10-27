@@ -228,7 +228,7 @@ pub use scanbox::{
 };
 pub use scene::LayerRole;
 pub use segment::{ECI_UTF8, EciPolicy, Mode, Segment};
-pub use style::{Axis, Frame, FrameRing, ModuleShape, Style, TargetSize};
+pub use style::{Axis, Border, Frame, FrameRing, ModuleShape, Style, TargetSize};
 pub use version::{Ecc, TrackingGrid, Version};
 
 // The README's examples run as doctests.

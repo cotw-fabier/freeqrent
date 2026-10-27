@@ -22,8 +22,17 @@ pub(crate) const CORNERS: [Corner; 3] = [Corner::TopLeft, Corner::TopRight, Corn
 pub(crate) struct Canvas {
     /// The side of the square viewBox.
     pub(crate) side: i64,
+    /// The side of the card: the frame's square, from the canvas's
+    /// top-left corner. A shadow lies beyond it, so it equals `side`
+    /// without one.
+    pub(crate) card: i64,
     /// The code's top-left module, on both axes.
     pub(crate) origin: i64,
+    /// The border's width in modules, 0 without one. It lies at the
+    /// card's edge, inside the card.
+    pub(crate) border: f64,
+    /// The shadow's offset in modules, 0 without one.
+    pub(crate) shadow: f64,
     /// The circle of a round frame.
     pub(crate) round: Option<Round>,
 }
@@ -48,17 +57,28 @@ const ROUND_MARGIN: f64 = 1.0;
 const RING_GAP: f64 = 1.0;
 const RING_WIDTH: f64 = 0.5;
 
-/// Lays out the canvas for `style`'s frame.
+/// Lays out the canvas for `style`'s frame. A border takes whole modules
+/// of margin beyond the quiet zone (any spare is light, between the two),
+/// so the code stays on whole modules; a shadow widens the canvas past
+/// the card.
 pub(crate) fn canvas(style: &Style, qr: &QrMatrix) -> Canvas {
     let n = qr.size() as i64;
     let q = style.quiet_zone as i64;
+    let border = style.border.map_or(0.0, |b| b.width().max(0.0) as f64);
+    let shadow = style.shadow.map_or(0.0, |s| s.max(0.0) as f64);
+    let reach = math::ceil(shadow) as i64;
     let Frame::Circle {
         ring: ring_style, ..
     } = style.frame
     else {
+        let margin = math::ceil(border) as i64;
+        let card = n + 2 * (q + margin);
         return Canvas {
-            side: n + 2 * q,
-            origin: q,
+            side: card + reach,
+            card,
+            origin: q + margin,
+            border,
+            shadow,
             round: None,
         };
     };
@@ -69,15 +89,19 @@ pub(crate) fn canvas(style: &Style, qr: &QrMatrix) -> Canvas {
         let inner = filler_radius + RING_GAP;
         (inner, inner + RING_WIDTH)
     });
-    let radius = ring.map_or(filler_radius, |(_, outer)| outer) + ROUND_MARGIN;
+    // The border lies at the disc's edge, beyond the margin.
+    let radius = ring.map_or(filler_radius, |(_, outer)| outer) + ROUND_MARGIN + border;
     // Same parity as the code, so the code sits on whole modules.
-    let mut side = math::ceil(2.0 * radius) as i64;
-    if (side - n) % 2 != 0 {
-        side += 1;
+    let mut card = math::ceil(2.0 * radius) as i64;
+    if (card - n) % 2 != 0 {
+        card += 1;
     }
     Canvas {
-        side,
-        origin: (side - n) / 2,
+        side: card + reach,
+        card,
+        origin: (card - n) / 2,
+        border,
+        shadow,
         round: Some(Round {
             radius,
             ring,
@@ -109,7 +133,7 @@ const FINDER_HALO: i64 = 2;
 /// fully inside the filler circle and outside the quiet-zone square, away
 /// from the finders, each kept with probability `filler_density`.
 pub(crate) fn filler(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Grid {
-    let side = canvas.side;
+    let (side, card) = (canvas.side, canvas.card);
     let mut grid = Grid::new(side as usize);
     let (Some(round), Frame::Circle { filler_density, .. }) = (&canvas.round, style.frame) else {
         return grid;
@@ -125,7 +149,7 @@ pub(crate) fn filler(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Grid {
             let in_quiet_square =
                 (o - q..o + n + q).contains(&x) && (o - q..o + n + q).contains(&y);
             // The farthest corner from the center, in half-modules.
-            let far = |i: i64| (2 * i - side).abs().max((2 * i + 2 - side).abs());
+            let far = |i: i64| (2 * i - card).abs().max((2 * i + 2 - card).abs());
             let inside = far(x).pow(2) + far(y).pow(2) <= round.filler_r2;
             let near_finder = finders.iter().any(|&(fx, fy)| {
                 let gap = |i: i64, f: i64| (f - (i + 1)).max(i - (f + 7)).max(0);
@@ -194,9 +218,25 @@ pub enum LayerRole {
     /// takes that layer's motion as well as its own, and the window moves
     /// with the plate, not with the content.
     LogoArt,
+    /// A frame's hard shadow ([`Style::shadow`](crate::Style::shadow)),
+    /// painted first.
+    Shadow,
+    /// The border at the frame's edge ([`Style::border`](crate::Style::border)):
+    /// one or two rings, drawn with the even-odd rule.
+    Border,
 }
 
 impl LayerRole {
+    /// The frame's own layers (shadow, background, border), which hold
+    /// still while the code animates.
+    #[cfg_attr(not(feature = "animate"), allow(dead_code))]
+    pub(crate) fn is_chrome(self) -> bool {
+        matches!(
+            self,
+            LayerRole::Shadow | LayerRole::Background | LayerRole::Border
+        )
+    }
+
     /// The logo and the layers that belong to it.
     #[cfg_attr(not(feature = "animate"), allow(dead_code))]
     pub(crate) fn is_logo(self) -> bool {
@@ -523,6 +563,27 @@ mod tests {
             assert_eq!((c.side - 21) % 2, 0);
             assert_eq!(c.origin * 2 + 21, c.side);
         }
+    }
+
+    #[test]
+    fn borders_take_whole_modules_and_shadows_widen_the_canvas() {
+        use crate::Border;
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap(); // 21 modules
+        let style = Style::new()
+            .border(Border::Solid { width: 0.5 })
+            .shadow(1.5);
+        let c = canvas(&style, &qr);
+        // One module of margin for half a module of border.
+        assert_eq!((c.card, c.origin, c.side), (31, 5, 33));
+        let bordered = canvas(
+            &round(0.5, FrameRing::None).border(Border::Solid { width: 1.0 }),
+            &qr,
+        );
+        let plain = canvas(&round(0.5, FrameRing::None), &qr);
+        assert!(
+            bordered.round.as_ref().unwrap().radius >= plain.round.as_ref().unwrap().radius + 1.0
+        );
+        assert_eq!(bordered.side, bordered.card);
     }
 
     #[test]

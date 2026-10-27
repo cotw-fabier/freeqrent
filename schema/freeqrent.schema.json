@@ -61,6 +61,13 @@
         "frame": {
           "$ref": "#/$defs/Frame"
         },
+        "border": {
+          "$ref": "#/$defs/Border"
+        },
+        "shadow": {
+          "description": "A hard shadow's offset down and right, in modules (0.25–3).",
+          "type": "number"
+        },
         "seed": {
           "type": "integer",
           "minimum": 0,
@@ -462,7 +469,8 @@
           "finder.top-left.eye",
           "finder.top-right.eye",
           "finder.bottom-left.eye",
-          "logo.frame"
+          "logo.frame",
+          "shadow"
         ]
       },
       "additionalProperties": {
@@ -534,6 +542,46 @@
                 "solid",
                 "dashed"
               ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Border": {
+      "oneOf": [
+        {
+          "enum": [
+            "solid",
+            "double"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "solid"
+            },
+            "width": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "double"
+            },
+            "width": {
+              "type": "number"
             }
           },
           "required": [
@@ -1507,7 +1555,8 @@
                   "finder.top-left.eye",
                   "finder.top-right.eye",
                   "finder.bottom-left.eye",
-                  "logo.frame"
+                  "logo.frame",
+                  "shadow"
                 ]
               },
               "color": {

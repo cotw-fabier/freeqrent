@@ -140,6 +140,14 @@ pub fn inputs() -> Vec<String> {
             r#"{"modules":{"kind":"dots","size":0.85},"frame":{"kind":"circle","filler_density":0.4,"ring":"dashed"},"seed":7}"#,
         ),
         render("rounded frame", r#"{"frame":{"kind":"rounded","radius":1.5}}"#),
+        render(
+            "border and shadow",
+            r##"{"frame":{"kind":"rounded","radius":2},"border":{"kind":"double","width":1.5},"shadow":1.5,"palette":{"frame":"#b8860b","shadow":"#1a1a1a"}}"##,
+        ),
+        render(
+            "round border settling",
+            r#"{"modules":"dots","frame":{"kind":"circle","ring":"solid"},"border":"solid","shadow":1,"seed":3,"intro":"settle"}"#,
+        ),
         render("dark twin", r##"{"preset":"ink","dark":true}"##),
         render(
             "svg logo",
@@ -202,6 +210,7 @@ pub fn inputs() -> Vec<String> {
             &format!(r#""payload":{{"text":"{URL}"}},"style":{{"logo":{{"svg":{logo},"frame":"beads"}},"intro":{{"preset":"sweep","frame":"draw"}},"encoding":{{"ecc":"Q"}}}}"#),
         ),
         case("error unknown key", "render", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"shape":"dots"}}"#)),
+        case("error shadow", "render", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"frame":"none","shadow":1}}"#)),
         case("error contrast", "render", &format!(r##""payload":{{"text":"{URL}"}},"style":{{"palette":{{"fg":"#ccc"}}}}"##)),
         case("error too long", "render", &format!(r#""payload":{{"text":"{}"}},"style":{{"encoding":{{"ecc":"H"}}}}"#, "x".repeat(3000))),
         case("error logo", "render", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"logo":{{"svg":"<html></html>"}}}}"#)),

@@ -211,6 +211,7 @@ pub(crate) fn render_error_parts(e: &RenderError) -> (&'static str, Detail) {
             d.int("intro_ms", intro_ms);
             "replay_too_soon"
         }
+        RenderError::ShadowNeedsBackground => "shadow_needs_background",
         RenderError::Write => "write",
         _ => "render_error",
     };

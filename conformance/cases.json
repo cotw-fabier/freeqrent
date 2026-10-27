@@ -319,6 +319,54 @@
       }
     },
     {
+      "name": "border and shadow",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "frame": {
+          "kind": "rounded",
+          "radius": 2
+        },
+        "border": {
+          "kind": "double",
+          "width": 1.5
+        },
+        "shadow": 1.5,
+        "palette": {
+          "frame": "#b8860b",
+          "shadow": "#1a1a1a"
+        }
+      },
+      "expect": {
+        "sha256": "82f3d6e8382a716b0da321a4e7a766197790cb5fb07df6a2f3b4e2f1790d4e78",
+        "length": 4008
+      }
+    },
+    {
+      "name": "round border settling",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "modules": "dots",
+        "frame": {
+          "kind": "circle",
+          "ring": "solid"
+        },
+        "border": "solid",
+        "shadow": 1,
+        "seed": 3,
+        "intro": "settle"
+      },
+      "expect": {
+        "sha256": "e76315163c4e66ac4bd5eab129681fff9c6c3cec2c1a1c302cb49be7de388dff",
+        "length": 23508
+      }
+    },
+    {
       "name": "dark twin",
       "fn": "render",
       "payload": {
@@ -888,6 +936,20 @@
       },
       "expect": {
         "error": "invalid_style"
+      }
+    },
+    {
+      "name": "error shadow",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "frame": "none",
+        "shadow": 1
+      },
+      "expect": {
+        "error": "shadow_needs_background"
       }
     },
     {

@@ -8,11 +8,11 @@
 //! schema (`schema/freeqrent.schema.json`) is generated from these tables.
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Axis, Corner, CubicBezier, Ease, Ecc, EciPolicy, Emphasis,
-    EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame,
-    LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette, Preset,
-    QrBuilder, QrCode, RasterFormat, RingShape, StaggerOrder, Style, TargetSize, TimingStyle,
-    Token, TrackingGrid, Trigger, Version,
+    AlignmentShape, AlignmentStyle, Axis, Border, Corner, CubicBezier, Ease, Ecc, EciPolicy,
+    Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink, Intro, Logo,
+    LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette,
+    Preset, QrBuilder, QrCode, RasterFormat, RingShape, StaggerOrder, Style, TargetSize,
+    TimingStyle, Token, TrackingGrid, Trigger, Version,
 };
 
 use crate::error::{DocError, logo_error};
@@ -46,6 +46,8 @@ pub const STYLE_KEYS: &[&str] = &[
     "quiet_zone",
     "allow_inverted",
     "frame",
+    "border",
+    "shadow",
     "seed",
     "logo",
     "halftone",
@@ -77,6 +79,8 @@ pub const TIMINGS: &[&str] = &["plain", "dotted", "dashed"];
 pub const FRAMES: &[&str] = &["square", "rounded", "circle", "none"];
 /// `frame.ring`.
 pub const FRAME_RINGS: &[&str] = &["none", "solid", "dashed"];
+/// `border.kind`; a bare name takes the default width.
+pub const BORDERS: &[&str] = &["solid", "double"];
 /// `logo.shape.kind`.
 pub const LOGO_SHAPES: &[&str] = &["square", "rounded", "circle"];
 /// `halftone.ink.kind`.
@@ -205,6 +209,12 @@ fn document(v: &Value) -> Result<Document, DocError> {
     style = style.allow_inverted(allow);
     if let Some(f) = o.opt("frame", frame)? {
         style = style.frame(f);
+    }
+    if let Some(b) = o.opt("border", border)? {
+        style = style.border(b);
+    }
+    if let Some(offset) = o.opt("shadow", f32_of)? {
+        style = style.shadow(offset);
     }
     if let Some(seed) = o.opt("seed", u64_of)? {
         style = style.seed(seed);
@@ -454,6 +464,21 @@ fn frame(v: &Value, path: &str) -> Result<Frame, DocError> {
     };
     o.finish()?;
     Ok(frame)
+}
+
+fn border(v: &Value, path: &str) -> Result<Border, DocError> {
+    let (kind, o) = tagged(v, path, BORDERS)?;
+    let mut o = or_empty(o, &EMPTY);
+    let border = match kind {
+        "solid" => Border::Solid {
+            width: num_or(&mut o, "width", 0.5)?,
+        },
+        _ => Border::Double {
+            width: num_or(&mut o, "width", 1.0)?,
+        },
+    };
+    o.finish()?;
+    Ok(border)
 }
 
 fn target_size(v: &Value, path: &str) -> Result<TargetSize, DocError> {

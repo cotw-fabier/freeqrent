@@ -13,7 +13,7 @@ use crate::matrix::{QrMatrix, misdecode_protection};
 use crate::palette::Token;
 use crate::scanbox::{AlignmentShape, EyeShape, RingShape};
 use crate::scene;
-use crate::style::{Frame, ModuleShape, Style, TargetSize};
+use crate::style::{Border, Frame, ModuleShape, Style, TargetSize};
 use crate::version::BlockLayout;
 
 /// The OKLab lightness difference below which a code isn't rendered. At
@@ -162,6 +162,10 @@ pub enum RenderError {
         /// When the intro ends: its delay and duration.
         intro_ms: u32,
     },
+    /// A shadow ([`Style::shadow`](crate::Style::shadow)) needs a frame
+    /// and an opaque background: without them it would show through the
+    /// quiet zone and between the modules.
+    ShadowNeedsBackground,
     /// The output sink returned an error.
     Write,
 }
@@ -212,6 +216,9 @@ impl fmt::Display for RenderError {
                 f,
                 "the logo is too large for this code; at most scale {max_scale:.2} fits"
             ),
+            RenderError::ShadowNeedsBackground => {
+                f.write_str("a shadow needs a frame and an opaque background")
+            }
             RenderError::Write => f.write_str("the output sink failed"),
         }
     }
@@ -439,6 +446,21 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
             1.0,
         ),
         Frame::Square | Frame::None => {}
+    }
+    match style.border {
+        Some(Border::Solid { width }) => {
+            in_range(&mut errors, "Border::Solid width", width, 0.1, 2.0)
+        }
+        Some(Border::Double { width }) => {
+            in_range(&mut errors, "Border::Double width", width, 0.3, 3.0)
+        }
+        _ => {}
+    }
+    if let Some(offset) = style.shadow {
+        in_range(&mut errors, "Style.shadow offset", offset, 0.25, 3.0);
+        if style.frame == Frame::None || style.palette.background().alpha() < 1.0 {
+            errors.push(RenderError::ShadowNeedsBackground);
+        }
     }
     if let Some(logo) = &style.logo {
         in_range(&mut errors, "Logo.scale", logo.scale, 0.0, 0.5);
@@ -861,6 +883,29 @@ mod tests {
     }
 
     #[cfg(feature = "halftone")]
+    #[test]
+    fn shadows_need_an_opaque_framed_background() {
+        let qr = crate::QrCode::encode("HELLO", crate::Ecc::M).unwrap();
+        assert!(Style::new().shadow(1.0).check(&qr).ok());
+        for style in [
+            Style::new().shadow(1.0).frame(Frame::None),
+            Style::new()
+                .shadow(1.0)
+                .palette(crate::Palette::from_tokens([("bg", "transparent")]).unwrap()),
+        ] {
+            assert!(
+                style
+                    .check(&qr)
+                    .errors
+                    .contains(&RenderError::ShadowNeedsBackground)
+            );
+        }
+        let wide = Style::new()
+            .border(Border::Solid { width: 2.5 })
+            .shadow(4.0);
+        assert_eq!(wide.check(&qr).errors.len(), 2);
+    }
+
     #[test]
     fn halftone_logos_spare_alignment_patterns() {
         // Version 7 has a pattern in the middle, under any logo; version 6

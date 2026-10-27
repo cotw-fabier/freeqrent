@@ -989,7 +989,7 @@ fn pieces(
                 }
             }
             Part::Ring => {
-                let s = canvas.side as f64;
+                let s = canvas.card as f64;
                 push(Unit::Ring, (0.0, 0.0, s, s));
             }
             Part::Halftone => {
@@ -1008,7 +1008,7 @@ fn pieces(
     }
 
     // Stagger keys from each piece's center, binned into equal ranges.
-    let mid = canvas.side as f64 / 2.0;
+    let mid = canvas.card as f64 / 2.0;
     let seed = scene::seed(style, qr);
     let order = intro.order();
     let key = |p: &Piece| {
@@ -1063,7 +1063,7 @@ pub(crate) fn element_count(style: &Style, qr: &QrMatrix) -> usize {
     if intro.entrance() == Some(Preset::Develop) {
         return svg::static_elements(style, qr, &canvas)
             .iter()
-            .filter(|e| e.role != LayerRole::Background)
+            .filter(|e| !e.role.is_chrome())
             .count();
     }
     let layers = scene::layers(style, qr);
@@ -1088,18 +1088,7 @@ fn corner_of(unit: &Unit) -> Option<Corner> {
 fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<Element> {
     let layers = scene::layers(style, qr);
     let pieces = pieces(style, qr, canvas, intro, &layers);
-    let mut elements = Vec::new();
-    let mid = canvas.side as f64 / 2.0;
-    if svg::draws_background(style) {
-        let mut bg = Element::new(
-            LayerRole::Background,
-            Token::Bg,
-            false,
-            svg::background_path(style, canvas),
-        );
-        bg.origin = (mid, mid);
-        elements.push(bg);
-    }
+    let mut elements = svg::chrome_elements(style, canvas);
     let n = qr.size() as usize;
     #[cfg(feature = "halftone")]
     let picture = svg::halftone_cells(style, qr);
@@ -1354,7 +1343,8 @@ fn tracks(
         for (i, e) in elements.iter().enumerate() {
             let target = Target::Layer(i);
             match e.role {
-                LayerRole::Background | LayerRole::Shimmer => {}
+                LayerRole::Shimmer => {}
+                role if role.is_chrome() => {}
                 role if role.is_logo() => tracks.extend(logo_track(i, e)),
                 role if picture(role) => tracks.push(track(
                     target,
@@ -1384,7 +1374,7 @@ fn tracks(
     for (i, e) in elements.iter().enumerate() {
         let target = Target::Layer(i);
         match e.role {
-            LayerRole::Background => {}
+            role if role.is_chrome() => {}
             role if role.is_logo() => tracks.extend(logo_track(i, e)),
             _ if preset.is_reveal() => {}
             LayerRole::FinderOuter | LayerRole::FinderEye if preset == Preset::LockOn => {
@@ -1512,9 +1502,7 @@ fn logo_keys(
 fn reveal(style: &Style, intro: &Intro, canvas: &Canvas, elements: &[Element]) -> Option<Reveal> {
     let preset = intro.entrance().filter(|p| p.is_reveal())?;
     let s = canvas.side as f32;
-    let first = elements
-        .iter()
-        .position(|e| e.role != LayerRole::Background)?;
+    let first = elements.iter().position(|e| !e.role.is_chrome())?;
     // A logo with no intro of its own still leaves the mask when its frame
     // has one, and then shows from the start.
     let logo_apart =
@@ -1810,7 +1798,7 @@ fn idle_tracks(
             }
             LayerRole::Shimmer => {
                 // Across in the first quarter, then home unseen.
-                let across = (canvas.side as f64 * (1.0 + SHIMMER_BAND)) as f32;
+                let across = (canvas.card as f64 * (1.0 + SHIMMER_BAND)) as f32;
                 tracks.push(endless(
                     target,
                     6000,
@@ -1931,13 +1919,13 @@ pub(crate) fn build(
         _ => svg::static_elements(style, qr, canvas),
     };
     if entrance == Some(Preset::Ripple) {
-        let mid = canvas.side as f64 / 2.0;
+        let mid = canvas.card as f64 / 2.0;
         for e in elements.iter_mut().filter(|e| !e.role.is_logo()) {
             e.origin = (mid, mid);
         }
     }
     if style.idle.contains(&Idle::Shimmer) {
-        let side = canvas.side * crate::geometry::UNIT;
+        let side = canvas.card * crate::geometry::UNIT;
         let band = (side as f64 * SHIMMER_BAND) as i64;
         let mut path = Path::new();
         path.rect(-band, 0, band, side);
@@ -2845,6 +2833,8 @@ fn json_num<W: Write + ?Sized>(w: &mut W, v: f32) -> fmt::Result {
 fn role_name(role: LayerRole) -> &'static str {
     match role {
         LayerRole::Background => "background",
+        LayerRole::Shadow => "shadow",
+        LayerRole::Border => "border",
         LayerRole::Ring => "ring",
         LayerRole::Filler => "filler",
         LayerRole::Data => "data",

@@ -40,10 +40,12 @@ pub enum Token {
     CornerEye(Corner),
     /// The frame on a logo's plate (default: `fg`).
     LogoFrame,
+    /// A frame's hard shadow (default: `fg`, SPEC §7.4).
+    Shadow,
 }
 
 const CORNERS: [Corner; 3] = [Corner::TopLeft, Corner::TopRight, Corner::BottomLeft];
-const NUM_TOKENS: usize = 16;
+const NUM_TOKENS: usize = 17;
 
 impl Token {
     /// Every token, in a fixed order.
@@ -64,6 +66,7 @@ impl Token {
         Token::CornerEye(Corner::TopRight),
         Token::CornerEye(Corner::BottomLeft),
         Token::LogoFrame,
+        Token::Shadow,
     ];
 
     fn index(self) -> usize {
@@ -81,6 +84,7 @@ impl Token {
             Token::CornerOuter(c) => 9 + corner(c),
             Token::CornerEye(c) => 12 + corner(c),
             Token::LogoFrame => 15,
+            Token::Shadow => 16,
         }
     }
 
@@ -104,6 +108,7 @@ impl Token {
             "finder.top-right.eye",
             "finder.bottom-left.eye",
             "logo.frame",
+            "shadow",
         ][self.index()]
     }
 
@@ -132,6 +137,7 @@ impl Token {
             "--qr-finder-top-right-eye",
             "--qr-finder-bottom-left-eye",
             "--qr-logo-frame",
+            "--qr-shadow",
         ][self.index()]
     }
 
@@ -144,7 +150,8 @@ impl Token {
             | Token::Timing
             | Token::Filler
             | Token::Frame
-            | Token::LogoFrame => Some(Token::Fg),
+            | Token::LogoFrame
+            | Token::Shadow => Some(Token::Fg),
             Token::Alignment => Some(Token::FinderOuter),
             Token::LogoBackdrop => Some(Token::Bg),
             Token::CornerOuter(_) => Some(Token::FinderOuter),
@@ -554,9 +561,26 @@ pub struct Contrast {
 const DARK_BG: f32 = 0.16;
 
 /// A set of token paints. Unset tokens follow [`Token::fallback`].
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Palette {
     paints: [Option<Paint>; NUM_TOKENS],
+}
+
+/// The tokens of 1.0. Later ones show in `Debug` only when set, so the
+/// text stays the same for palettes that don't use them: an intro's
+/// palette feeds the ID prefix through it (SPEC §6.2).
+const FIRST_TOKENS: usize = 16;
+
+impl fmt::Debug for Palette {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let used = self.paints[FIRST_TOKENS..]
+            .iter()
+            .rposition(Option::is_some)
+            .map_or(FIRST_TOKENS, |i| FIRST_TOKENS + i + 1);
+        f.debug_struct("Palette")
+            .field("paints", &&self.paints[..used])
+            .finish()
+    }
 }
 
 impl Default for Palette {

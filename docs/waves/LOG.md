@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026204907 · M7.5 · Frame borders and hard shadows
+
+- Landed: `Style::border(Border::Solid | Double { width })` in the `frame` token and `Style::shadow(offset)` in a new `shadow` token, on square, rounded and round frames. The border lies outside the quiet zone (square frames gain whole modules of margin, so the code stays on whole modules); the shadow widens the canvas and the background covers only the card. Shadow, background and border are the frame's "chrome", which intros, reveals and Develop leave still, and plans list as `shadow` and `border` layers. Style document `border`/`shadow`, schema, CLI `--border`/`--shadow`, error `shadow_needs_background`.
+- Decision: no contrast check for either, since both sit outside the quiet zone; a shadow needs a frame and an opaque `bg`, or it would show through the quiet zone. `Palette`'s `Debug` lists tokens past 1.0's sixteen only when set, because an intro's palette feeds the ID prefix through it (a palette-shift conformance hash had moved).
+- Measured: 3 frames × 3 borders (solid 0.1, solid 2, double 3) × quiet zones 2 and 4 × square and dots, black border and offset-3 shadow, light and dark twin, v1/5/10/25: all pass the full bar.
+- Checks: all clean; new snapshot `double_border_and_shadow`, the others unchanged; conformance gains three cases (border and shadow, round border settling, error shadow), no existing hash changed.
+
 ## 20261026204201 · M7 · Design-system cards in the gallery
 
 - Landed: 37 gallery cards, one per design system in the owner's design library (`~/Documents/sites/design-system/designs/`), made from existing options only: each design's palette, shapes and finders, round frames for the round designs, and motion for the motion-led ones. The gallery now has section headings. Dark designs keep their polarity and are read inverted.

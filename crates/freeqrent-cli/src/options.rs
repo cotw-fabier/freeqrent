@@ -2,7 +2,7 @@
 //! text after the flag, e.g. `dots:0.8` for `--shape`.
 
 use freeqrent::{
-    AlignmentShape, Axis, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape, Fit, Frame,
+    AlignmentShape, Axis, Border, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape, Fit, Frame,
     FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape,
     Preset, RingShape, StaggerOrder, Style, TimingStyle, TrackingGrid, Trigger,
 };
@@ -201,6 +201,20 @@ pub fn frame(value: &str, ring: FrameRing) -> Result<Frame, String> {
         _ => Err(format!(
             "unknown frame {name:?}: try square, rounded, circle or none"
         )),
+    }
+}
+
+/// `solid[:width]` (default 0.5) or `double[:width]` (default 1).
+pub fn border(value: &str) -> Result<Border, String> {
+    let (name, param) = named(value)?;
+    match name {
+        "solid" => Ok(Border::Solid {
+            width: param.unwrap_or(0.5),
+        }),
+        "double" => Ok(Border::Double {
+            width: param.unwrap_or(1.0),
+        }),
+        _ => Err(format!("unknown border {name:?}: try solid or double")),
     }
 }
 

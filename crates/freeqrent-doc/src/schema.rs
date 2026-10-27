@@ -8,7 +8,7 @@ use freeqrent::Style;
 
 use crate::json::{self, Value};
 use crate::style::{
-    CORNERS, EASES, ECCS, ECIS, EMPHASES, EYES, FITS, FRAME_RINGS, FRAMES, GRIDS, INKS,
+    BORDERS, CORNERS, EASES, ECCS, ECIS, EMPHASES, EYES, FITS, FRAME_RINGS, FRAMES, GRIDS, INKS,
     LOGO_SHAPES, MODULE_SHAPES, RINGS, STAGGERS, STYLE_KEYS, TARGETS, TIMINGS, TRIGGERS, idles,
     intro_presets, logo_frames, logo_intros, logo_sizes, logo_timings, tokens,
 };
@@ -207,6 +207,14 @@ fn style() -> Value {
         ("quiet_zone", int(255)),
         ("allow_inverted", boolean()),
         ("frame", r("Frame")),
+        ("border", r("Border")),
+        (
+            "shadow",
+            described(
+                number(),
+                "A hard shadow's offset down and right, in modules (0.25–3).",
+            ),
+        ),
         ("seed", int(u64::MAX)),
         ("logo", r("Logo")),
         ("halftone", r("Halftone")),
@@ -283,6 +291,16 @@ fn frame() -> Value {
         &[],
     ));
     union(FRAMES, variants)
+}
+
+fn border() -> Value {
+    union(
+        BORDERS,
+        BORDERS
+            .iter()
+            .map(|b| variant(b, vec![("width", number())], &[]))
+            .collect(),
+    )
 }
 
 fn logo() -> Value {
@@ -599,6 +617,7 @@ pub fn schema() -> Value {
         ("Alignment", alignment()),
         ("Palette", palette()),
         ("Frame", frame()),
+        ("Border", border()),
         ("Logo", logo()),
         ("Base64", base64),
         ("Image", image()),

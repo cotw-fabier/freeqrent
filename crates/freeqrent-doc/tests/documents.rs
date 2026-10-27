@@ -3,11 +3,11 @@
 //! core.
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Axis, Corner, CubicBezier, Ease, Ecc, EciPolicy, Emphasis,
-    EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame,
-    LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette, Preset, QrCode,
-    Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, TimingStyle, TrackingGrid, Trigger,
-    Version,
+    AlignmentShape, AlignmentStyle, Axis, Border, Corner, CubicBezier, Ease, Ecc, EciPolicy,
+    Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink, Intro, Logo,
+    LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette, Preset,
+    QrCode, Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, TimingStyle, TrackingGrid,
+    Trigger, Version,
 };
 use freeqrent_doc::{Payload, parse};
 
@@ -211,6 +211,20 @@ fn colors_frames_and_text() {
     assert_eq!(
         style(r#"{"frame":"none"}"#),
         Style::new().frame(Frame::None)
+    );
+    assert_eq!(
+        style(r#"{"border":"solid","shadow":1.5}"#),
+        Style::new()
+            .border(Border::Solid { width: 0.5 })
+            .shadow(1.5)
+    );
+    assert_eq!(
+        style(r#"{"border":{"kind":"double","width":2}}"#),
+        Style::new().border(Border::Double { width: 2.0 })
+    );
+    assert_eq!(
+        style(r#"{"border":"double"}"#).border_style(),
+        Some(Border::Double { width: 1.0 })
     );
 }
 

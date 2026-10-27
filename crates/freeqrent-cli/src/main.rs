@@ -12,11 +12,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Clarity, Corner, Ease, Ecc, Emphasis, EyeShape, FinderStyle,
-    Fit, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
-    LogoTiming, ModuleShape, Origin, Paint, Palette, PaletteOpts, PaletteReport, Preset, QrBuilder,
-    QrCode, QrMatrix, RasterFormat, Rgba8Image, RingShape, ScanReport, StaggerOrder, Style,
-    TargetSize, TimingStyle, Token, TrackingGrid, Trigger, Version,
+    AlignmentShape, AlignmentStyle, Border, Clarity, Corner, Ease, Ecc, Emphasis, EyeShape,
+    FinderStyle, Fit, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape,
+    LogoSize, LogoTiming, ModuleShape, Origin, Paint, Palette, PaletteOpts, PaletteReport, Preset,
+    QrBuilder, QrCode, QrMatrix, RasterFormat, Rgba8Image, RingShape, ScanReport, StaggerOrder,
+    Style, TargetSize, TimingStyle, Token, TrackingGrid, Trigger, Version,
 };
 
 const HELP: &str = "\
@@ -58,6 +58,11 @@ Style:
   --quiet-zone N           modules of margin (default 4)
   --frame FRAME            square, rounded[:r], circle[:filler density], none
   --frame-ring RING        none, solid, dashed (circle frames)
+  --border BORDER          solid[:width] (0.1-2, default 0.5) or double[:width]
+                           (0.3-3, default 1): a line at the frame's edge, in
+                           the frame token, outside the quiet zone
+  --shadow OFFSET          a hard shadow, OFFSET modules down and right
+                           (0.25-3), in the shadow token
   --seed N                 seed for decorative choices (default: from the code)
   --logo FILE              SVG, PNG, JPEG, GIF or WebP for the middle; `sample`
                            for a built-in mark. The code grows until it fits.
@@ -170,6 +175,8 @@ pub struct StyleArgs {
     target: Option<TargetSize>,
     frame: Option<String>,
     frame_ring: Option<FrameRing>,
+    border: Option<Border>,
+    shadow: Option<f32>,
     seed: Option<u64>,
     logo: Option<String>,
     logo_scale: Option<f32>,
@@ -343,6 +350,8 @@ impl StyleArgs {
                 self.frame = Some(value.to_string());
             }
             "frame-ring" => self.frame_ring = Some(options::frame_ring(value)?),
+            "border" => self.border = Some(options::border(value)?),
+            "shadow" => self.shadow = Some(options::number(flag, value)?),
             "seed" => {
                 self.seed = Some(
                     value
@@ -577,6 +586,12 @@ impl StyleArgs {
         if let Some(frame) = &self.frame {
             let ring = self.frame_ring.unwrap_or_default();
             style = style.frame(options::frame(frame, ring)?);
+        }
+        if let Some(border) = self.border {
+            style = style.border(border);
+        }
+        if let Some(offset) = self.shadow {
+            style = style.shadow(offset);
         }
         if let Some(seed) = self.seed {
             style = style.seed(seed);
