@@ -2,9 +2,10 @@
 //! text after the flag, e.g. `dots:0.8` for `--shape`.
 
 use freeqrent::{
-    AlignmentShape, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc, Emphasis, EyeShape,
-    Fit, Frame, FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming,
-    ModuleShape, Preset, RingShape, StaggerOrder, Style, TimingStyle, TrackingGrid, Trigger,
+    AlignmentShape, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc, Effect, Emphasis,
+    EyeShape, Fit, Frame, FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape, LogoSize,
+    LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder, Style, TimingStyle, TrackingGrid,
+    Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -215,6 +216,27 @@ pub fn border(value: &str) -> Result<Border, String> {
             width: param.unwrap_or(1.0),
         }),
         _ => Err(format!("unknown border {name:?}: try solid or double")),
+    }
+}
+
+/// `glow:RADIUS[:STRENGTH]` (strength 0.25 by default) or `emboss:DEPTH`.
+pub fn effect(value: &str) -> Result<Effect, String> {
+    let num = |v: &str| {
+        v.parse::<f32>()
+            .map_err(|_| format!("{value:?}: {v:?} isn't a number"))
+    };
+    match value.split_once(':') {
+        Some(("glow", rest)) => {
+            let (radius, strength) = rest.split_once(':').unwrap_or((rest, "0.25"));
+            Ok(Effect::Glow {
+                radius: num(radius)?,
+                strength: num(strength)?,
+            })
+        }
+        Some(("emboss", depth)) => Ok(Effect::Emboss { depth: num(depth)? }),
+        _ => Err(format!(
+            "unknown effect {value:?}: try glow:RADIUS[:STRENGTH] or emboss:DEPTH"
+        )),
     }
 }
 

@@ -75,6 +75,9 @@
             "regions"
           ]
         },
+        "effect": {
+          "$ref": "#/$defs/Effect"
+        },
         "seed": {
           "type": "integer",
           "minimum": 0,
@@ -591,6 +594,50 @@
               "const": "double"
             },
             "width": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Effect": {
+      "description": "A filter on the code: a glow in its own colors (radius 0.05–0.5 modules, default 0.3; strength 0–0.25, default 0.25) or an emboss (depth 0.05–0.12, default 0.1).",
+      "oneOf": [
+        {
+          "enum": [
+            "glow",
+            "emboss"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "glow"
+            },
+            "radius": {
+              "type": "number"
+            },
+            "strength": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "emboss"
+            },
+            "depth": {
               "type": "number"
             }
           },

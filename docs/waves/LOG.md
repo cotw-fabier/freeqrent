@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026212751 · M7.5 · Glow and emboss
+
+- Landed: `Style::effect(Effect::Glow { radius, strength } | Effect::Emboss { depth })`, one SVG filter on the code's layers (not the frame's chrome, the logo, the shimmer or a picture's sub-cells). Glow blurs the shape in its own colors under it; emboss adds a dark soft shadow down-right and a light one up-left, and keeps the dark one only on inverted codes. Plans carry `effect`. Style document `effect`, schema, CLI `--effect`.
+- Decision: one effect at a time. Limits come from pinned codes (ECC M, no boost), the bench's hardest case: glow strength 0–0.25 at any radius 0.05–0.5, emboss depth 0.05–0.12. A first pass through the CLI (which boosts ECC) suggested radius × strength ≤ 0.1, which the pinned codes disproved.
+- Measured: glow at strength 0.25, radius 0.05–0.5, and emboss to 0.12, every module shape, light and inverted, seven payloads v1–v25: all pass. Strength 0.4 lost 10 of 40 and more to rqrr at 4–6 px/module; emboss 0.15 lost the odd dot code; the light shadow on inverted codes lost every case at depth 0.1 and up.
+- Checks: all clean; new snapshot `glow_effect`, the others unchanged; three new conformance cases (neon glow settling, clay emboss, plan glow), no existing hash changed. The verify test is kept to square and dots up to v10 (15 s); filters are slow in resvg (the full sweep took 270 s).
+
 ## 20261026211921 · M7.5 · Gradient backgrounds
 
 - Landed: `bg` takes linear and radial gradients, spanning the card. Contrast is judged every point of a paint against every point of the background, so the worst meeting decides; `Palette::background()` returns the gradient's average where one color is needed (pictures, dark twins). Logo plates and a picture's light sub-cells follow `bg`'s gradient. Works from the Style document and the CLI (`--bg PAINT`) with no new keys.

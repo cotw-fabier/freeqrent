@@ -4,8 +4,8 @@
 
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc,
-    EciPolicy, Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink, Intro,
-    Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette,
+    EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink,
+    Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette,
     Preset, QrCode, Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, TimingStyle,
     TrackingGrid, Trigger, Version,
 };
@@ -225,6 +225,17 @@ fn colors_frames_and_text() {
     assert_eq!(
         style(r#"{"border":"double"}"#).border_style(),
         Some(Border::Double { width: 1.0 })
+    );
+    assert_eq!(
+        style(r#"{"effect":"glow"}"#).effect_style(),
+        Some(Effect::Glow {
+            radius: 0.3,
+            strength: 0.25
+        })
+    );
+    assert_eq!(
+        style(r#"{"effect":{"kind":"emboss","depth":0.08}}"#),
+        Style::new().effect(Effect::Emboss { depth: 0.08 })
     );
     assert_eq!(
         style(r##"{"palette":{"fg.2":"#7a0000"},"color_spread":"regions"}"##),

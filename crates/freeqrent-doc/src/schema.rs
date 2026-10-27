@@ -8,9 +8,9 @@ use freeqrent::Style;
 
 use crate::json::{self, Value};
 use crate::style::{
-    BORDERS, CORNERS, EASES, ECCS, ECIS, EMPHASES, EYES, FITS, FRAME_RINGS, FRAMES, GRIDS, INKS,
-    LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS, STAGGERS, STYLE_KEYS, TARGETS, TIMINGS, TRIGGERS,
-    idles, intro_presets, logo_frames, logo_intros, logo_sizes, logo_timings, tokens,
+    BORDERS, CORNERS, EASES, ECCS, ECIS, EFFECTS, EMPHASES, EYES, FITS, FRAME_RINGS, FRAMES, GRIDS,
+    INKS, LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS, STAGGERS, STYLE_KEYS, TARGETS, TIMINGS,
+    TRIGGERS, idles, intro_presets, logo_frames, logo_intros, logo_sizes, logo_timings, tokens,
 };
 
 fn s(text: &str) -> Value {
@@ -222,6 +222,7 @@ fn style() -> Value {
                 "How data modules share fg and the data colors fg.2 to fg.4.",
             ),
         ),
+        ("effect", r("Effect")),
         ("seed", int(u64::MAX)),
         ("logo", r("Logo")),
         ("halftone", r("Halftone")),
@@ -298,6 +299,23 @@ fn frame() -> Value {
         &[],
     ));
     union(FRAMES, variants)
+}
+
+fn effect() -> Value {
+    described(
+        union(
+            EFFECTS,
+            vec![
+                variant(
+                    "glow",
+                    vec![("radius", number()), ("strength", number())],
+                    &[],
+                ),
+                variant("emboss", vec![("depth", number())], &[]),
+            ],
+        ),
+        "A filter on the code: a glow in its own colors (radius 0.05–0.5 modules, default 0.3; strength 0–0.25, default 0.25) or an emboss (depth 0.05–0.12, default 0.1).",
+    )
 }
 
 fn border() -> Value {
@@ -625,6 +643,7 @@ pub fn schema() -> Value {
         ("Palette", palette()),
         ("Frame", frame()),
         ("Border", border()),
+        ("Effect", effect()),
         ("Logo", logo()),
         ("Base64", base64),
         ("Image", image()),

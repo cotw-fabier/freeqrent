@@ -834,6 +834,10 @@ pub struct AnimationPlan {
     pub trigger: Trigger,
     /// What to show with motion off.
     pub reduced_motion: Fallback,
+    /// The effect on the code's layers (SPEC §7.5): every layer but the
+    /// frame's (`shadow`, `background`, `border`), the logo's, the shimmer
+    /// and a picture's.
+    pub effect: Option<crate::Effect>,
 }
 
 /// The animation part of a document: its tracks, by element index.
@@ -2763,6 +2767,7 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
         total_ms,
         trigger,
         reduced_motion: Fallback::FinalState,
+        effect: style.effect,
     }
 }
 
@@ -2999,7 +3004,24 @@ impl AnimationPlan {
             }
             Trigger::Every(ms) => write!(w, "{{\"every\":{ms}}}")?,
         }
-        w.write_str(",\"reducedMotion\":\"final-state\"}")
+        w.write_str(",\"reducedMotion\":\"final-state\"")?;
+        // The effect was added later: written only when used.
+        match self.effect {
+            Some(crate::Effect::Glow { radius, strength }) => {
+                w.write_str(",\"effect\":{\"kind\":\"glow\",\"radius\":")?;
+                json_num(w, radius)?;
+                w.write_str(",\"strength\":")?;
+                json_num(w, strength)?;
+                w.write_char('}')?;
+            }
+            Some(crate::Effect::Emboss { depth }) => {
+                w.write_str(",\"effect\":{\"kind\":\"emboss\",\"depth\":")?;
+                json_num(w, depth)?;
+                w.write_char('}')?;
+            }
+            _ => {}
+        }
+        w.write_char('}')
     }
 }
 

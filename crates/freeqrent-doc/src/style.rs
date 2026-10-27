@@ -9,9 +9,9 @@
 
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc,
-    EciPolicy, Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink, Intro,
-    Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette,
-    Preset, QrBuilder, QrCode, RasterFormat, RingShape, StaggerOrder, Style, TargetSize,
+    EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink,
+    Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint,
+    Palette, Preset, QrBuilder, QrCode, RasterFormat, RingShape, StaggerOrder, Style, TargetSize,
     TimingStyle, Token, TrackingGrid, Trigger, Version,
 };
 
@@ -49,6 +49,7 @@ pub const STYLE_KEYS: &[&str] = &[
     "border",
     "shadow",
     "color_spread",
+    "effect",
     "seed",
     "logo",
     "halftone",
@@ -80,6 +81,8 @@ pub const TIMINGS: &[&str] = &["plain", "dotted", "dashed"];
 pub const FRAMES: &[&str] = &["square", "rounded", "circle", "none"];
 /// `frame.ring`.
 pub const FRAME_RINGS: &[&str] = &["none", "solid", "dashed"];
+/// `effect.kind`; a bare name takes the defaults.
+pub const EFFECTS: &[&str] = &["glow", "emboss"];
 /// `color_spread`.
 pub const SPREADS: &[&str] = &["modules", "regions"];
 /// `border.kind`; a bare name takes the default width.
@@ -226,6 +229,9 @@ fn document(v: &Value) -> Result<Document, DocError> {
         })
     })? {
         style = style.color_spread(spread);
+    }
+    if let Some(e) = o.opt("effect", effect)? {
+        style = style.effect(e);
     }
     if let Some(seed) = o.opt("seed", u64_of)? {
         style = style.seed(seed);
@@ -475,6 +481,22 @@ fn frame(v: &Value, path: &str) -> Result<Frame, DocError> {
     };
     o.finish()?;
     Ok(frame)
+}
+
+fn effect(v: &Value, path: &str) -> Result<Effect, DocError> {
+    let (kind, o) = tagged(v, path, EFFECTS)?;
+    let mut o = or_empty(o, &EMPTY);
+    let effect = match kind {
+        "glow" => Effect::Glow {
+            radius: num_or(&mut o, "radius", 0.3)?,
+            strength: num_or(&mut o, "strength", 0.25)?,
+        },
+        _ => Effect::Emboss {
+            depth: num_or(&mut o, "depth", 0.1)?,
+        },
+    };
+    o.finish()?;
+    Ok(effect)
 }
 
 fn border(v: &Value, path: &str) -> Result<Border, DocError> {

@@ -157,6 +157,15 @@ pub fn inputs() -> Vec<String> {
             r##"{"palette":{"bg":"radial-gradient(oklch(97% .02 300), oklch(90% .05 300))","fg":"#2e1065"},"frame":{"kind":"rounded","radius":3},"shadow":1}"##,
         ),
         render(
+            "neon glow settling",
+            r##"{"palette":{"bg":"#0a0a0f","fg":"#7dffb0"},"allow_inverted":true,"effect":{"kind":"glow","radius":0.4},"intro":"settle"}"##,
+        ),
+        render(
+            "clay emboss",
+            r##"{"palette":{"bg":"#e0e5ec","fg":"#2b333b"},"modules":"dots","effect":"emboss","frame":{"kind":"rounded","radius":4}}"##,
+        ),
+        case("plan glow", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"effect":"glow","intro":"ripple"}}"#)),
+        render(
             "round border settling",
             r#"{"modules":"dots","frame":{"kind":"circle","ring":"solid"},"border":"solid","shadow":1,"seed":3,"intro":"settle"}"#,
         ),

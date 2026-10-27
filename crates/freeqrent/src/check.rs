@@ -13,7 +13,7 @@ use crate::matrix::{QrMatrix, misdecode_protection};
 use crate::palette::Token;
 use crate::scanbox::{AlignmentShape, EyeShape, RingShape};
 use crate::scene;
-use crate::style::{Border, Frame, ModuleShape, Style, TargetSize};
+use crate::style::{Border, Effect, Frame, ModuleShape, Style, TargetSize};
 use crate::version::BlockLayout;
 
 /// The OKLab lightness difference below which a code isn't rendered. At
@@ -387,6 +387,11 @@ impl ScanReport {
     }
 }
 
+/// The strongest glow and the deepest emboss (SPEC §7.5).
+pub const GLOW_MAX: f32 = 0.25;
+/// The deepest emboss (SPEC §7.5).
+pub const EMBOSS_MAX: f32 = 0.12;
+
 fn in_range(errors: &mut Vec<RenderError>, option: &'static str, value: f32, min: f32, max: f32) {
     // Written so that NaN fails.
     if !(value >= min && value <= max) {
@@ -453,6 +458,22 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         }
         Some(Border::Double { width }) => {
             in_range(&mut errors, "Border::Double width", width, 0.3, 3.0)
+        }
+        _ => {}
+    }
+    match style.effect {
+        Some(Effect::Glow { radius, strength }) => {
+            in_range(&mut errors, "Effect::Glow radius", radius, 0.05, 0.5);
+            in_range(
+                &mut errors,
+                "Effect::Glow strength",
+                strength,
+                0.0,
+                GLOW_MAX,
+            );
+        }
+        Some(Effect::Emboss { depth }) => {
+            in_range(&mut errors, "Effect::Emboss depth", depth, 0.05, EMBOSS_MAX)
         }
         _ => {}
     }
@@ -883,6 +904,18 @@ mod tests {
     }
 
     #[cfg(feature = "halftone")]
+    #[test]
+    fn effects_keep_to_their_measured_limits() {
+        let qr = crate::QrCode::encode("HELLO", crate::Ecc::M).unwrap();
+        let glow = |radius, strength| Style::new().effect(Effect::Glow { radius, strength });
+        assert!(glow(0.5, GLOW_MAX).check(&qr).ok());
+        assert!(!glow(0.3, 0.4).check(&qr).ok());
+        assert!(!glow(0.6, 0.1).check(&qr).ok());
+        let emboss = |depth| Style::new().effect(Effect::Emboss { depth });
+        assert!(emboss(EMBOSS_MAX).check(&qr).ok());
+        assert!(!emboss(0.15).check(&qr).ok());
+    }
+
     #[test]
     fn shadows_need_an_opaque_framed_background() {
         let qr = crate::QrCode::encode("HELLO", crate::Ecc::M).unwrap();

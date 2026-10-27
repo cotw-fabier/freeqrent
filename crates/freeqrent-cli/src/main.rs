@@ -12,9 +12,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Border, Clarity, ColorSpread, Corner, Ease, Ecc, Emphasis,
-    EyeShape, FinderStyle, Fit, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro,
-    LogoShape, LogoSize, LogoTiming, ModuleShape, Origin, Paint, Palette, PaletteOpts,
+    AlignmentShape, AlignmentStyle, Border, Clarity, ColorSpread, Corner, Ease, Ecc, Effect,
+    Emphasis, EyeShape, FinderStyle, Fit, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame,
+    LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape, Origin, Paint, Palette, PaletteOpts,
     PaletteReport, Preset, QrBuilder, QrCode, QrMatrix, RasterFormat, Rgba8Image, RingShape,
     ScanReport, StaggerOrder, Style, TargetSize, TimingStyle, Token, TrackingGrid, Trigger,
     Version,
@@ -65,6 +65,10 @@ Style:
                            the frame token, outside the quiet zone
   --shadow OFFSET          a hard shadow, OFFSET modules down and right
                            (0.25-3), in the shadow token
+  --effect EFFECT          glow:RADIUS[:STRENGTH] (the code glows in its own
+                           colors: blur 0.05-0.5 modules, opacity 0-0.25,
+                           default 0.25) or emboss:DEPTH (raised like soft
+                           clay, 0.05-0.12 modules)
   --spread modules|regions how data modules share fg and the data colors
                            fg.2-fg.4 (set them with --token): one module or
                            one touching run at a time (default modules)
@@ -183,6 +187,7 @@ pub struct StyleArgs {
     border: Option<Border>,
     shadow: Option<f32>,
     spread: Option<ColorSpread>,
+    effect: Option<Effect>,
     seed: Option<u64>,
     logo: Option<String>,
     logo_scale: Option<f32>,
@@ -359,6 +364,7 @@ impl StyleArgs {
             "border" => self.border = Some(options::border(value)?),
             "shadow" => self.shadow = Some(options::number(flag, value)?),
             "spread" => self.spread = Some(options::spread(value)?),
+            "effect" => self.effect = Some(options::effect(value)?),
             "seed" => {
                 self.seed = Some(
                     value
@@ -602,6 +608,9 @@ impl StyleArgs {
         }
         if let Some(spread) = self.spread {
             style = style.color_spread(spread);
+        }
+        if let Some(effect) = self.effect {
+            style = style.effect(effect);
         }
         if let Some(seed) = self.seed {
             style = style.seed(seed);

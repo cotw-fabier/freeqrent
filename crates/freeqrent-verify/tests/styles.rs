@@ -4,9 +4,10 @@
 
 mod common;
 
-use common::assert_scans;
+use common::{assert_scans, assert_scans_at};
 use freeqrent::{
-    Axis, ColorSpread, Ecc, Frame, FrameRing, ModuleShape, Palette, QrCode, Style, Token, Warning,
+    Axis, ColorSpread, Ecc, Effect, Frame, FrameRing, ModuleShape, Palette, QrCode, Style, Token,
+    Warning,
 };
 use freeqrent_verify::rasterize;
 
@@ -200,6 +201,37 @@ fn gradient_backgrounds_scan() {
                 let twin = style.palette(palette.dark_twin()).allow_inverted(true);
                 assert_scans(&twin, &format!("{bg} {frame:?} {shape:?} dark"));
             }
+        }
+    }
+}
+
+#[test]
+fn effects_scan_at_their_limits() {
+    // Measured (W20261026212751, every module shape at v1-v25): glow is
+    // safe at strength 0.25 at any radius, emboss to 0.12; at 0.4 and
+    // 0.15 rqrr lost codes. Filters are slow to rasterize, so this keeps
+    // to square and dot modules up to v10, light and inverted (where the
+    // emboss keeps its dark shadow only).
+    let effects = [
+        Effect::Glow {
+            radius: 0.05,
+            strength: 0.25,
+        },
+        Effect::Glow {
+            radius: 0.5,
+            strength: 0.25,
+        },
+        Effect::Emboss { depth: 0.12 },
+    ];
+    let neon = Palette::from_tokens([("bg", "#0a0a0f"), ("fg", "#7dffb0")]).unwrap();
+    let payloads = &common::PAYLOADS[..3];
+    for effect in effects {
+        for shape in [ModuleShape::SQUARE, ModuleShape::Dots { size: 0.85 }] {
+            let style = Style::new().modules(shape).effect(effect);
+            assert_scans_at(&style, &format!("{effect:?} {shape:?}"), payloads, Ecc::M);
+            let dark = style.palette(neon.clone()).allow_inverted(true);
+            let label = format!("{effect:?} {shape:?} dark");
+            assert_scans_at(&dark, &label, payloads, Ecc::M);
         }
     }
 }

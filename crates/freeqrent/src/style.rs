@@ -128,6 +128,31 @@ pub enum ColorSpread {
     Regions,
 }
 
+/// A filter on the code's modules (SPEC §7.5). The frame, the logo and a
+/// picture's sub-cells are left as they are. One effect at a time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum Effect {
+    /// A halo in the modules' own colors: neon on dark, a soft bloom on
+    /// light. `radius` (the blur's standard deviation) is 0.05–0.5
+    /// modules and `strength` (its opacity) 0–0.25: stronger halos fill
+    /// the light modules enough that rqrr loses codes.
+    Glow {
+        /// The blur, in modules.
+        radius: f32,
+        /// The halo's opacity.
+        strength: f32,
+    },
+    /// Raised like soft clay or molded plastic: a dark soft shadow down
+    /// and right and a light one up and left, `depth` modules out
+    /// (0.05–0.12). An inverted code keeps the dark shadow only, since the
+    /// light one would land in its gaps.
+    Emboss {
+        /// How far the shadows reach.
+        depth: f32,
+    },
+}
+
 /// A border at the edge of the frame, in the `frame` token (SPEC §7.4).
 /// It lies outside the quiet zone: the canvas grows to make room, so the
 /// code never loses margin to it.
@@ -188,6 +213,7 @@ pub struct Style {
     pub(crate) border: Option<Border>,
     pub(crate) shadow: Option<f32>,
     pub(crate) spread: ColorSpread,
+    pub(crate) effect: Option<Effect>,
     pub(crate) seed: Option<u64>,
     pub(crate) logo: Option<Logo>,
     #[cfg(feature = "halftone")]
@@ -220,6 +246,7 @@ impl Default for Style {
             border: None,
             shadow: None,
             spread: ColorSpread::Modules,
+            effect: None,
             seed: None,
             logo: None,
             #[cfg(feature = "halftone")]
@@ -366,6 +393,17 @@ impl Style {
     /// How data modules are spread across the data colors.
     pub fn color_spread_style(&self) -> ColorSpread {
         self.spread
+    }
+
+    /// Filters the code's modules: a glow or an emboss (SPEC §7.5).
+    pub fn effect(mut self, effect: Effect) -> Style {
+        self.effect = Some(effect);
+        self
+    }
+
+    /// The effect, if any.
+    pub fn effect_style(&self) -> Option<Effect> {
+        self.effect
     }
 
     /// Seeds the generator behind decorative choices such as filler

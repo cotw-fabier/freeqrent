@@ -20,7 +20,7 @@ use crate::num::write_scaled;
 use crate::palette::{Gradient, GradientKind, Paint, Palette, Token};
 use crate::scanbox::{self, AlignmentShape};
 use crate::scene::{self, Canvas, LayerRole, Part, Round};
-use crate::style::{Border, Frame, Style};
+use crate::style::{Border, Effect, Frame, Style};
 
 /// The paths to draw, one per (token, fill rule), in paint order; a
 /// picture's sub-cells keep their own elements.
@@ -576,9 +576,14 @@ pub(crate) fn write<W: Write + ?Sized>(
         motion.as_ref(),
     )?;
 
-    if !gradients.is_empty() || !stroke_gradients.is_empty() {
+    let effects = has_effects(style);
+    if !gradients.is_empty() || !stroke_gradients.is_empty() || effects {
         out.line()?;
         out.w.write_str("<defs>")?;
+        if effects {
+            out.nested_line()?;
+            write_effects(out.w, style, &prefix, n)?;
+        }
         let defs = gradients.iter().map(|&t| (t, false));
         for (source, fifths) in defs.chain(stroke_gradients.iter().map(|&t| (t, true))) {
             let Some(Paint::Gradient(g)) = palette.get(source) else {
@@ -702,6 +707,9 @@ pub(crate) fn write<W: Write + ?Sized>(
                 write_element_paint(out.w, palette, e, &prefix)?;
                 if e.evenodd {
                     out.w.write_str(" fill-rule=\"evenodd\"")?;
+                }
+                if effects && takes_effects(e.role) {
+                    write!(out.w, " filter=\"url(#{prefix}-fx)\"")?;
                 }
                 write_pose(out.w, e)?;
                 write!(out.w, " d=\"{}\"/>", e.path.data())?;
@@ -1323,6 +1331,12 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
         let _ = write!(text, "{:?}{:?}", style.border, style.shadow);
         text.bytes().for_each(&mut eat);
     }
+    // So were effects, which bring a filter ID.
+    if has_effects(style) {
+        let mut text = String::new();
+        let _ = write!(text, "{:?}", style.effect);
+        text.bytes().for_each(&mut eat);
+    }
     for (_, _, dark, _) in qr.modules() {
         eat(dark as u8);
     }
@@ -1367,6 +1381,70 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
     }
     text.bytes().for_each(&mut eat);
     alloc::format!("qr{:08x}", (hash >> 32) as u32 ^ hash as u32)
+}
+
+/// Whether the style filters its code (SPEC §7.5).
+pub(crate) fn has_effects(style: &Style) -> bool {
+    style.effect.is_some()
+}
+
+/// The layers the effects filter applies to: the code, not the frame's
+/// chrome, the logo or the shimmer. (A picture's sub-cells sit in a
+/// viewport of their own and keep clear of it.)
+pub(crate) fn takes_effects(role: LayerRole) -> bool {
+    !role.is_chrome()
+        && !role.is_logo()
+        && !matches!(role, LayerRole::Shimmer | LayerRole::Halftone)
+}
+
+/// The effect's filter, over the whole canvas in its own units: an emboss
+/// (soft dark and light shadows of the shape under it), or a glow (the
+/// shape blurred in its own colors, under it).
+fn write_effects<W: Write + ?Sized>(
+    w: &mut W,
+    style: &Style,
+    prefix: &str,
+    side: i64,
+) -> fmt::Result {
+    let num = |w: &mut W, v: f32| write_scaled(w, math::round(v as f64 * 1000.0) as i64, 3);
+    write!(
+        w,
+        "<filter id=\"{prefix}-fx\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"{side}\" height=\"{side}\" color-interpolation-filters=\"sRGB\">"
+    )?;
+    if let Some(Effect::Emboss { depth: d }) = style.effect {
+        w.write_str("<feGaussianBlur in=\"SourceAlpha\" stdDeviation=\"")?;
+        num(w, d)?;
+        w.write_str("\" result=\"eb\"/>")?;
+        // On a dark background the light shadow would land in the gaps,
+        // so an inverted code keeps the dark one only.
+        let light = if style.palette.contrast(Token::Fg).inverted {
+            "0"
+        } else {
+            ".7"
+        };
+        for (name, sign, color, alpha) in [("ed", 1.0, "#000", ".35"), ("el", -1.0, "#fff", light)]
+        {
+            w.write_str("<feOffset in=\"eb\" dx=\"")?;
+            num(w, sign * d)?;
+            w.write_str("\" dy=\"")?;
+            num(w, sign * d)?;
+            write!(
+                w,
+                "\" result=\"{name}o\"/><feFlood flood-color=\"{color}\" flood-opacity=\"{alpha}\"/><feComposite in2=\"{name}o\" operator=\"in\" result=\"{name}\"/>"
+            )?;
+        }
+        w.write_str("<feMerge><feMergeNode in=\"ed\"/><feMergeNode in=\"el\"/><feMergeNode in=\"SourceGraphic\"/></feMerge>")?;
+    }
+    if let Some(Effect::Glow { radius, strength }) = style.effect {
+        w.write_str("<feGaussianBlur in=\"SourceGraphic\" stdDeviation=\"")?;
+        num(w, radius)?;
+        w.write_str("\" result=\"gb\"/><feColorMatrix in=\"gb\" values=\"1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 ")?;
+        num(w, strength)?;
+        w.write_str(
+            " 0\" result=\"gg\"/><feMerge><feMergeNode in=\"gg\"/><feMergeNode in=\"SourceGraphic\"/></feMerge>",
+        )?;
+    }
+    w.write_str("</filter>")
 }
 
 /// XML-escapes text for element content and double-quoted attributes.
@@ -1580,6 +1658,32 @@ mod tests {
         )));
         assert!(!round.contains("logo-backdrop\" fill"));
         assert_ne!(p, prefix_of(&Style::new().render(&qr).unwrap()));
+    }
+
+    #[test]
+    fn effects_filter_the_code_only() {
+        let style = Style::new()
+            .effect(crate::Effect::Glow {
+                radius: 0.3,
+                strength: 0.25,
+            })
+            .shadow(1.0)
+            .border(crate::Border::Solid { width: 0.5 });
+        let svg = style.render(&qr()).unwrap();
+        let prefix = prefix_of(&svg);
+        assert!(svg.contains(&alloc::format!("<filter id=\"{prefix}-fx\"")));
+        for line in svg.split("<path").skip(1) {
+            let filtered = line.contains("-fx)");
+            let chrome = line.contains("-shadow") || line.contains("-frame");
+            assert_ne!(filtered, chrome, "{line}");
+        }
+        // An inverted emboss keeps its dark shadow only.
+        let dark = Style::new()
+            .effect(crate::Effect::Emboss { depth: 0.1 })
+            .palette(Palette::from_tokens([("bg", "#000"), ("fg", "#fff")]).unwrap())
+            .allow_inverted(true);
+        let svg = dark.render(&qr()).unwrap();
+        assert!(svg.contains("flood-color=\"#fff\" flood-opacity=\"0\""));
     }
 
     #[test]

@@ -407,6 +407,67 @@
       }
     },
     {
+      "name": "neon glow settling",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "palette": {
+          "bg": "#0a0a0f",
+          "fg": "#7dffb0"
+        },
+        "allow_inverted": true,
+        "effect": {
+          "kind": "glow",
+          "radius": 0.4
+        },
+        "intro": "settle"
+      },
+      "expect": {
+        "sha256": "77b622cd8d7ae90d540cbb9da02334bce4859474671143dcf9b3b3b65b04f707",
+        "length": 8863
+      }
+    },
+    {
+      "name": "clay emboss",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "palette": {
+          "bg": "#e0e5ec",
+          "fg": "#2b333b"
+        },
+        "modules": "dots",
+        "effect": "emboss",
+        "frame": {
+          "kind": "rounded",
+          "radius": 4
+        }
+      },
+      "expect": {
+        "sha256": "aa269f82fa7f425bb7e6e18a2c303f0361974298820484dc67c482f1bea68422",
+        "length": 10126
+      }
+    },
+    {
+      "name": "plan glow",
+      "fn": "plan",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "effect": "glow",
+        "intro": "ripple"
+      },
+      "expect": {
+        "sha256": "3cc287d6c5a74e6a2e651977f1b7fb91f933904fc79652394371d7afb3db1a9d",
+        "length": 8758
+      }
+    },
+    {
       "name": "round border settling",
       "fn": "render",
       "payload": {
