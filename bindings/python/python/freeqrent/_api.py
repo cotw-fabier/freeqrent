@@ -33,7 +33,7 @@ def style_json(style: StyleLike) -> str:
     )
 
 
-def _payload(payload: Payload) -> Union[str, bytes]:
+def _payload(payload: Payload) -> Union[str, bytes, bytearray]:
     if isinstance(payload, memoryview):
         return payload.tobytes()
     if isinstance(payload, (str, bytes, bytearray)):

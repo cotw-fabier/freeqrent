@@ -2,6 +2,7 @@
 document (so the same SVG) as the JSON they stand for."""
 
 import base64
+import collections.abc
 import dataclasses
 import hashlib
 import json
@@ -96,11 +97,11 @@ def build(tp: Any, value: Any) -> Any:
             else:
                 kw[name] = build(hints(tp)[name], v)
         return tp(**kw)
-    if origin in (list, tuple, typing.Sequence, getattr(__import__("collections.abc").abc, "Sequence")):
+    if origin in (list, tuple, typing.Sequence, collections.abc.Sequence):
         item = args[0]
         out = [build(item, v) for v in value]
         return tuple(out) if origin is tuple else out
-    if origin in (dict, typing.Mapping, getattr(__import__("collections.abc").abc, "Mapping")):
+    if origin in (dict, typing.Mapping, collections.abc.Mapping):
         return dict(value)
     if tp in (int, float, str, bool):
         return value

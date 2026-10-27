@@ -90,7 +90,11 @@ where
 
 /// The SVG for `payload` (str or bytes) in the Style document `style`.
 #[pyfunction]
-fn render(py: Python<'_>, payload: &Bound<'_, PyAny>, style: &Bound<'_, PyAny>) -> PyResult<String> {
+fn render(
+    py: Python<'_>,
+    payload: &Bound<'_, PyAny>,
+    style: &Bound<'_, PyAny>,
+) -> PyResult<String> {
     let payload = payload_arg(py, payload)?;
     let style = text_arg(py, style, "the style")?;
     run(py, || freeqrent_doc::render(payload.payload(), &style))
@@ -106,7 +110,9 @@ fn render_frame(
 ) -> PyResult<String> {
     let payload = payload_arg(py, payload)?;
     let style = text_arg(py, style, "the style")?;
-    run(py, || freeqrent_doc::render_frame(payload.payload(), &style, t_ms))
+    run(py, || {
+        freeqrent_doc::render_frame(payload.payload(), &style, t_ms)
+    })
 }
 
 /// The scan report, as JSON.

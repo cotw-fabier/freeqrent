@@ -36,4 +36,6 @@ testpaths = ["tests"]
 
 [tool.mypy]
 strict = true
+# The oldest mypy 2 checks against; the package itself runs on 3.9 (CI).
+python_version = "3.10"
 files = ["python/freeqrent", "tests/typecheck.py"]
