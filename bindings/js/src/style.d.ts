@@ -24,6 +24,8 @@ export interface Style {
   timing?: TimingStyle;
   /** Token paints, merged onto the base's palette. */
   palette?: Palette;
+  /** Start from the default palette instead of the base's, as the CLI does with --palette-from-*. */
+  replace_palette?: boolean;
   /** Render the palette's dark twin and allow inverted colors. */
   dark?: boolean;
   quiet_zone?: number;
@@ -529,7 +531,16 @@ export interface PaletteOpts {
   min_contrast?: number;
   allow_inverted?: boolean;
   logo_colors?: string[];
+  /** The logo whose colors an extracted frame keeps apart from, in place of logo_colors. */
+  logo?: PaletteLogo;
 }
+
+export interface PaletteLogoOptions {
+}
+
+export type PaletteLogo =
+  | (PaletteLogoOptions & { svg: string; image?: never; })
+  | (PaletteLogoOptions & { image: Image; svg?: never; });
 
 /** An error, or one of a report's errors and warnings. */
 export interface Issue {

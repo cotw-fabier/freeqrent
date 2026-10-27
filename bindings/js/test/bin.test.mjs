@@ -273,6 +273,10 @@ test('the bin writes what the Rust CLI writes', { skip: cli ? false : 'FREEQRENT
     ['--ecc', 'q', '--seed', '9007199254740993'],
     ['--intro', 'ripple', '--plan'],
     ['--intro', 'iris', '--frame-at', '300'],
+    // With a preset the extracted palette replaces the preset's, and with
+    // an SVG logo the extracted frame keeps apart from its paints.
+    ['--preset', 'candy', '--palette-from-html', files.html],
+    ['--palette-from-html', files.html, '--logo', files.svg],
   ];
   for (const args of [...lines, ...extra]) {
     for (const text of [TEXT, 'https://example.com/x']) {
@@ -282,13 +286,7 @@ test('the bin writes what the Rust CLI writes', { skip: cli ? false : 'FREEQRENT
       assert.ok(got.stdout === want.stdout, `${text} ${args.join(' ')}: the bin and the CLI differ`);
     }
   }
-  // A known gap between the CLI and the document, reported upstream: with a
-  // preset, the CLI's --palette-from-* replaces the preset's palette, while
-  // the document merges the extracted tokens onto it, so a preset token the
-  // extraction doesn't set (candy's, here) survives. When the two agree,
-  // move this line into the list above.
-  const known = [TEXT, '--preset', 'candy', '--palette-from-html', files.html];
-  assert.notEqual(bin(known).stdout, spawnSync(cli, known, { encoding: 'utf8' }).stdout, 'the preset-palette gap is closed');
+
 });
 
 test('the bin is executable through npm exec', { skip: process.platform === 'win32' }, () => {

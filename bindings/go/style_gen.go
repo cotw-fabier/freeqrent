@@ -25,6 +25,9 @@ type Style struct {
 	Timing    Timing      `json:"timing,omitzero"`
 	// Token paints, merged onto the base's palette.
 	Palette Palette `json:"palette,omitzero"`
+	// Start from the default palette instead of the base's, as the CLI does with
+	// --palette-from-*.
+	ReplacePalette *bool `json:"replace_palette,omitzero"`
 	// Render the palette's dark twin and allow inverted colors.
 	Dark          *bool  `json:"dark,omitzero"`
 	QuietZone     *uint8 `json:"quiet_zone,omitzero"`
@@ -78,6 +81,8 @@ func (v *Style) UnmarshalJSON(data []byte) error {
 			err = json.Unmarshal(raw, &v.Timing)
 		case "palette":
 			err = json.Unmarshal(raw, &v.Palette)
+		case "replace_palette":
+			err = json.Unmarshal(raw, &v.ReplacePalette)
 		case "dark":
 			err = json.Unmarshal(raw, &v.Dark)
 		case "quiet_zone":
@@ -3893,6 +3898,9 @@ type PaletteOpts struct {
 	MinContrast   *float64 `json:"min_contrast,omitzero"`
 	AllowInverted *bool    `json:"allow_inverted,omitzero"`
 	LogoColors    []string `json:"logo_colors,omitzero"`
+	// The logo whose colors an extracted frame keeps apart from, in place of
+	// logo_colors.
+	Logo *PaletteLogo `json:"logo,omitzero"`
 }
 
 // UnmarshalJSON reads the object strictly: unknown keys are errors.
@@ -3916,11 +3924,46 @@ func (v *PaletteOpts) UnmarshalJSON(data []byte) error {
 			err = json.Unmarshal(raw, &v.AllowInverted)
 		case "logo_colors":
 			err = json.Unmarshal(raw, &v.LogoColors)
+		case "logo":
+			err = json.Unmarshal(raw, &v.Logo)
 		default:
 			err = fmt.Errorf("isn't a key of PaletteOpts")
 		}
 		if err != nil {
 			return fmt.Errorf("freeqrent: PaletteOpts.%s: %w", k, err)
+		}
+	}
+	return nil
+}
+
+// PaletteLogo mirrors the schema's PaletteLogo.
+type PaletteLogo struct {
+	// An SVG document; its paints.
+	SVG *string `json:"svg,omitzero"`
+	// A raster logo's pixels; its swatches.
+	Image *Image `json:"image,omitzero"`
+}
+
+// UnmarshalJSON reads the object strictly: unknown keys are errors.
+func (v *PaletteLogo) UnmarshalJSON(data []byte) error {
+	fields, keys, err := objectFields(data, "PaletteLogo")
+	if err != nil {
+		return err
+	}
+	*v = PaletteLogo{}
+	for _, k := range keys {
+		raw := fields[k]
+		var err error
+		switch k {
+		case "svg":
+			err = json.Unmarshal(raw, &v.SVG)
+		case "image":
+			err = json.Unmarshal(raw, &v.Image)
+		default:
+			err = fmt.Errorf("isn't a key of PaletteLogo")
+		}
+		if err != nil {
+			return fmt.Errorf("freeqrent: PaletteLogo.%s: %w", k, err)
 		}
 	}
 	return nil
@@ -4474,6 +4517,11 @@ func WithTiming(v Timing) Option {
 // WithPalette sets Style.Palette.
 func WithPalette(v Palette) Option {
 	return func(s *Style) { s.Palette = v }
+}
+
+// WithReplacePalette sets Style.ReplacePalette.
+func WithReplacePalette(v bool) Option {
+	return func(s *Style) { s.ReplacePalette = &v }
 }
 
 // WithDark sets Style.Dark.

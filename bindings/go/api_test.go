@@ -401,7 +401,7 @@ func TestPresetsAndVersion(t *testing.T) {
 	for _, n := range names {
 		mustRender(t, "hi", NewStyle(WithPreset(n)))
 	}
-	if Version() != "1.0.0" {
+	if Version() != SchemaVersion {
 		t.Fatalf("version %q", Version())
 	}
 	if b := Backend(); b != "cgo" && b != "wasm" {

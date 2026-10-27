@@ -422,23 +422,19 @@ function logo(source, io) {
 }
 
 /**
- * The logo's colors, which the CLI hands to palette extraction so the
- * frame keeps apart from them: a PNG's swatches. GIF and WebP logos have
- * none (the CLI doesn't decode them either). An SVG's paints and a JPEG's
- * swatches can't be had here.
+ * The logo for palette extraction's `logo` option, so the frame keeps apart
+ * from its colors as the CLI's does: an SVG's text, or a PNG's pixels. GIF
+ * and WebP logos give none (the CLI doesn't decode them either); a JPEG
+ * isn't decoded here.
  */
-function logoColors(source, logoDoc) {
-  if (logoDoc.svg !== undefined) {
-    throw new Usage(
-      `--logo ${source} with --palette-from-*: an SVG logo's colors aren't exposed by the library's boundary yet, so the npm bin can't keep the extracted frame apart from them; use the Rust CLI, or give the palette with --fg/--bg/--token`,
-    );
-  }
+function paletteLogo(source, logoDoc) {
+  if (logoDoc.svg !== undefined) return { svg: logoDoc.svg };
   const bytes = logoDoc.raster;
-  if (isPng(bytes)) return fq.paletteFromImage(decodePng(bytes)).swatches.map((s) => s.color);
+  if (isPng(bytes)) return { image: decodePng(bytes) };
   if (isJpeg(bytes)) {
     throw new Usage(`--logo ${source} with --palette-from-*: a JPEG logo isn't decoded by the npm bin; convert it to PNG`);
   }
-  return [];
+  return undefined;
 }
 
 /**
@@ -758,7 +754,10 @@ function build(s, text, io) {
   let palette = null;
   if (s.paletteSource !== undefined) {
     const opts = { allow_inverted: has('allow-inverted') };
-    if (s.logo !== undefined) opts.logo_colors = logoColors(s.logo, logo(s.logo, io));
+    if (s.logo !== undefined) {
+      const found = paletteLogo(s.logo, logo(s.logo, io));
+      if (found !== undefined) opts.logo = found;
+    }
     try {
       if (s.paletteSource.image !== undefined) {
         if (s.paletteClusters !== undefined) opts.clusters = s.paletteClusters;
@@ -776,6 +775,8 @@ function build(s, text, io) {
   }
   if (palette !== null || s.tokens.length > 0) {
     doc.palette = { ...(palette === null ? {} : palette.palette) };
+    // The CLI's extracted palette replaces a preset's instead of merging.
+    if (palette !== null && s.preset !== undefined) doc.replace_palette = true;
     for (const [name, paint] of s.tokens) doc.palette[name] = paint;
   }
   if (has('dark')) doc.dark = true;

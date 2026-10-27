@@ -277,6 +277,21 @@ pub fn inputs() -> Vec<String> {
             r##""text":"<html><head><style>body{background:#fffaf0;color:#2b2118}h1{color:#9a3412}</style></head><body style=\"border-color:#14532d\"></body></html>","opts":{"logo_colors":["#a3302a"]}"##,
         ),
         case("palette from image", "palette_from_image", &format!(r#""image":{bands},"opts":{{"clusters":4,"seed":1}}"#)),
+        case(
+            "palette apart from an svg logo",
+            "palette_from_html",
+            &format!(r##""text":"<style>body{{background:#fffaf0;color:#2b2118}} h1{{color:#a3302a}} a{{color:#14532d}}</style>","opts":{{"logo":{{"svg":{logo}}}}}"##),
+        ),
+        case(
+            "palette apart from a raster logo",
+            "palette_from_css",
+            &format!(r#""text":":root {{ --brand: #1d3b72; --accent: #c2410c; --paper: #f8f5ee; }}","opts":{{"logo":{{"image":{disc}}}}}"#),
+        ),
+        render(
+            "preset with its palette replaced",
+            r##"{"preset":"candy","replace_palette":true,"palette":{"bg":"#f8f5ee","fg":"#1d3b72"}}"##,
+        ),
+        case("error logo and its colors", "palette_from_css", &format!(r##""text":"a{{color:#123}}","opts":{{"logo":{{"svg":{logo}}},"logo_colors":["#a3302a"]}}"##)),
         case("palette with no colors", "palette_from_css", r#""text":"","opts":{}"#),
         case("presets", "presets", ""),
     ]);
@@ -396,6 +411,8 @@ pub fn generate() -> String {
             ),
         ),
         ("version".into(), Value::String(freeqrent_doc::version().into())),
+        // So a runner can tell it read the whole suite.
+        ("count".into(), Value::Number(cases.len().to_string())),
         ("cases".into(), Value::Array(cases)),
     ]);
     let mut out = String::new();

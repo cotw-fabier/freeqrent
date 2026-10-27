@@ -43,6 +43,7 @@ pub const STYLE_KEYS: &[&str] = &[
     "alignment",
     "timing",
     "palette",
+    "replace_palette",
     "dark",
     "quiet_zone",
     "allow_inverted",
@@ -206,7 +207,12 @@ fn document(v: &Value) -> Result<Document, DocError> {
         style = style.timing(t);
     }
     let dark = o.opt("dark", bool_of)?.unwrap_or(false);
-    let mut palette = style.colors().clone();
+    // `replace_palette` starts from the default palette instead of the
+    // base's, as the CLI does with `--palette-from-*`.
+    let mut palette = match o.opt("replace_palette", bool_of)? {
+        Some(true) => Palette::new(),
+        _ => style.colors().clone(),
+    };
     if let Some((value, path)) = o.get("palette") {
         merge_palette(&mut palette, value, &path)?;
     }

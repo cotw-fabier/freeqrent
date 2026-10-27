@@ -2,7 +2,11 @@
 
 All four Phase 1 crates (`freeqrent`, `freeqrent-image`, `freeqrent-verify`, `freeqrent-cli`) share one version. From 1.0 on, the core follows semver: enums and reports that may grow are `#[non_exhaustive]`, so new shapes, presets, tokens or warnings arrive in minor releases. Output changes (the SVG for a given input) are called out here, even when the API doesn't change.
 
-## Unreleased (core 1.1, M7.5)
+## 1.1.0 (2026-10-27)
+
+The first GitHub release: the core with M7.5's design styles, and the language bindings (M7, M8) with prebuilt libraries. Nothing is on crates.io, npm, PyPI or pub.dev yet (M9).
+
+### Core (M7.5)
 
 New options, all additive; 1.0 styles render byte for byte as before (snapshots and conformance hashes unchanged):
 
@@ -14,9 +18,9 @@ New options, all additive; 1.0 styles render byte for byte as before (snapshots 
 - **Fix:** animation plans (`AnimationPlan::to_json`) are valid JSON again; numbers below 1 had lost their leading zero. Plan output changes; SVG output doesn't.
 - Every option is in the Style document, the schema, the conformance suite (16 new cases, 74 in all) and the CLI, and plans carry what other players need (`effect`, `textures`, `caption`, layers' `fillOpacity`).
 
-## Unreleased (Phase 2, M7 and M8)
+### Bindings (M7, M8)
 
-Not part of the 1.0 core release. These crates are `publish = false` until the bindings ship together (M9).
+`freeqrent-doc` and `freeqrent-ffi` stay `publish = false` until the bindings ship to their registries together (M9).
 
 - **`freeqrent-doc`:** Style documents (JSON) in; SVG, scan reports, animation plans and palettes out. Errors are structured as `{code, message, detail}`. This is the boundary every binding shares (SPEC §10.1).
 - **Schema and conformance:** `schema/freeqrent.schema.json` is generated from the parser's tables. `conformance/cases.json` has 57 cases every binding has to reproduce byte for byte.
@@ -26,9 +30,11 @@ Not part of the 1.0 core release. These crates are `publish = false` until the b
 - **Prebuilt binaries:** the C ABI for every platform (`scripts/build-prebuilt.sh`, `.github/workflows/prebuilt.yml`).
 - **Dart and Flutter:** `bindings/dart/freeqrent` (FFI through Native Assets) and `bindings/dart/freeqrent_flutter` with the `FreeQrentAnimated` widget.
 - **Python:** `bindings/python`, the `freeqrent` package (PyO3, abi3 wheels for CPython ≥ 3.9) with typed styles generated from the schema.
-- **M8 groundwork:** `render_frame` (the CLI's `--frame-at`) at the boundary and the C ABI, `freeqrent_alloc`/`freeqrent_dealloc` for WebAssembly hosts, 77 conformance cases, and `bindings/SURFACE.md`, the CLI's whole surface mapped onto the Style document and checked against the CLI byte for byte.
+- **M8 groundwork:** `render_frame` (the CLI's `--frame-at`) at the boundary and the C ABI, `freeqrent_alloc`/`freeqrent_dealloc` for WebAssembly hosts, and `bindings/SURFACE.md`, the CLI's whole surface mapped onto the Style document and checked against the CLI byte for byte.
+- **The CLI's palette flags in the document:** `replace_palette` (an extracted palette replaces a preset's, as `--preset` with `--palette-from-*` does) and the palette options' `logo` (an extracted frame keeps apart from an SVG's paints or a raster's pixels, as with `--logo`). The conformance suite has 81 cases.
+- **`scripts/bindings.sh`** regenerates everything generated from the library, tests every binding, sets the version and builds the release artifacts.
 
-## 1.0.0 (unreleased)
+## 1.0.0 (not released on its own)
 
 The first release. Phase 1 of [`SPEC.md`](SPEC.md), milestones M0–M6:
 

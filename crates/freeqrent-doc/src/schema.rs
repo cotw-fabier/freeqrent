@@ -199,6 +199,13 @@ fn style() -> Value {
             ),
         ),
         (
+            "replace_palette",
+            described(
+                boolean(),
+                "Start from the default palette instead of the base's, as the CLI does with --palette-from-*.",
+            ),
+        ),
+        (
             "dark",
             described(
                 boolean(),
@@ -548,9 +555,39 @@ fn palette_opts() -> Value {
             ("min_contrast", number()),
             ("allow_inverted", boolean()),
             ("logo_colors", array(string())),
+            (
+                "logo",
+                described(
+                    r("PaletteLogo"),
+                    "The logo whose colors an extracted frame keeps apart from, in place of logo_colors.",
+                ),
+            ),
         ],
         &[],
     )
+}
+
+fn palette_logo() -> Value {
+    let mut schema = props(
+        vec![
+            ("svg", described(string(), "An SVG document; its paints.")),
+            (
+                "image",
+                described(r("Image"), "A raster logo's pixels; its swatches."),
+            ),
+        ],
+        &[],
+    );
+    if let Value::Object(members) = &mut schema {
+        members.push((
+            "oneOf".to_string(),
+            Value::Array(vec![
+                obj(vec![("required", Value::Array(vec![s("svg")]))]),
+                obj(vec![("required", Value::Array(vec![s("image")]))]),
+            ]),
+        ));
+    }
+    schema
 }
 
 fn nullable(t: &str) -> Value {
@@ -692,6 +729,7 @@ pub fn schema() -> Value {
         ("TargetSize", target_size()),
         ("Encoding", encoding()),
         ("PaletteOpts", palette_opts()),
+        ("PaletteLogo", palette_logo()),
         ("Error", error()),
         ("Report", report()),
         ("PaletteResult", palette_result()),

@@ -68,7 +68,7 @@ const { palette } = paletteFromCss(await (await fetch('/site.css')).text());
 const svg = render('https://example.com', { preset: 'ink', palette });
 ```
 
-Palette options are `{ clusters, seed, min_contrast, allow_inverted, logo_colors }`, as an object or JSON text.
+Palette options are `{ clusters, seed, min_contrast, allow_inverted, logo_colors }` or `logo` (`{ svg }` or `{ image: {width, height, data} }`) in place of `logo_colors`, as an object or JSON text.
 
 ### Styles
 
@@ -116,7 +116,7 @@ It takes the Rust CLI's flags (`bindings/SURFACE.md` lists them all) and writes 
 What differs:
 
 - **Pictures are PNG only.** `--halftone`, `--art`, `--palette-from-image`, `--clarity-map` and `--priority` read PNG files (every color type and bit depth, palettes, transparency, interlacing) with a decoder in plain JavaScript over `node:zlib`, or `sample`. JPEG files are refused with a message, since the package carries no image decoder. Logos are passed to the library as they are, so JPEG, GIF and WebP logos work.
-- **An SVG logo with `--palette-from-*` is refused.** The CLI keeps an extracted frame color apart from the logo's own colors; an SVG logo's colors aren't exposed by the library's boundary yet. A PNG logo works.
+- **A JPEG logo with `--palette-from-*` is refused.** The extracted frame keeps apart from the logo's colors, and the bin reads them from an SVG's paints or a PNG's pixels only.
 - **`--verify`, `--gallery`, `--gallery-picture` and `--scan-sheet`** are the Rust CLI's own tools (they need a rasterizer and decoders) and are refused.
 
 ## Build from source

@@ -1537,6 +1537,7 @@ class QrStyle extends QrDocument {
     this.alignment,
     this.timing,
     this.palette,
+    this.replacePalette,
     this.dark,
     this.quietZone,
     this.allowInverted,
@@ -1578,6 +1579,9 @@ class QrStyle extends QrDocument {
 
   /// Token paints, merged onto the base's palette.
   final Map<QrToken, String>? palette;
+
+  /// Start from the default palette instead of the base's, as the CLI does with --palette-from-*.
+  final bool? replacePalette;
 
   /// Render the palette's dark twin and allow inverted colors.
   final bool? dark;
@@ -1640,6 +1644,7 @@ class QrStyle extends QrDocument {
       'palette': {
         for (final MapEntry(:key, :value) in palette!.entries) key.json: value,
       },
+    if (replacePalette != null) 'replace_palette': replacePalette!,
     if (dark != null) 'dark': dark!,
     if (quietZone != null) 'quiet_zone': quietZone!,
     if (allowInverted != null) 'allow_inverted': allowInverted!,
@@ -1666,6 +1671,23 @@ class QrStyle extends QrDocument {
   };
 }
 
+class QrPaletteLogo extends QrDocument {
+  /// Its fields; those left out take the core's defaults.
+  const QrPaletteLogo({this.svg, this.image});
+
+  /// An SVG document; its paints.
+  final String? svg;
+
+  /// A raster logo's pixels; its swatches.
+  final QrImage? image;
+
+  @override
+  Map<String, Object?> toJson() => {
+    if (svg != null) 'svg': svg!,
+    if (image != null) 'image': image!.toJson(),
+  };
+}
+
 class QrPaletteOpts extends QrDocument {
   /// Its fields; those left out take the core's defaults.
   const QrPaletteOpts({
@@ -1674,6 +1696,7 @@ class QrPaletteOpts extends QrDocument {
     this.minContrast,
     this.allowInverted,
     this.logoColors,
+    this.logo,
   });
 
   final int? clusters;
@@ -1686,6 +1709,9 @@ class QrPaletteOpts extends QrDocument {
 
   final List<String>? logoColors;
 
+  /// The logo whose colors an extracted frame keeps apart from, in place of logo_colors.
+  final QrPaletteLogo? logo;
+
   @override
   Map<String, Object?> toJson() => {
     if (clusters != null) 'clusters': clusters!,
@@ -1693,5 +1719,6 @@ class QrPaletteOpts extends QrDocument {
     if (minContrast != null) 'min_contrast': minContrast!,
     if (allowInverted != null) 'allow_inverted': allowInverted!,
     if (logoColors != null) 'logo_colors': logoColors!,
+    if (logo != null) 'logo': logo!.toJson(),
   };
 }

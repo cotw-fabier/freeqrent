@@ -82,12 +82,9 @@ A payload is text (UTF-8, segmented like the CLI's `TEXT`) or bytes. Every funct
 | `--palette-from-image FILE`, `--palette-from-css FILE`, `--palette-from-html FILE` | two calls: `palette_from_*` returns a result whose `palette` goes into the document's `palette` |
 | `--palette-clusters K`, `--palette-contrast D` | palette options `clusters`, `min_contrast` |
 | `--show-palette` | the palette result's `swatches` and `choices` |
-| | palette options `seed`, `logo_colors` (the CLI fills `logo_colors` from `--logo`), `allow_inverted` (the CLI passes `--allow-inverted`) |
+| | palette options `seed`, `logo` or `logo_colors` (the CLI uses `--logo`), `allow_inverted` (the CLI passes `--allow-inverted`); the style's `replace_palette` (the CLI's palette replaces a preset's) |
 
-Two gaps remain here (found by the npm bin, W20261026235449), both waiting on a decision:
-
-- **With `--preset`, the CLI replaces the preset's palette** with the extracted one, while the document merges the extracted tokens onto the preset's. So a preset token the extraction doesn't set (`filler`, say) survives through the document. Without `--preset` the two agree, which is what `palette_flags_are_two_calls` checks; the npm bin's tests pin the difference so they fail when it's closed.
-- **`--logo FILE.svg` with `--palette-from-*`:** the CLI passes the SVG's paints as `logo_colors`, and the boundary has no way to read a logo's colors. A binding can pass `logo_colors` itself; a PNG logo's colors come from `palette_from_image`.
+With `--preset`, the CLI's extracted palette replaces the preset's, so the document says `replace_palette: true` (otherwise the extracted tokens merge onto the preset's and the preset's other tokens, `filler` say, survive). With `--logo`, the CLI keeps the extracted frame apart from the logo's colors: pass the logo in the palette options as `logo` (`{"svg": text}` or `{"image": pixels}`), or its colors as `logo_colors`. Both were found by the npm bin's comparison with the CLI (W20261026235737) and closed in W20261027004614.
 
 ```equivalences
 --fg '#1d3b72' --bg '#f8f5ee'                   => {"palette":{"fg":"#1d3b72","bg":"#f8f5ee"}}

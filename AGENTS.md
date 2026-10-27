@@ -14,6 +14,7 @@ A zero-dependency Rust library for styled and animated SVG QR codes. `SPEC.md` i
 
 - **Phase 1 is the Rust core only.** Don't build language bindings until Phase 2 (SPEC §2, §12). Do keep the core binding-friendly: options are plain data, there are no callbacks on hot paths, and errors are structured.
 - **Bindings go through `freeqrent-doc`** (SPEC §10.1). The JSON schema and the conformance suite are generated: `cargo run -p freeqrent-doc --example generate`. A changed conformance hash is an output change. Only `freeqrent-ffi` may use `unsafe`. A new CLI flag goes on `bindings/SURFACE.md` with an equivalence line, or it has no way into the bindings.
+- **Keep the bindings in step: run `scripts/bindings.sh`.** After any change to the core, `freeqrent-doc`, `freeqrent-ffi`, the schema or a binding, run `scripts/bindings.sh generate` (schema, conformance suite, every binding's typed styles, the Flutter goldens) and commit what it changes, then `scripts/bindings.sh test` (npm, Python, Go, Dart and Flutter). A release is `scripts/bindings.sh version X.Y.Z`, the checks, then `scripts/bindings.sh build`, whose artifacts and `SHA256SUMS` go on the GitHub release; pushing the `vX.Y.Z` tag has `.github/workflows/prebuilt.yml` attach the libraries it can't build locally (Linux, Windows).
 - **The core crate has zero dependencies** and is `no_std` + `alloc`, with `#![forbid(unsafe_code)]`. Dev-dependencies (`rqrr`, `insta`, `resvg`) are fine. Anything else needs a spec change first.
 - **Output is deterministic.** The same input produces byte-identical SVG. All randomness comes from the seeded PRNG.
 - **Scannability is a hard constraint.** A style that can't be verified to scan doesn't ship. Round-trip decode tests cover every new style option: render it, then `freeqrent_verify::verify_style` (resvg + ZXing + rqrr, held to the bar the style's own `ScanReport` implies). Limits and warnings come from measurements, recorded in the spec and the wave log.
@@ -30,6 +31,8 @@ cargo test --workspace --all-features
 cargo build -p freeqrent --no-default-features   # no_std build
 scripts/check-core-deps.sh                        # core (and freeqrent-doc) stay dependency-free
 scripts/ffi-smoke.sh                              # the C ABI links and runs from C
+scripts/bindings.sh generate && git diff --exit-code   # generated files are current
+scripts/bindings.sh test                          # every binding's tests
 cargo deny check
 ```
 

@@ -64,7 +64,8 @@ void main() {
   final cases = (suite['cases'] as List).cast<Map<String, Object?>>();
 
   test('the suite has every case', () {
-    expect(cases, hasLength(77));
+    expect(cases, hasLength(suite['count']));
+    expect(suite['count'], greaterThanOrEqualTo(81));
     expect(suite['version'], FreeQrent.version);
   });
 

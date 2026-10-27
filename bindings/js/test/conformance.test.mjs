@@ -52,7 +52,8 @@ const sha256 = (text) => createHash('sha256').update(text, 'utf8').digest('hex')
 
 test('the suite has every case', () => {
   assert.equal(suite.version, fq.version());
-  assert.equal(suite.cases.length, 77);
+  assert.equal(suite.cases.length, suite.count);
+  assert.ok(suite.count >= 81);
 });
 
 for (const c of suite.cases) {

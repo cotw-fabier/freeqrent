@@ -46,6 +46,10 @@
           "description": "Token paints, merged onto the base's palette.",
           "$ref": "#/$defs/Palette"
         },
+        "replace_palette": {
+          "description": "Start from the default palette instead of the base's, as the CLI does with --palette-from-*.",
+          "type": "boolean"
+        },
         "dark": {
           "description": "Render the palette's dark twin and allow inverted colors.",
           "type": "boolean"
@@ -1544,9 +1548,39 @@
           "items": {
             "type": "string"
           }
+        },
+        "logo": {
+          "description": "The logo whose colors an extracted frame keeps apart from, in place of logo_colors.",
+          "$ref": "#/$defs/PaletteLogo"
         }
       },
       "additionalProperties": false
+    },
+    "PaletteLogo": {
+      "type": "object",
+      "properties": {
+        "svg": {
+          "description": "An SVG document; its paints.",
+          "type": "string"
+        },
+        "image": {
+          "description": "A raster logo's pixels; its swatches.",
+          "$ref": "#/$defs/Image"
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "svg"
+          ]
+        },
+        {
+          "required": [
+            "image"
+          ]
+        }
+      ]
     },
     "Error": {
       "description": "An error, or one of a report's errors and warnings.",

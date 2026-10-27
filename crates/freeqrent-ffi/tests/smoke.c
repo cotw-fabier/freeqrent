@@ -45,7 +45,7 @@ int main(void) {
     freeqrent_free(out);
 
     expect(freeqrent_presets(NULL, NULL) == FREEQRENT_INVALID, "a NULL out is invalid");
-    expect(strcmp(freeqrent_version(), "1.0.0") == 0, "the version");
+    expect(strcmp(freeqrent_version(), FREEQRENT_EXPECTED_VERSION) == 0, "the version");
 
     if (failures == 0) {
         printf("freeqrent-ffi: C smoke test passed (version %s)\n", freeqrent_version());

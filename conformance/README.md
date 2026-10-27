@@ -2,11 +2,11 @@
 
 `cases.json` is the suite every freeQRent binding runs (SPEC §10.3). Output is deterministic, so every language has to produce the same bytes.
 
-Each case has a `name`, a function `fn` and its arguments:
+The file has the library `version`, the number of cases (`count`, so a runner can tell it read them all) and the `cases`. Each case has a `name`, a function `fn` and its arguments:
 
 | `fn` | Arguments |
 |---|---|
-| `render`, `check`, `plan` | `payload`: `{"text": …}` or `{"bytes": base64}`; `style`: a Style document |
+| `render`, `check`, `plan` (and `render_frame`, with `t_ms`) | `payload`: `{"text": …}` or `{"bytes": base64}`; `style`: a Style document |
 | `palette_from_css`, `palette_from_html` | `text`, `opts` |
 | `palette_from_image` | `image`: `{"width", "height", "rgba": base64}`; `opts` |
 | `presets` | none |

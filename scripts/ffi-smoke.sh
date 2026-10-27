@@ -7,9 +7,11 @@ target=$(cargo metadata --format-version 1 --no-deps | sed 's/.*"target_director
 # The system libraries a Rust static library needs on this platform.
 libs=$(cargo rustc -q -p freeqrent-ffi --release --crate-type staticlib -- --print native-static-libs 2>&1 \
     | sed -n 's/.*native-static-libs: //p' | tail -1)
+version=$(cargo metadata --format-version 1 --no-deps | sed 's/.*"name":"freeqrent-ffi","version":"\([^"]*\)".*/\1/')
 out="$target/ffi-smoke"
 mkdir -p "$out"
 ${CC:-cc} -std=c99 -Wall -Wextra -Werror -pedantic \
+    -DFREEQRENT_EXPECTED_VERSION="\"$version\"" \
     -I crates/freeqrent-ffi/include \
     crates/freeqrent-ffi/tests/smoke.c \
     "$target/release/libfreeqrent_ffi.a" $libs \

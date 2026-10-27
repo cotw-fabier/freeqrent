@@ -145,7 +145,7 @@ def test_presets_and_version() -> None:
     assert names[:2] == ["classic", "ink"] and len(names) == 8
     for name in names:
         assert fq.render(URL, fq.Style(preset=name)).startswith("<svg")  # type: ignore[arg-type]
-    assert fq.version() == fq.__version__ == "1.0.0"
+    assert fq.version() == fq.__version__ and fq.version().count(".") == 2
     from importlib.metadata import version
 
     assert version("freeqrent") == fq.version()

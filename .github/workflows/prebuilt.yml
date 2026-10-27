@@ -2,7 +2,9 @@ name: Prebuilt libraries
 
 # freeqrent-ffi as static and dynamic libraries for every platform (SPEC
 # §10.3), each packaged with include/freeqrent.h and checksummed, uploaded as
-# workflow artifacts. Nothing is published.
+# workflow artifacts. On a v* tag the libraries the release doesn't carry
+# yet (those scripts/bindings.sh build can't make on the maintainer's machine,
+# such as Linux and Windows) are attached to its GitHub release.
 on:
   push:
     tags: ["v*"]
@@ -80,3 +82,39 @@ jobs:
         with:
           name: freeqrent-ffi-SHA256SUMS
           path: dist/SHA256SUMS
+
+  release:
+    # Attaches what the release is missing; files already there (built and
+    # checksummed by scripts/bindings.sh build) are left as they are.
+    needs: checksums
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Attach the missing libraries
+        working-directory: dist
+        run: |
+          have=$(gh release view "$TAG" --json assets -q '.assets[].name')
+          : > SHA256SUMS-ci
+          for f in *.tar.gz *.zip; do
+            [ -e "$f" ] || continue
+            if printf '%s\n' "$have" | grep -qxF "$f"; then
+              echo "already on the release: $f"
+            else
+              gh release upload "$TAG" "$f"
+              sha256sum "$f" >> SHA256SUMS-ci
+            fi
+          done
+          if [ -s SHA256SUMS-ci ]; then
+            cat SHA256SUMS-ci
+            gh release upload "$TAG" SHA256SUMS-ci --clobber
+          fi

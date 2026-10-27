@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261027004614 · M8 · The CLI's palette flags in the document, and `scripts/bindings.sh`
+
+- Landed: the two gaps the npm bin found. `replace_palette` starts a document's palette from the default instead of the base's (what the CLI does with `--preset` and `--palette-from-*`), and palette options take `logo` (`{"svg"}` or `{"image"}`) in place of `logo_colors`, so the library finds a logo's colors as the CLI does. Both are in the schema, four new conformance cases (81) and every binding; the CLI surface test now checks a preset and an SVG logo under `--palette-from-*` byte for byte, and so does the npm bin's.
+- Landed: `scripts/bindings.sh` (`generate`, `test`, `build`, `version`, `all`), which keeps everything generated from the library current, tests every binding, sets the version in every manifest and builds the release artifacts with `SHA256SUMS`; AGENTS.md says to run it. `prebuilt.yml` attaches to a `v*` release the libraries that can't be built locally.
+- Decision: the conformance suite carries its `count`, and every runner checks it read that many, instead of a number written into four test files; tests that named the version read it instead, so a version bump touches manifests only.
+- Checks: all clean; npm 143, Python 240, Go both builds, Dart 116, Flutter 34; the Flutter goldens regenerate unchanged.
+
 ## 20261027000203 · M8 · The Dart and Flutter bindings
 
 - Landed: `bindings/dart/freeqrent`, pure Dart over the C ABI through a Native Assets hook (`native_toolchain_rust`), typed styles generated from the schema (sealed `kind` unions), typed reports, palettes and plans, isolate-based async variants. `bindings/dart/freeqrent_flutter`, the `FreeQrentAnimated` widget: plan paths parsed once into `ui.Path`, a `CustomPainter` on an `AnimationController`, reduced motion, build/visible/manual triggers, idle loops, palette tweens in OKLab.

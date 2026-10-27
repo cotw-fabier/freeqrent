@@ -104,6 +104,7 @@ class Style(Doc):
         preset: The base style: a preset (Style::preset).
         art: The base style: art mode for this picture (Style::art). Not with preset or halftone.
         palette: Token paints, merged onto the base's palette.
+        replace_palette: Start from the default palette instead of the base's, as the CLI does with --palette-from-*.
         dark: Render the palette's dark twin and allow inverted colors.
         shadow: A hard shadow's offset down and right, in modules (0.25–3).
         color_spread: How data modules share fg and the data colors fg.2 to fg.4.
@@ -116,6 +117,7 @@ class Style(Doc):
     alignment: Optional[Alignment] = None
     timing: Optional[Timing] = None
     palette: Optional[Tokens] = None
+    replace_palette: Optional[bool] = None
     dark: Optional[bool] = None
     quiet_zone: Optional[int] = None
     allow_inverted: Optional[bool] = None
@@ -740,13 +742,31 @@ class Encoding(Doc):
 
 @dataclass
 class PaletteOpts(Doc):
-    """Options for ``Palette.from_image``, ``from_css`` and ``from_html``."""
+    """Options for ``Palette.from_image``, ``from_css`` and ``from_html``.
+
+    Attributes:
+        logo: The logo whose colors an extracted frame keeps apart from, in place of logo_colors.
+    """
 
     clusters: Optional[int] = None
     seed: Optional[int] = None
     min_contrast: Optional[float] = None
     allow_inverted: Optional[bool] = None
     logo_colors: Optional[Sequence[str]] = None
+    logo: Optional[PaletteLogo] = None
+
+
+@dataclass
+class PaletteLogo(Doc):
+    """The ``PaletteLogo`` part of a Style document.
+
+    Attributes:
+        svg: An SVG document; its paints.
+        image: A raster logo's pixels; its swatches.
+    """
+
+    svg: Optional[str] = None
+    image: Optional[Image] = None
 
 
 HalftoneInk = Union[
@@ -951,6 +971,7 @@ __all__ = [
     "NoneFrame",
     "Orbit",
     "Own",
+    "PaletteLogo",
     "PaletteOpts",
     "PaletteShift",
     "Pixels",

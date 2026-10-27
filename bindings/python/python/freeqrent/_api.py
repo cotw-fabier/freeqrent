@@ -9,7 +9,7 @@ from . import _native
 from ._base import Doc, to_json_value
 from ._pixels import rgba_of
 from ._results import PaletteResult, Plan, Report
-from ._styles import PaletteOpts
+from ._styles import PaletteLogo, PaletteOpts
 
 #: What a code carries: text (segmented into the shortest modes) or bytes
 #: (byte mode).
@@ -89,6 +89,7 @@ def _opts(
     min_contrast: Optional[float],
     allow_inverted: Optional[bool],
     logo_colors: Optional[Sequence[str]],
+    logo: Optional[Union[PaletteLogo, Mapping[str, Any]]] = None,
 ) -> str:
     return PaletteOpts(
         clusters=clusters,
@@ -96,6 +97,7 @@ def _opts(
         min_contrast=min_contrast,
         allow_inverted=allow_inverted,
         logo_colors=None if logo_colors is None else list(logo_colors),
+        logo=logo,  # type: ignore[arg-type]
     ).to_json()
 
 
@@ -106,7 +108,9 @@ class Palette:
     The options, all optional: ``clusters`` (colors to look for in a
     picture), ``seed``, ``min_contrast`` (the lightness gap to reach),
     ``allow_inverted`` (keep a dark source's polarity), ``logo_colors``
-    (colors to keep the frame apart from).
+    (colors to keep the frame apart from) or ``logo`` in their place (a
+    ``PaletteLogo``: an SVG's text, or a raster logo's ``Image``, whose
+    colors the library finds as the CLI does for ``--logo``).
     """
 
     @staticmethod
@@ -120,6 +124,7 @@ class Palette:
         min_contrast: Optional[float] = None,
         allow_inverted: Optional[bool] = None,
         logo_colors: Optional[Sequence[str]] = None,
+        logo: Optional[Union[PaletteLogo, Mapping[str, Any]]] = None,
     ) -> PaletteResult:
         """A palette from a picture: ``(rgba, width, height)`` with 8-bit
         RGBA bytes row by row, or a Pillow-like image (anything with
@@ -132,7 +137,7 @@ class Palette:
             if width is not None or height is not None:
                 raise TypeError("an image object carries its own size")
             rgba, width, height = rgba_of(image)
-        opts = _opts(clusters, seed, min_contrast, allow_inverted, logo_colors)
+        opts = _opts(clusters, seed, min_contrast, allow_inverted, logo_colors, logo)
         return PaletteResult.from_json(_native.palette_from_image(rgba, width, height, opts))
 
     @staticmethod
@@ -144,9 +149,10 @@ class Palette:
         min_contrast: Optional[float] = None,
         allow_inverted: Optional[bool] = None,
         logo_colors: Optional[Sequence[str]] = None,
+        logo: Optional[Union[PaletteLogo, Mapping[str, Any]]] = None,
     ) -> PaletteResult:
         """A palette from a style sheet's colors."""
-        opts = _opts(clusters, seed, min_contrast, allow_inverted, logo_colors)
+        opts = _opts(clusters, seed, min_contrast, allow_inverted, logo_colors, logo)
         return PaletteResult.from_json(_native.palette_from_css(css, opts))
 
     @staticmethod
@@ -158,10 +164,11 @@ class Palette:
         min_contrast: Optional[float] = None,
         allow_inverted: Optional[bool] = None,
         logo_colors: Optional[Sequence[str]] = None,
+        logo: Optional[Union[PaletteLogo, Mapping[str, Any]]] = None,
     ) -> PaletteResult:
         """A palette from a page's colors: its style sheets and inline
         styles. Nothing is fetched; pass the page's text."""
-        opts = _opts(clusters, seed, min_contrast, allow_inverted, logo_colors)
+        opts = _opts(clusters, seed, min_contrast, allow_inverted, logo_colors, logo)
         return PaletteResult.from_json(_native.palette_from_html(html, opts))
 
 

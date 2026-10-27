@@ -251,10 +251,45 @@ fn palette_flags_are_two_calls() {
             .unwrap(),
         ),
     ];
-    for (flags, result) in cases {
+    let mut svg = String::new();
+    freeqrent_doc::json::write_str(&mut svg, &files.svg);
+    // With a preset the extracted palette replaces the preset's, and with a
+    // logo the frame keeps apart from the logo's colors.
+    let with_preset_and_logo: Vec<(Vec<String>, String, &str)> = vec![
+        (
+            vec![
+                "--preset".into(),
+                "candy".into(),
+                "--palette-from-html".into(),
+                files.flag_path("page.html"),
+            ],
+            freeqrent_doc::palette_from_html(html, "").unwrap(),
+            r#""preset":"candy","replace_palette":true,"#,
+        ),
+        (
+            vec![
+                "--palette-from-css".into(),
+                files.flag_path("brand.css"),
+                "--logo".into(),
+                files.flag("$SVG"),
+            ],
+            freeqrent_doc::palette_from_css(css, &format!(r#"{{"logo":{{"svg":{svg}}}}}"#))
+                .unwrap(),
+            "",
+        ),
+    ];
+    let logo_doc = format!(r#","logo":{{"svg":{svg}}}"#);
+    let cases = cases
+        .into_iter()
+        .map(|(f, r)| (f, r, ""))
+        .chain(with_preset_and_logo);
+    for (flags, result, prefix) in cases {
         let palette = freeqrent_doc::json::parse(&result).unwrap();
-        let mut doc = String::from(r#"{"palette":"#);
+        let mut doc = format!(r#"{{{prefix}"palette":"#);
         freeqrent_doc::json::write_compact(&mut doc, &field(&palette, "palette"));
+        if flags.iter().any(|f| f == "--logo") {
+            doc.push_str(&logo_doc);
+        }
         doc.push('}');
         let mut args = vec![TEXT.to_string()];
         args.extend(flags.iter().cloned());

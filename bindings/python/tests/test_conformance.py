@@ -12,7 +12,7 @@ import pytest
 import freeqrent
 from freeqrent import _native
 
-from conftest import load_cases
+from conftest import CASES_PATH, load_cases
 
 CASES = load_cases()
 
@@ -73,7 +73,8 @@ def test_plan_parses(case: Dict[str, Any]) -> None:
 
 
 def test_the_suite_has_every_case() -> None:
-    assert len(CASES) == 77
+    suite = json.loads(CASES_PATH.read_text(encoding="utf-8"))
+    assert len(CASES) == suite["count"] >= 81
     assert len({c["name"] for c in CASES}) == len(CASES)
 
 

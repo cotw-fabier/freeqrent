@@ -93,7 +93,8 @@ pub fn plan(payload: Payload<'_>, style_json: &str) -> Result<String, DocError> 
 }
 
 /// Palette options: `{"clusters", "seed", "min_contrast", "allow_inverted",
-/// "logo_colors": [css]}`, all optional. An empty text means `{}`.
+/// "logo_colors": [css]}` or `"logo"` in place of `logo_colors`, all
+/// optional. An empty text means `{}`.
 fn palette_opts(opts_json: &str) -> Result<PaletteOpts, DocError> {
     let mut opts = PaletteOpts::new();
     if opts_json.trim().is_empty() {
@@ -115,6 +116,15 @@ fn palette_opts(opts_json: &str) -> Result<PaletteOpts, DocError> {
     if let Some(a) = o.opt("allow_inverted", bool_of)? {
         opts = opts.allow_inverted(a);
     }
+    if o.has("logo") && o.has("logo_colors") {
+        return Err(DocError::invalid(
+            "logo",
+            "give the logo or its colors (logo_colors), not both",
+        ));
+    }
+    if let Some((v, path)) = o.get("logo") {
+        opts = opts.logo_colors(&logo_colors(v, &path)?);
+    }
     if let Some((v, path)) = o.get("logo_colors") {
         let mut colors = Vec::new();
         for (i, item) in array_of(v, &path)?.iter().enumerate() {
@@ -128,6 +138,35 @@ fn palette_opts(opts_json: &str) -> Result<PaletteOpts, DocError> {
     }
     o.finish()?;
     Ok(opts)
+}
+
+/// The colors an extracted frame keeps apart from, for `logo` in palette
+/// options, as the CLI finds them for `--logo`: an SVG's paints
+/// (`{"svg": text}`), or a raster logo's swatches from its pixels
+/// (`{"image": {width, height, rgba}}`).
+fn logo_colors(v: &json::Value, path: &str) -> Result<Vec<freeqrent::Color>, DocError> {
+    let mut o = Obj::new(v, path)?;
+    let colors = match (o.has("svg"), o.has("image")) {
+        (true, false) => {
+            let (svg, p) = o.get("svg").expect("present");
+            freeqrent::Logo::svg(str_of(svg, &p)?)
+                .map_err(|e| error::logo_error(&p, e))?
+                .colors()
+        }
+        (false, true) => {
+            let (image, p) = o.get("image").expect("present");
+            let (_, report) = Palette::from_image(&read::image_of(image, &p)?, PaletteOpts::new())?;
+            report.swatches.iter().map(|s| s.color).collect()
+        }
+        _ => {
+            return Err(DocError::invalid(
+                path,
+                "a logo needs exactly one of svg or image",
+            ));
+        }
+    };
+    o.finish()?;
+    Ok(colors)
 }
 
 /// A palette from RGBA pixels, row by row, as JSON ([`extracted_json`]).

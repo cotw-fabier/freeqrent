@@ -677,7 +677,7 @@ fn boundary_functions_match_the_core() {
         freeqrent_doc::presets(),
         r#"["classic","ink","candy","terminal","sunset","bubble","ribbon","leaf"]"#
     );
-    assert_eq!(freeqrent_doc::version(), "1.0.0");
+    assert_eq!(freeqrent_doc::version(), env!("CARGO_PKG_VERSION"));
 }
 
 #[test]

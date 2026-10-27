@@ -5,6 +5,7 @@ otherwise this builds one with ``maturin build --release``.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -65,4 +66,6 @@ def test_a_release_wheel_installs_into_a_fresh_venv(tmp_path: Path) -> None:
         [str(python), "-c", SMOKE], cwd=tmp_path, capture_output=True, text=True
     )
     assert done.returncode == 0, done.stderr
-    assert done.stdout.strip() == "1.0.0"
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    wanted = re.search(r'^version = "([^"]+)"', pyproject, re.M)
+    assert wanted and done.stdout.strip() == wanted.group(1)

@@ -46,6 +46,7 @@ func loadCases(t testing.TB) []confCase {
 	}
 	var suite struct {
 		Version string     `json:"version"`
+		Count   int        `json:"count"`
 		Cases   []confCase `json:"cases"`
 	}
 	if err := json.Unmarshal(data, &suite); err != nil {
@@ -54,8 +55,12 @@ func loadCases(t testing.TB) []confCase {
 	if suite.Version != Version() {
 		t.Fatalf("the suite is for %s, the library is %s", suite.Version, Version())
 	}
+	suiteCount = suite.Count
 	return suite.Cases
 }
+
+// suiteCount is the number of cases the suite says it has.
+var suiteCount int
 
 // reserialize decodes a JSON value into Go's generic types and writes it
 // back with encoding/json, the way a Go user's map[string]any would reach
@@ -139,8 +144,8 @@ func expect(t *testing.T, c confCase, out string, err error) {
 
 func TestConformance(t *testing.T) {
 	cases := loadCases(t)
-	if len(cases) != 77 {
-		t.Errorf("the suite has %d cases; this runner was written for 77", len(cases))
+	if len(cases) != suiteCount || suiteCount < 81 {
+		t.Errorf("read %d cases of the suite's %d", len(cases), suiteCount)
 	}
 	escaped := 0
 	for _, c := range cases {
