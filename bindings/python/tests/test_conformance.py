@@ -64,16 +64,6 @@ def run(case: Dict[str, Any]) -> str:
 PLANS = [c for c in CASES if c["fn"] == "plan"]
 
 
-# The core writes the plan's numbers the way it writes SVG, without the
-# leading zero (`"ease":[.22,1,.36,1]`), which isn't JSON. The fix belongs in
-# `json_num` in crates/freeqrent/src/animate.rs (outside this binding); until
-# it lands, freeqrent.plan raises json.JSONDecodeError. strict: this fails
-# loudly the day the core is fixed, so the marker comes off.
-@pytest.mark.xfail(
-    strict=True,
-    raises=json.JSONDecodeError,
-    reason="core bug: AnimationPlan::to_json writes numbers like .22 (not JSON)",
-)
 @pytest.mark.parametrize("case", PLANS, ids=[c["name"] for c in PLANS])
 def test_plan_parses(case: Dict[str, Any]) -> None:
     style = json.dumps(case["style"])

@@ -73,13 +73,8 @@ def test_check_reports_steering_for_pictures() -> None:
     assert report.steering.code_modules > 0
 
 
-def test_plan_parses_once_the_core_writes_json() -> None:
-    # See test_conformance.test_plan_parses: the core's plan JSON drops
-    # leading zeros, so this raises until it is fixed there.
-    try:
-        plan = fq.plan(URL, fq.Style(intro="ripple"))
-    except json.JSONDecodeError:
-        pytest.xfail("core bug: AnimationPlan::to_json writes numbers like .22")
+def test_plans_parse() -> None:
+    plan = fq.plan(URL, fq.Style(intro="ripple"))
     assert plan["tracks"]
 
 
