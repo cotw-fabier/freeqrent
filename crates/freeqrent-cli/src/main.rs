@@ -12,12 +12,12 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Border, Clarity, ColorSpread, Corner, Ease, Ecc, Effect,
-    Emphasis, EyeShape, FinderStyle, Fit, FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame,
-    LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape, Origin, Paint, Palette, PaletteOpts,
-    PaletteReport, Preset, QrBuilder, QrCode, QrMatrix, RasterFormat, Rgba8Image, RingShape,
-    ScanReport, StaggerOrder, Style, TargetSize, Texture, TimingStyle, Token, TrackingGrid,
-    Trigger, Version,
+    AlignmentShape, AlignmentStyle, Border, Caption, CaptionFont, Clarity, ColorSpread, Corner,
+    Ease, Ecc, Effect, Emphasis, EyeShape, FinderStyle, Fit, FrameRing, Halftone, Idle, Ink, Intro,
+    Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape, Origin, Paint,
+    Palette, PaletteOpts, PaletteReport, Preset, QrBuilder, QrCode, QrMatrix, RasterFormat,
+    Rgba8Image, RingShape, ScanReport, StaggerOrder, Style, TargetSize, Texture, TimingStyle,
+    Token, TrackingGrid, Trigger, Version,
 };
 
 const HELP: &str = "\
@@ -74,6 +74,11 @@ Style:
                            scanlines:OPACITY (CRT lines, 0.05-0.3) or
                            ink:FADE (uneven ink, 0.05-0.3; with scanlines,
                            the two together at most 0.4); repeatable
+  --caption TEXT           a line under the code, inside the frame
+  --caption-size N         its letters' size in modules, 1-4 (default 2)
+  --caption-font FONT      sans (default), serif, mono
+  --caption-tracking N     letter spacing, hundredths of the size (0-50)
+  --caption-regular        regular weight instead of bold
   --spread modules|regions how data modules share fg and the data colors
                            fg.2-fg.4 (set them with --token): one module or
                            one touching run at a time (default modules)
@@ -194,6 +199,11 @@ pub struct StyleArgs {
     spread: Option<ColorSpread>,
     effect: Option<Effect>,
     textures: Vec<Texture>,
+    caption: Option<String>,
+    caption_size: Option<f32>,
+    caption_font: Option<CaptionFont>,
+    caption_tracking: Option<u8>,
+    caption_regular: bool,
     seed: Option<u64>,
     logo: Option<String>,
     logo_scale: Option<f32>,
@@ -324,6 +334,7 @@ impl StyleArgs {
             "no-logo-backdrop" => self.no_logo_backdrop = true,
             "keep-modules" => self.keep_modules = true,
             "no-steer" => self.no_steer = true,
+            "caption-regular" => self.caption_regular = true,
             _ => return false,
         }
         true
@@ -372,6 +383,16 @@ impl StyleArgs {
             "spread" => self.spread = Some(options::spread(value)?),
             "effect" => self.effect = Some(options::effect(value)?),
             "texture" => self.textures.push(options::texture(value)?),
+            "caption" => self.caption = Some(value.to_string()),
+            "caption-size" => self.caption_size = Some(options::number(flag, value)?),
+            "caption-font" => self.caption_font = Some(options::caption_font(value)?),
+            "caption-tracking" => {
+                self.caption_tracking = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("{value:?} isn't a whole number 0-255"))?,
+                )
+            }
             "seed" => {
                 self.seed = Some(
                     value
@@ -621,6 +642,29 @@ impl StyleArgs {
         }
         for &texture in &self.textures {
             style = style.texture(texture);
+        }
+        match &self.caption {
+            Some(text) => {
+                let mut caption = Caption::new(text.as_str()).bold(!self.caption_regular);
+                if let Some(size) = self.caption_size {
+                    caption = caption.size(size);
+                }
+                if let Some(font) = self.caption_font {
+                    caption = caption.font(font);
+                }
+                if let Some(t) = self.caption_tracking {
+                    caption = caption.tracking(t);
+                }
+                style = style.caption(caption);
+            }
+            None if self.caption_size.is_some()
+                || self.caption_font.is_some()
+                || self.caption_tracking.is_some()
+                || self.caption_regular =>
+            {
+                return Err("caption options need --caption".to_string());
+            }
+            None => {}
         }
         if let Some(seed) = self.seed {
             style = style.seed(seed);

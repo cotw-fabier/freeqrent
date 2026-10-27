@@ -2,10 +2,10 @@
 //! text after the flag, e.g. `dots:0.8` for `--shape`.
 
 use freeqrent::{
-    AlignmentShape, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc, Effect, Emphasis,
-    EyeShape, Fit, Frame, FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape, LogoSize,
-    LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder, Style, Texture, TimingStyle,
-    TrackingGrid, Trigger,
+    AlignmentShape, Axis, Border, CaptionFont, ColorSpread, Corner, CubicBezier, Ease, Ecc, Effect,
+    Emphasis, EyeShape, Fit, Frame, FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape,
+    LogoSize, LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder, Style, Texture,
+    TimingStyle, TrackingGrid, Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -257,6 +257,16 @@ pub fn texture(value: &str) -> Result<Texture, String> {
         "scanlines" => Ok(Texture::Scanlines { opacity: v }),
         "ink" => Ok(Texture::Ink { fade: v }),
         _ => Err(bad()),
+    }
+}
+
+/// `sans`, `serif` or `mono`.
+pub fn caption_font(value: &str) -> Result<CaptionFont, String> {
+    match value {
+        "sans" => Ok(CaptionFont::Sans),
+        "serif" => Ok(CaptionFont::Serif),
+        "mono" => Ok(CaptionFont::Mono),
+        _ => Err(format!("unknown font {value:?}: try sans, serif or mono")),
     }
 }
 

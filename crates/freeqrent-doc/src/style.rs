@@ -8,11 +8,12 @@
 //! schema (`schema/freeqrent.schema.json`) is generated from these tables.
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc,
-    EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink,
-    Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint,
-    Palette, Preset, QrBuilder, QrCode, RasterFormat, RingShape, StaggerOrder, Style, TargetSize,
-    Texture, TimingStyle, Token, TrackingGrid, Trigger, Version,
+    AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner,
+    CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
+    FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
+    LogoTiming, Mask, ModuleShape, Paint, Palette, Preset, QrBuilder, QrCode, RasterFormat,
+    RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, Token, TrackingGrid, Trigger,
+    Version,
 };
 
 use crate::error::{DocError, logo_error};
@@ -51,6 +52,7 @@ pub const STYLE_KEYS: &[&str] = &[
     "color_spread",
     "effect",
     "textures",
+    "caption",
     "seed",
     "logo",
     "halftone",
@@ -86,6 +88,8 @@ pub const FRAME_RINGS: &[&str] = &["none", "solid", "dashed"];
 pub const EFFECTS: &[&str] = &["glow", "emboss", "sketch"];
 /// `textures[].kind`; a bare name takes the default.
 pub const TEXTURES: &[&str] = &["grain", "scanlines", "ink"];
+/// `caption.font`.
+pub const CAPTION_FONTS: &[&str] = &["sans", "serif", "mono"];
 /// `color_spread`.
 pub const SPREADS: &[&str] = &["modules", "regions"];
 /// `border.kind`; a bare name takes the default width.
@@ -235,6 +239,9 @@ fn document(v: &Value) -> Result<Document, DocError> {
     }
     if let Some(e) = o.opt("effect", effect)? {
         style = style.effect(e);
+    }
+    if let Some(c) = o.opt("caption", caption)? {
+        style = style.caption(c);
     }
     if let Some((value, path)) = o.get("textures") {
         for (i, item) in array_of(value, &path)?.iter().enumerate() {
@@ -526,6 +533,35 @@ fn texture(v: &Value, path: &str) -> Result<Texture, DocError> {
     };
     o.finish()?;
     Ok(texture)
+}
+
+/// A caption: its text alone, or an object with `text` and options.
+fn caption(v: &Value, path: &str) -> Result<Caption, DocError> {
+    if let Value::String(_) = v {
+        return Ok(Caption::new(str_of(v, path)?));
+    }
+    let mut o = Obj::new(v, path)?;
+    let mut c = Caption::new(o.req("text", str_of)?);
+    if let Some(size) = o.opt("size", f32_of)? {
+        c = c.size(size);
+    }
+    if let Some(font) = o.opt("font", |v, p| {
+        Ok(match name_of(v, p, CAPTION_FONTS)? {
+            "serif" => CaptionFont::Serif,
+            "mono" => CaptionFont::Mono,
+            _ => CaptionFont::Sans,
+        })
+    })? {
+        c = c.font(font);
+    }
+    if let Some(bold) = o.opt("bold", bool_of)? {
+        c = c.bold(bold);
+    }
+    if let Some(t) = o.opt("tracking", u8_of)? {
+        c = c.tracking(t);
+    }
+    o.finish()?;
+    Ok(c)
 }
 
 fn border(v: &Value, path: &str) -> Result<Border, DocError> {

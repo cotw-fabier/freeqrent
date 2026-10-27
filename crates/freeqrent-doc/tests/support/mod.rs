@@ -177,6 +177,15 @@ pub fn inputs() -> Vec<String> {
             r#"{"preset":"terminal","textures":[{"kind":"scanlines","opacity":0.25}],"intro":"raster"}"#,
         ),
         case("plan textures", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"textures":["ink","grain","scanlines"],"intro":"settle"}}"#)),
+        render(
+            "brutalist caption",
+            r##"{"palette":{"bg":"#ffd93d","fg":"#000000"},"border":{"kind":"solid","width":1},"shadow":1.5,"caption":"SCAN ME"}"##,
+        ),
+        render(
+            "caption under a round frame",
+            r#"{"frame":{"kind":"circle","ring":"solid"},"caption":{"text":"menu & more","font":"serif","bold":false,"tracking":10,"size":1.5}}"#,
+        ),
+        case("plan caption", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"caption":{{"text":"$ scan","font":"mono"}},"intro":"sweep"}}"#)),
         case("plan glow", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"effect":"glow","intro":"ripple"}}"#)),
         render(
             "round border settling",

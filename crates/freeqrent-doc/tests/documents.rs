@@ -3,11 +3,11 @@
 //! core.
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Axis, Border, ColorSpread, Corner, CubicBezier, Ease, Ecc,
-    EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame, FrameRing, Halftone, Idle, Ink,
-    Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette,
-    Preset, QrCode, Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle,
-    TrackingGrid, Trigger, Version,
+    AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner,
+    CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
+    FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
+    LogoTiming, Mask, ModuleShape, Palette, Preset, QrCode, Rgba8Image, RingShape, StaggerOrder,
+    Style, TargetSize, Texture, TimingStyle, TrackingGrid, Trigger, Version,
 };
 use freeqrent_doc::{Payload, parse};
 
@@ -240,6 +240,20 @@ fn colors_frames_and_text() {
     assert_eq!(
         style(r#"{"effect":"sketch"}"#).effect_style(),
         Some(Effect::Sketch { roughness: 0.08 })
+    );
+    assert_eq!(
+        style(r#"{"caption":"Scan me"}"#),
+        Style::new().caption(Caption::new("Scan me"))
+    );
+    assert_eq!(
+        style(r#"{"caption":{"text":"MENU","size":3,"font":"mono","bold":false,"tracking":20}}"#),
+        Style::new().caption(
+            Caption::new("MENU")
+                .size(3.0)
+                .font(CaptionFont::Mono)
+                .bold(false)
+                .tracking(20)
+        )
     );
     assert_eq!(
         style(

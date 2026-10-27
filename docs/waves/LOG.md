@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026223536 · M7.5 · Captions
+
+- Landed: `Style::caption(Caption::new(text))` with size, `CaptionFont::{Sans, Serif, Mono}`, weight and tracking, in a new `caption` token. Square and rounded cards grow a band to hold it (inside the border and shadow); under a round frame or none it stands below. The viewBox can now be taller than wide (`Canvas::band`, `height`, `card_height`). Generic font families only; a line too long for an average-width guess is squeezed with `textLength`. Plans carry `caption` (text, type, center). Style document `caption`, schema, CLI `--caption` and four companions.
+- Decision: the caption is chrome, outside the quiet zone and not contrast-checked; its band is whole modules so the card stays on the module grid.
+- Measured: the bench has no fonts, so the test draws each caption's line as a solid ink bar instead, a harder case; sizes 1 and 4, quiet zones 2 and 4, square (bordered or not), round and frameless, light and inverted, v1–v25: all pass.
+- Checks: all clean; new snapshot `caption_with_border_and_shadow`; three new conformance cases, no existing hash changed.
+
 ## 20261026221457 · M7.5 · Textures: grain, scanlines, ink
 
 - Landed: `Style::texture(Texture::Grain | Scanlines | Ink)`, one of each kind. Grain is seeded speckles in the ink's lightness over the background; scanlines are lines in `bg` over the whole card, painted last; ink is the spec's planned opacity jitter, with data modules (or regions) at three seeded `fill-opacity` levels, contrast-checked at the faintest. Grain and scanlines are chrome (still while the code animates, outside the reveal mask). Plans list the textures and each layer's `fillOpacity`. Style document `textures`, schema, CLI `--texture` (repeatable).

@@ -486,6 +486,16 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         ),
         _ => {}
     }
+    if let Some(c) = &style.caption {
+        in_range(&mut errors, "Caption.size", c.size, 1.0, 4.0);
+        in_range(
+            &mut errors,
+            "Caption.tracking",
+            c.tracking as f32,
+            0.0,
+            50.0,
+        );
+    }
     for texture in &style.textures {
         match *texture {
             Texture::Grain { amount } => {

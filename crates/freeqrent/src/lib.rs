@@ -197,8 +197,8 @@ pub use animate::{
 #[cfg(feature = "animate")]
 pub mod plan {
     pub use crate::animate::{
-        AnimationPlan, Fallback, Keyframe, PlanLayer, PlanOutline, Property, Reveal, RevealShape,
-        Target, Track, Value,
+        AnimationPlan, Fallback, Keyframe, PlanCaption, PlanLayer, PlanOutline, Property, Reveal,
+        RevealShape, Target, Track, Value,
     };
 }
 pub use check::{
@@ -229,7 +229,8 @@ pub use scanbox::{
 pub use scene::LayerRole;
 pub use segment::{ECI_UTF8, EciPolicy, Mode, Segment};
 pub use style::{
-    Axis, Border, ColorSpread, Effect, Frame, FrameRing, ModuleShape, Style, TargetSize, Texture,
+    Axis, Border, Caption, CaptionFont, ColorSpread, Effect, Frame, FrameRing, ModuleShape, Style,
+    TargetSize, Texture,
 };
 pub use version::{Ecc, TrackingGrid, Version};
 

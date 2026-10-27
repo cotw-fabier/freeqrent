@@ -50,10 +50,12 @@ pub enum Token {
     Fg3,
     /// A fourth data color (default: `fg`).
     Fg4,
+    /// A caption's text (default: `fg`, SPEC §7.4).
+    Caption,
 }
 
 const CORNERS: [Corner; 3] = [Corner::TopLeft, Corner::TopRight, Corner::BottomLeft];
-const NUM_TOKENS: usize = 20;
+const NUM_TOKENS: usize = 21;
 
 impl Token {
     /// Every token, in a fixed order.
@@ -78,6 +80,7 @@ impl Token {
         Token::Fg2,
         Token::Fg3,
         Token::Fg4,
+        Token::Caption,
     ];
 
     fn index(self) -> usize {
@@ -99,6 +102,7 @@ impl Token {
             Token::Fg2 => 17,
             Token::Fg3 => 18,
             Token::Fg4 => 19,
+            Token::Caption => 20,
         }
     }
 
@@ -126,6 +130,7 @@ impl Token {
             "fg.2",
             "fg.3",
             "fg.4",
+            "caption",
         ][self.index()]
     }
 
@@ -158,6 +163,7 @@ impl Token {
             "--qr-fg-2",
             "--qr-fg-3",
             "--qr-fg-4",
+            "--qr-caption",
         ][self.index()]
     }
 
@@ -174,7 +180,8 @@ impl Token {
             | Token::Shadow
             | Token::Fg2
             | Token::Fg3
-            | Token::Fg4 => Some(Token::Fg),
+            | Token::Fg4
+            | Token::Caption => Some(Token::Fg),
             Token::Alignment => Some(Token::FinderOuter),
             Token::LogoBackdrop => Some(Token::Bg),
             Token::CornerOuter(_) => Some(Token::FinderOuter),

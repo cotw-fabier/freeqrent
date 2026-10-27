@@ -8,10 +8,10 @@ use freeqrent::Style;
 
 use crate::json::{self, Value};
 use crate::style::{
-    BORDERS, CORNERS, EASES, ECCS, ECIS, EFFECTS, EMPHASES, EYES, FITS, FRAME_RINGS, FRAMES, GRIDS,
-    INKS, LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS, STAGGERS, STYLE_KEYS, TARGETS, TEXTURES,
-    TIMINGS, TRIGGERS, idles, intro_presets, logo_frames, logo_intros, logo_sizes, logo_timings,
-    tokens,
+    BORDERS, CAPTION_FONTS, CORNERS, EASES, ECCS, ECIS, EFFECTS, EMPHASES, EYES, FITS, FRAME_RINGS,
+    FRAMES, GRIDS, INKS, LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS, STAGGERS, STYLE_KEYS, TARGETS,
+    TEXTURES, TIMINGS, TRIGGERS, idles, intro_presets, logo_frames, logo_intros, logo_sizes,
+    logo_timings, tokens,
 };
 
 fn s(text: &str) -> Value {
@@ -225,6 +225,7 @@ fn style() -> Value {
         ),
         ("effect", r("Effect")),
         ("textures", array(r("Texture"))),
+        ("caption", r("Caption")),
         ("seed", int(u64::MAX)),
         ("logo", r("Logo")),
         ("halftone", r("Halftone")),
@@ -332,6 +333,23 @@ fn texture() -> Value {
             ],
         ),
         "A surface texture: paper grain (amount 0.02–0.1, default 0.08), scanlines (opacity 0.05–0.3, 0.15) or uneven ink (fade 0.05–0.3, 0.2). One of each kind.",
+    )
+}
+
+fn caption() -> Value {
+    let full = props(
+        vec![
+            ("text", string()),
+            ("size", number()),
+            ("font", one_of(CAPTION_FONTS)),
+            ("bold", boolean()),
+            ("tracking", int(255)),
+        ],
+        &["text"],
+    );
+    described(
+        obj(vec![("oneOf", Value::Array(vec![string(), full]))]),
+        "A line under the code: its text, or the text with size (1–4 modules, default 2), font (sans), bold (true) and tracking (hundredths of the size, 0–50).",
     )
 }
 
@@ -662,6 +680,7 @@ pub fn schema() -> Value {
         ("Border", border()),
         ("Effect", effect()),
         ("Texture", texture()),
+        ("Caption", caption()),
         ("Logo", logo()),
         ("Base64", base64),
         ("Image", image()),

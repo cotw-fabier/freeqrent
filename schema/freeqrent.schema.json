@@ -84,6 +84,9 @@
             "$ref": "#/$defs/Texture"
           }
         },
+        "caption": {
+          "$ref": "#/$defs/Caption"
+        },
         "seed": {
           "type": "integer",
           "minimum": 0,
@@ -489,7 +492,8 @@
           "shadow",
           "fg.2",
           "fg.3",
-          "fg.4"
+          "fg.4",
+          "caption"
         ]
       },
       "additionalProperties": {
@@ -722,6 +726,44 @@
           },
           "required": [
             "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Caption": {
+      "description": "A line under the code: its text, or the text with size (1–4 modules, default 2), font (sans), bold (true) and tracking (hundredths of the size, 0–50).",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "size": {
+              "type": "number"
+            },
+            "font": {
+              "enum": [
+                "sans",
+                "serif",
+                "mono"
+              ]
+            },
+            "bold": {
+              "type": "boolean"
+            },
+            "tracking": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          },
+          "required": [
+            "text"
           ],
           "additionalProperties": false
         }
@@ -1695,7 +1737,8 @@
                   "shadow",
                   "fg.2",
                   "fg.3",
-                  "fg.4"
+                  "fg.4",
+                  "caption"
                 ]
               },
               "color": {

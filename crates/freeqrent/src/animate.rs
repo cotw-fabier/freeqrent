@@ -844,6 +844,19 @@ pub struct AnimationPlan {
     /// [`fill_opacity`](PlanLayer::fill_opacity); grain and scanlines are
     /// `grain` and `scanlines` layers whose path is the card.
     pub textures: Vec<crate::Texture>,
+    /// The caption, drawn by the `caption` layer: its text and type, and
+    /// the point its middle sits on, in modules (SPEC §7.4).
+    pub caption: Option<PlanCaption>,
+}
+
+/// A caption as a player draws it (SPEC §7.4).
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct PlanCaption {
+    /// The caption's options.
+    pub caption: crate::Caption,
+    /// Where the middle of the line sits, in modules.
+    pub center: (f32, f32),
 }
 
 /// The animation part of a document: its tracks, by element index.
@@ -2737,7 +2750,7 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
         Some((e, m)) => (e, Some(m)),
         None => (svg::static_elements(style, qr, &canvas), None),
     };
-    let side = canvas.side as f32;
+    let (side, height) = (canvas.side as f32, canvas.height() as f32);
     let layers = elements
         .into_iter()
         .map(|e| PlanLayer {
@@ -2768,7 +2781,7 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
         None => (Vec::new(), None, 0, Trigger::Load),
     };
     AnimationPlan {
-        view_box: (side, side),
+        view_box: (side, height),
         palette: style.palette.clone(),
         layers,
         tracks,
@@ -2778,6 +2791,13 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
         reduced_motion: Fallback::FinalState,
         effect: style.effect,
         textures: style.textures.clone(),
+        caption: style.caption.clone().map(|caption| {
+            let (x, y) = canvas.caption_center(caption.size as f64);
+            PlanCaption {
+                center: (x as f32, y as f32),
+                caption,
+            }
+        }),
     }
 }
 
@@ -2810,6 +2830,7 @@ fn role_name(role: LayerRole) -> &'static str {
         LayerRole::Background => "background",
         LayerRole::Shadow => "shadow",
         LayerRole::Grain => "grain",
+        LayerRole::Caption => "caption",
         LayerRole::Scanlines => "scanlines",
         LayerRole::Border => "border",
         LayerRole::Ring => "ring",
@@ -3041,6 +3062,26 @@ impl AnimationPlan {
                 w.write_char('}')?;
             }
             _ => {}
+        }
+        if let Some(c) = &self.caption {
+            w.write_str(",\"caption\":{\"text\":")?;
+            json_str(w, &c.caption.text)?;
+            w.write_str(",\"size\":")?;
+            json_num(w, c.caption.size)?;
+            let font = match c.caption.font {
+                crate::CaptionFont::Serif => "serif",
+                crate::CaptionFont::Mono => "mono",
+                _ => "sans",
+            };
+            write!(
+                w,
+                ",\"font\":\"{font}\",\"bold\":{},\"tracking\":{},\"center\":[",
+                c.caption.bold, c.caption.tracking
+            )?;
+            json_num(w, c.center.0)?;
+            w.write_char(',')?;
+            json_num(w, c.center.1)?;
+            w.write_str("]}")?;
         }
         if !self.textures.is_empty() {
             w.write_str(",\"textures\":[")?;

@@ -33,6 +33,9 @@ pub(crate) struct Canvas {
     pub(crate) border: f64,
     /// The shadow's offset in modules, 0 without one.
     pub(crate) shadow: f64,
+    /// The caption's band under the card, in whole modules, 0 without
+    /// one. A square or rounded card grows to take it in.
+    pub(crate) band: i64,
     /// The circle of a round frame.
     pub(crate) round: Option<Round>,
 }
@@ -57,6 +60,41 @@ const ROUND_MARGIN: f64 = 1.0;
 const RING_GAP: f64 = 1.0;
 const RING_WIDTH: f64 = 0.5;
 
+/// A caption's band, in multiples of its letters' size: room for the
+/// letters and the space under them.
+pub(crate) const CAPTION_BAND: f64 = 1.75;
+
+impl Canvas {
+    /// The viewBox's height: its side, and the caption's band below.
+    pub(crate) fn height(&self) -> i64 {
+        self.side + self.band
+    }
+
+    /// Where a caption `size` modules tall centers its line: in the light
+    /// space between the quiet zone and the border (or the card's edge),
+    /// a little high, as optical centering wants. Under a round card, in
+    /// the band below it.
+    pub(crate) fn caption_center(&self, size: f64) -> (f64, f64) {
+        let margin = if self.round.is_some() {
+            0.0
+        } else {
+            math::ceil(self.border)
+        };
+        let y = self.card as f64 - margin + self.band as f64 / 2.0 - size * 0.1;
+        (self.card as f64 / 2.0, y)
+    }
+
+    /// The card's height: square, or taller by the caption's band when
+    /// the frame grows to hold it.
+    pub(crate) fn card_height(&self) -> i64 {
+        if self.round.is_some() {
+            self.card
+        } else {
+            self.card + self.band
+        }
+    }
+}
+
 /// Lays out the canvas for `style`'s frame. A border takes whole modules
 /// of margin beyond the quiet zone (any spare is light, between the two),
 /// so the code stays on whole modules; a shadow widens the canvas past
@@ -67,6 +105,9 @@ pub(crate) fn canvas(style: &Style, qr: &QrMatrix) -> Canvas {
     let border = style.border.map_or(0.0, |b| b.width().max(0.0) as f64);
     let shadow = style.shadow.map_or(0.0, |s| s.max(0.0) as f64);
     let reach = math::ceil(shadow) as i64;
+    let band = style.caption.as_ref().map_or(0, |c| {
+        math::ceil(c.size.max(0.0) as f64 * CAPTION_BAND) as i64
+    });
     let Frame::Circle {
         ring: ring_style, ..
     } = style.frame
@@ -79,6 +120,7 @@ pub(crate) fn canvas(style: &Style, qr: &QrMatrix) -> Canvas {
             origin: q + margin,
             border,
             shadow,
+            band,
             round: None,
         };
     };
@@ -102,6 +144,7 @@ pub(crate) fn canvas(style: &Style, qr: &QrMatrix) -> Canvas {
         origin: (card - n) / 2,
         border,
         shadow,
+        band,
         round: Some(Round {
             radius,
             ring,
@@ -263,6 +306,9 @@ pub enum LayerRole {
     /// takes that layer's motion as well as its own, and the window moves
     /// with the plate, not with the content.
     LogoArt,
+    /// The caption ([`Style::caption`](crate::Style::caption)): its path is
+    /// empty; plans carry the text in `AnimationPlan::caption`.
+    Caption,
     /// Paper grain over the background ([`Texture::Grain`](crate::Texture::Grain)):
     /// its path is the card, filtered into seeded speckles.
     Grain,
@@ -289,6 +335,7 @@ impl LayerRole {
                 | LayerRole::Background
                 | LayerRole::Grain
                 | LayerRole::Border
+                | LayerRole::Caption
                 | LayerRole::Scanlines
         )
     }
@@ -796,6 +843,27 @@ mod tests {
         // One texture of each kind: the second replaces the first.
         let twice = style.texture(crate::Texture::Ink { fade: 0.1 });
         assert_eq!(twice.textures(), [crate::Texture::Ink { fade: 0.1 }]);
+    }
+
+    #[test]
+    fn captions_add_a_band_below_the_card() {
+        let qr = QrCode::encode("HELLO", Ecc::M).unwrap(); // 21 modules
+        let style = Style::new().caption(crate::Caption::new("Scan me"));
+        let c = canvas(&style, &qr);
+        // Size 2 needs 3.5 modules: four, under a 29-module card.
+        assert_eq!(
+            (c.side, c.card, c.band, c.height(), c.card_height()),
+            (29, 29, 4, 33, 33)
+        );
+        let (x, y) = c.caption_center(2.0);
+        assert!((x - 14.5).abs() < 1e-9 && y > 29.0 && y < 33.0);
+        // A round card keeps its shape; the caption hangs below it.
+        let round = canvas(
+            &round(0.5, FrameRing::None).caption(crate::Caption::new("x")),
+            &qr,
+        );
+        assert_eq!(round.card_height(), round.card);
+        assert_eq!(round.height(), round.side + 4);
     }
 
     #[test]

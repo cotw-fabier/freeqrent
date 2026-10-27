@@ -159,6 +159,74 @@ pub enum Effect {
     },
 }
 
+/// The typeface family of a caption. Generic families only: the SVG
+/// names no font file, so each viewer draws it with its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum CaptionFont {
+    /// `ui-sans-serif, system-ui, sans-serif`.
+    #[default]
+    Sans,
+    /// `ui-serif, Georgia, serif`.
+    Serif,
+    /// `ui-monospace, Menlo, monospace`.
+    Mono,
+}
+
+/// A line of text under the code, inside the frame (SPEC §7.4): "Scan
+/// me", a prompt, a headline. It lies outside the quiet zone.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct Caption {
+    /// The text, one line.
+    pub text: String,
+    /// The letters' size in modules (the font size), 1–4.
+    pub size: f32,
+    /// The typeface family.
+    pub font: CaptionFont,
+    /// Bold or regular.
+    pub bold: bool,
+    /// Letters spaced apart, in hundredths of the size (0–50).
+    pub tracking: u8,
+}
+
+impl Caption {
+    /// `text` at 2 modules, sans-serif, bold.
+    pub fn new(text: impl Into<String>) -> Caption {
+        Caption {
+            text: text.into(),
+            size: 2.0,
+            font: CaptionFont::Sans,
+            bold: true,
+            tracking: 0,
+        }
+    }
+
+    /// The letters' size in modules, 1–4.
+    pub fn size(mut self, size: f32) -> Caption {
+        self.size = size;
+        self
+    }
+
+    /// The typeface family.
+    pub fn font(mut self, font: CaptionFont) -> Caption {
+        self.font = font;
+        self
+    }
+
+    /// Bold or regular.
+    pub fn bold(mut self, bold: bool) -> Caption {
+        self.bold = bold;
+        self
+    }
+
+    /// Letter spacing in hundredths of the size, 0–50.
+    pub fn tracking(mut self, tracking: u8) -> Caption {
+        self.tracking = tracking;
+        self
+    }
+}
+
 /// A surface texture (SPEC §7.5). A style can have one of each kind.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
@@ -259,6 +327,7 @@ pub struct Style {
     pub(crate) spread: ColorSpread,
     pub(crate) effect: Option<Effect>,
     pub(crate) textures: Vec<Texture>,
+    pub(crate) caption: Option<Caption>,
     pub(crate) seed: Option<u64>,
     pub(crate) logo: Option<Logo>,
     #[cfg(feature = "halftone")]
@@ -293,6 +362,7 @@ impl Default for Style {
             spread: ColorSpread::Modules,
             effect: None,
             textures: Vec::new(),
+            caption: None,
             seed: None,
             logo: None,
             #[cfg(feature = "halftone")]
@@ -459,6 +529,19 @@ impl Style {
         self.textures.retain(|t| t.kind() != texture.kind());
         self.textures.push(texture);
         self
+    }
+
+    /// Writes a caption under the code (SPEC §7.4). Square and rounded
+    /// frames grow downward to hold it; under a round frame or none it
+    /// stands below the card.
+    pub fn caption(mut self, caption: Caption) -> Style {
+        self.caption = Some(caption);
+        self
+    }
+
+    /// The caption, if any.
+    pub fn caption_options(&self) -> Option<&Caption> {
+        self.caption.as_ref()
     }
 
     /// The textures, in the order they were added.

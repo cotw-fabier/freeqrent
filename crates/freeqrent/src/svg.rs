@@ -20,7 +20,7 @@ use crate::num::write_scaled;
 use crate::palette::{Gradient, GradientKind, Paint, Palette, Token};
 use crate::scanbox::{self, AlignmentShape};
 use crate::scene::{self, Canvas, LayerRole, Part, Round};
-use crate::style::{Border, Effect, Frame, Style};
+use crate::style::{Border, CaptionFont, Effect, Frame, Style};
 
 /// The paths to draw, one per (token, fill rule), in paint order; a
 /// picture's sub-cells keep their own elements.
@@ -322,12 +322,13 @@ fn card_outline(path: &mut Path, style: &Style, canvas: &Canvas, inset: f64, shi
         return;
     }
     let (at, side) = (u(inset + shift), u(card - 2.0 * inset));
+    let height = u(canvas.card_height() as f64 - 2.0 * inset);
     match style.frame {
         Frame::RoundedSquare(r) => {
             let r = u((r as f64 - inset).max(0.0));
-            path.rounded_rect(at, at, side, side, [r; 4]);
+            path.rounded_rect(at, at, side, height, [r; 4]);
         }
-        _ => path.rect(at, at, side, side),
+        _ => path.rect(at, at, side, height),
     }
 }
 
@@ -353,6 +354,14 @@ pub(crate) fn chrome_elements(style: &Style, canvas: &Canvas) -> Vec<Element> {
         let mut path = Path::new();
         card_outline(&mut path, style, canvas, 0.0, 0.0);
         elements.push(Element::new(LayerRole::Grain, Token::Fg, false, path));
+    }
+    if style.caption.is_some() {
+        elements.push(Element::new(
+            LayerRole::Caption,
+            Token::Caption,
+            false,
+            Path::new(),
+        ));
     }
     if let Some(border) = style.border.filter(|_| canvas.border > 0.0) {
         let b = canvas.border;
@@ -562,7 +571,7 @@ pub(crate) fn write<W: Write + ?Sized>(
     };
     out.w
         .write_str("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ")?;
-    write!(out.w, "{n} {n}\" class=\"qr")?;
+    write!(out.w, "{n} {}\" class=\"qr", canvas.height())?;
     #[cfg(feature = "animate")]
     if motion.as_ref().is_some_and(|m| m.live()) {
         write!(out.w, " {prefix}")?;
@@ -671,14 +680,14 @@ pub(crate) fn write<W: Write + ?Sized>(
                         out.w.write_char('"')?;
                     }
                     (None, Frame::RoundedSquare(r)) if geometry::units(r) > 0 => {
-                        let c = canvas.card;
-                        write!(out.w, "<rect width=\"{c}\" height=\"{c}\" rx=\"")?;
+                        let (c, h) = (canvas.card, canvas.card_height());
+                        write!(out.w, "<rect width=\"{c}\" height=\"{h}\" rx=\"")?;
                         write_scaled(out.w, geometry::units(r), 3)?;
                         out.w.write_char('"')?;
                     }
                     _ => {
-                        let c = canvas.card;
-                        write!(out.w, "<rect width=\"{c}\" height=\"{c}\"")?
+                        let (c, h) = (canvas.card, canvas.card_height());
+                        write!(out.w, "<rect width=\"{c}\" height=\"{h}\"")?
                     }
                 }
                 write_element_paint(out.w, palette, e, &prefix)?;
@@ -722,6 +731,7 @@ pub(crate) fn write<W: Write + ?Sized>(
                 write_pose(out.w, e)?;
                 write!(out.w, " d=\"{}\"/></g>", e.path.data())?;
             }
+            LayerRole::Caption => write_caption(out.w, style, &canvas, palette, e, &prefix)?,
             LayerRole::Grain => {
                 write_grain(out.w, style, &prefix, n, scene::seed(style, qr))?;
                 write!(
@@ -1392,6 +1402,12 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
         let _ = write!(text, "{:?}{:?}", style.border, style.shadow);
         text.bytes().for_each(&mut eat);
     }
+    // And captions.
+    if let Some(c) = &style.caption {
+        let mut text = String::new();
+        let _ = write!(text, "{c:?}");
+        text.bytes().for_each(&mut eat);
+    }
     // So were effects, which bring a filter ID.
     if has_effects(style) {
         let mut text = String::new();
@@ -1517,6 +1533,65 @@ fn write_effects<W: Write + ?Sized>(
         w.write_str("\" xChannelSelector=\"R\" yChannelSelector=\"G\"/>")?;
     }
     w.write_str("</filter>")
+}
+
+/// The caption (SPEC §7.4): one line centered in the band under the
+/// card. Wider than an average guess at its letters allows, it's squeezed
+/// to fit (`textLength`).
+fn write_caption<W: Write + ?Sized>(
+    w: &mut W,
+    style: &Style,
+    canvas: &Canvas,
+    palette: &Palette,
+    e: &Element,
+    prefix: &str,
+) -> fmt::Result {
+    let Some(c) = &style.caption else {
+        return Ok(());
+    };
+    let num = |w: &mut W, v: f64| write_scaled(w, math::round(v * 1000.0) as i64, 3);
+    let size = c.size as f64;
+    let tracking = c.tracking as f64 / 100.0 * size;
+    let (center, y) = canvas.caption_center(size);
+    let family = match c.font {
+        CaptionFont::Serif => "ui-serif, Georgia, serif",
+        CaptionFont::Mono => "ui-monospace, Menlo, monospace",
+        _ => "ui-sans-serif, system-ui, sans-serif",
+    };
+    w.write_str("<text x=\"")?;
+    num(w, center)?;
+    w.write_str("\" y=\"")?;
+    num(w, y)?;
+    write!(w, "\" font-family=\"{family}\" font-size=\"")?;
+    num(w, size)?;
+    w.write_char('"')?;
+    if c.bold {
+        w.write_str(" font-weight=\"700\"")?;
+    }
+    if tracking > 0.0 {
+        w.write_str(" letter-spacing=\"")?;
+        num(w, tracking)?;
+        w.write_char('"')?;
+    }
+    // An average letter is about 0.6 of the size wide (wider in mono).
+    let per = if c.font == CaptionFont::Mono {
+        0.62
+    } else {
+        0.58
+    } * size
+        + tracking;
+    let guess = c.text.chars().count() as f64 * per;
+    let room = canvas.card as f64 - 2.0 * (canvas.border + 1.0);
+    if guess > room {
+        w.write_str(" textLength=\"")?;
+        num(w, room)?;
+        w.write_str("\" lengthAdjust=\"spacingAndGlyphs\"")?;
+    }
+    w.write_str(" text-anchor=\"middle\" dominant-baseline=\"central\"")?;
+    write_element_paint(w, palette, e, prefix)?;
+    w.write_char('>')?;
+    escape(w, &c.text)?;
+    w.write_str("</text>")
 }
 
 /// Paper grain (SPEC §7.5): seeded fine noise turned into speckles of
@@ -1785,6 +1860,15 @@ mod tests {
             .allow_inverted(true);
         let svg = dark.render(&qr()).unwrap();
         assert!(svg.contains("flood-color=\"#fff\" flood-opacity=\"0\""));
+    }
+
+    #[test]
+    fn captions_are_escaped_text_in_a_taller_view() {
+        let style = Style::new().caption(crate::Caption::new("Fish & <chips>"));
+        let svg = style.render(&qr()).unwrap();
+        assert!(svg.contains("viewBox=\"0 0 29 33\""));
+        assert!(svg.contains(">Fish &amp; &lt;chips&gt;</text>"));
+        assert!(svg.contains("height=\"33\""));
     }
 
     #[test]

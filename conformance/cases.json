@@ -547,6 +547,71 @@
       }
     },
     {
+      "name": "brutalist caption",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "palette": {
+          "bg": "#ffd93d",
+          "fg": "#000000"
+        },
+        "border": {
+          "kind": "solid",
+          "width": 1
+        },
+        "shadow": 1.5,
+        "caption": "SCAN ME"
+      },
+      "expect": {
+        "sha256": "99b75360ae9e255912b3fe753709ce1ffec51519d35334c7561da54b1f9e7180",
+        "length": 3880
+      }
+    },
+    {
+      "name": "caption under a round frame",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "frame": {
+          "kind": "circle",
+          "ring": "solid"
+        },
+        "caption": {
+          "text": "menu & more",
+          "font": "serif",
+          "bold": false,
+          "tracking": 10,
+          "size": 1.5
+        }
+      },
+      "expect": {
+        "sha256": "1ef528b70973b21a366a3ecc715422f2f9f2ede9331f746cf4090922f565ec5f",
+        "length": 5751
+      }
+    },
+    {
+      "name": "plan caption",
+      "fn": "plan",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "caption": {
+          "text": "$ scan",
+          "font": "mono"
+        },
+        "intro": "sweep"
+      },
+      "expect": {
+        "sha256": "23a7e90d2156ca17c02a32f3090dcecfb0d4f2465e09b0bd83e52e296b272d81",
+        "length": 3434
+      }
+    },
+    {
       "name": "plan glow",
       "fn": "plan",
       "payload": {
