@@ -1,0 +1,28 @@
+# The native library behind the Dart package: freeqrent-ffi's C ABI, built
+# by the Native Assets hook (hook/build.dart, native_toolchain_rust) for the
+# target the Dart or Flutter build asks for. It has its own workspace so the
+# hook can build it without the repository's.
+[package]
+name = "freeqrent_dart"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+publish = false
+
+[lib]
+# Both are required by native_toolchain_rust: staticlib for iOS, cdylib
+# everywhere else.
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+# freeqrent-doc's default feature set (SPEC §10.3) comes with it.
+freeqrent-ffi = { path = "../../../../crates/freeqrent-ffi" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "unwind"
+strip = "debuginfo"
+
+[workspace]
