@@ -1,0 +1,86 @@
+name: js
+
+# The npm package (bindings/js): the wasm build, its tests (conformance,
+# API, CJS and ESM entry points, a browser-style load, types, the bin) on
+# Node 18 and the current Node, and the bin held to the Rust CLI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - bindings/js/**
+      - bindings/SURFACE.md
+      - crates/freeqrent/**
+      - crates/freeqrent-doc/**
+      - crates/freeqrent-ffi/**
+      - crates/freeqrent-cli/**
+      - conformance/**
+      - schema/**
+      - .github/workflows/js.yml
+  pull_request:
+    paths:
+      - bindings/js/**
+      - bindings/SURFACE.md
+      - crates/freeqrent/**
+      - crates/freeqrent-doc/**
+      - crates/freeqrent-ffi/**
+      - crates/freeqrent-cli/**
+      - conformance/**
+      - schema/**
+      - .github/workflows/js.yml
+
+env:
+  CARGO_TERM_COLOR: always
+  # Must match the wasm-bindgen version in bindings/js/crate/Cargo.lock.
+  WASM_BINDGEN: 0.2.129
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['18', 'current']
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: bindings/js
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-${{ runner.os }}-${{ env.WASM_BINDGEN }}
+      - name: wasm-bindgen-cli
+        run: wasm-bindgen --version 2>/dev/null | grep -q " $WASM_BINDGEN$" || cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/gen-types.mjs --check
+      - name: The Rust CLI, to hold the bin to
+        run: |
+          cargo build --release -p freeqrent-cli --no-default-features
+          echo "FREEQRENT_CLI=$GITHUB_WORKSPACE/target/release/freeqrent" >> "$GITHUB_ENV"
+      - run: npm test
+      - run: npm run bench
+
+  crate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - run: cargo fmt --manifest-path bindings/js/crate/Cargo.toml -- --check
+      - run: cargo clippy --locked --manifest-path bindings/js/crate/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: bindings/js/crate/Cargo.toml
+          command: check
+          arguments: --config deny.toml

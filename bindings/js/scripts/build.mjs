@@ -195,6 +195,9 @@ const types =
   readFileSync(join(root, 'src', 'api.d.ts'), 'utf8');
 for (const name of ['index.d.ts', 'index.d.mts', 'index.d.cts']) writeFileSync(join(dist, name), types);
 
+// The repository's license travels with the package.
+copyFileSync(join(root, '..', '..', 'LICENSE'), join(dist, 'LICENSE'));
+
 const bytes = readFileSync(wasmOut);
 const before = readFileSync(bindgenWasm);
 console.error(
