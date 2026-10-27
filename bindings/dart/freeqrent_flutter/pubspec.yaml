@@ -1,0 +1,23 @@
+name: freeqrent_flutter
+description: >-
+  FreeQrentAnimated: freeQRent's animated QR codes drawn natively by
+  Flutter from the core's AnimationPlan, with reduced motion, visibility
+  triggers and OKLab palette transitions.
+version: 1.0.0
+homepage: https://github.com/freeqrent/freeqrent
+repository: https://github.com/freeqrent/freeqrent
+publish_to: none
+
+environment:
+  sdk: ^3.9.0
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  freeqrent:
+    path: ../freeqrent
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

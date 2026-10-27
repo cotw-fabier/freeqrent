@@ -1,0 +1,33 @@
+{
+  "about": "Golden cases for FreeQrentAnimated: each style's finished frame, drawn by the widget, is compared module by module with the static SVG rendered by resvg (the PNG beside this file, from `cargo run --manifest-path goldens/Cargo.toml`).",
+  "px_per_module": 8,
+  "payload": "https://example.com/flutter",
+  "cases": [
+    {"name": "default", "style": {}},
+    {"name": "ink", "style": {"preset": "ink"}},
+    {"name": "candy-ripple", "style": {"preset": "candy", "intro": "ripple"}},
+    {"name": "sunset", "style": {"preset": "sunset"}},
+    {"name": "bubble", "style": {"preset": "bubble", "intro": "settle"}},
+    {"name": "ribbon-idle", "style": {"preset": "ribbon", "intro": "settle", "idle": ["finder-pulse", "shimmer", "breathe"]}},
+    {"name": "leaf-assemble", "style": {"preset": "leaf", "intro": "assemble"}},
+    {"name": "terminal-scanlines", "style": {"preset": "terminal", "textures": [{"kind": "scanlines", "opacity": 0.25}], "intro": "raster"}},
+    {"name": "liquid-sweep", "style": {"modules": {"kind": "liquid", "smoothness": 1}, "intro": "sweep"}},
+    {"name": "bars-iris", "style": {"modules": {"kind": "bars", "axis": "vertical"}, "intro": "iris"}},
+    {"name": "finders", "style": {"finders": {"ring": "squircle", "eye": "circle", "corners": {"top-right": {"ring": "leaf", "eye": "leaf"}}}, "alignment": {"shape": {"kind": "own", "ring": {"kind": "rounded", "radius": 2.5}}, "emphasis": "outline"}, "timing": "dashed", "encoding": {"min_version": 7}}},
+    {"name": "gradient", "style": {"modules": "rounded", "palette": {"bg": "radial-gradient(oklch(97% .02 300), oklch(90% .05 300))", "fg": "linear-gradient(135deg, #1d2b64, oklch(30% .14 330))", "finder.eye": "oklch(45% .2 25)"}, "intro": "lock-on"}},
+    {"name": "round-frame", "style": {"modules": {"kind": "dots", "size": 0.85}, "frame": {"kind": "circle", "filler_density": 0.4, "ring": "dashed"}, "seed": 7, "intro": "settle"}},
+    {"name": "border-shadow", "style": {"frame": {"kind": "rounded", "radius": 2}, "border": {"kind": "double", "width": 1.5}, "shadow": 1.5, "palette": {"frame": "#b8860b", "shadow": "#1a1a2e"}}},
+    {"name": "data-colors", "style": {"modules": "liquid", "color_spread": "regions", "palette": {"fg.2": "oklch(35% .16 27)", "fg.3": "oklch(35% .18 265)"}, "seed": 5, "intro": "ripple"}},
+    {"name": "glow", "style": {"palette": {"bg": "#0a0a0f", "fg": "#7dffb0"}, "allow_inverted": true, "effect": {"kind": "glow", "radius": 0.4}, "intro": "settle"}},
+    {"name": "emboss", "style": {"palette": {"bg": "#e0e5ec", "fg": "#2b333b"}, "modules": "dots", "effect": "emboss", "frame": {"kind": "rounded", "radius": 4}}},
+    {"name": "sketch", "style": {"modules": {"kind": "rounded", "radius": 0.3}, "finders": {"ring": "leaf"}, "effect": {"kind": "sketch", "roughness": 0.12}, "seed": 11}},
+    {"name": "newsprint", "style": {"modules": {"kind": "dots", "size": 0.8}, "palette": {"bg": "#f9f9f7", "fg": "#111111"}, "textures": [{"kind": "ink", "fade": 0.2}, "grain"], "seed": 4}},
+    {"name": "caption", "style": {"palette": {"bg": "#ffd93d", "fg": "#000000"}, "border": {"kind": "solid", "width": 1}, "shadow": 1.5, "caption": "SCAN ME", "intro": "sweep"}},
+    {"name": "dark-twin", "style": {"preset": "ink", "dark": true, "intro": "ripple"}},
+    {"name": "palette-shift", "style": {"preset": "candy", "intro": {"palette_from": {"fg": "#1d3b72"}, "duration_ms": 800}}},
+    {"name": "logo-orbit", "style": {"modules": "liquid", "logo": {"svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\" fill=\"#a3302a\"/></svg>", "frame": "orbit"}, "intro": {"preset": "iris", "logo": "spin"}, "idle": ["logo-glint"]}},
+    {"name": "logo-ring-draw", "style": {"logo": {"svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\" fill=\"#a3302a\"/></svg>", "frame": {"kind": "ring", "width": 0.6}, "shape": "circle"}, "intro": {"preset": "settle", "logo": "draw", "frame": "draw"}}},
+    {"name": "halftone", "style": {"halftone": {"image": {"width": 4, "height": 4, "rgba": "+tyg//rcoP/63KD/+tyg/+u1d//rtXf/67V3/+u1d//aimX/2opl/9qKZf/aimX/qD5J/6g+Sf+oPkn/qD5J/w=="}, "ink": {"kind": "color", "colors": 4}}, "intro": "develop"}},
+    {"name": "art", "style": {"art": {"image": {"width": 4, "height": 4, "rgba": "HR1d/x0dXf/47+D/+O/g/x0dXf8dHV3/+O/g//jv4P/47+D/+O/g/x0dXf8dHV3/+O/g//jv4P8dHV3/HR1d/w=="}}, "intro": "assemble"}}
+  ]
+}
