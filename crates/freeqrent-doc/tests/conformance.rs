@@ -74,6 +74,21 @@ fn every_case_passes() {
     }
 }
 
+/// Every plan the suite makes is JSON a strict parser takes.
+#[test]
+fn plans_are_json() {
+    let mut plans = 0;
+    for case in cases() {
+        if field(&case, "fn") == &Value::String("plan".into())
+            && let Ok(text) = support::run(&case)
+        {
+            json::parse(&text).unwrap_or_else(|e| panic!("{:?}: {e:?}", field(&case, "name")));
+            plans += 1;
+        }
+    }
+    assert!(plans >= 5, "{plans}");
+}
+
 #[test]
 fn documents_and_results_fit_the_schema() {
     let schema = json::parse(&read(support::SCHEMA)).expect("schema JSON");

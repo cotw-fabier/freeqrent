@@ -11,6 +11,7 @@ New options, all additive; 1.0 styles render byte for byte as before (snapshots 
 - **Effects:** `Style::effect(Effect::Glow | Emboss | Sketch)`, one SVG filter on the code.
 - **Textures:** `Style::texture(Texture::Grain | Scanlines | Ink)`.
 - **Captions:** `Style::caption(Caption)`, a line under the code with a `caption` token; the viewBox may now be taller than wide.
+- **Fix:** animation plans (`AnimationPlan::to_json`) are valid JSON again; numbers below 1 had lost their leading zero. Plan output changes; SVG output doesn't.
 - Every option is in the Style document, the schema, the conformance suite (16 new cases, 74 in all) and the CLI, and plans carry what other players need (`effect`, `textures`, `caption`, layers' `fillOpacity`).
 
 ## Unreleased (Phase 2, M7)
