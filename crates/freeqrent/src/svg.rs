@@ -585,7 +585,13 @@ pub(crate) fn write<W: Write + ?Sized>(
                 unreachable!("gradient sources hold gradients");
             };
             out.nested_line()?;
-            let at = (canvas.origin, qr.size());
+            // The background's gradient spans the card; the others, the
+            // code area.
+            let at = if source == Token::Bg {
+                (0, canvas.card as u16)
+            } else {
+                (canvas.origin, qr.size())
+            };
             write_gradient(out.w, g, &prefix, source, at, fifths)?;
         }
         out.line()?;
@@ -1223,7 +1229,8 @@ fn write_gradient<W: Write + ?Sized>(
     (origin, size): (i64, u16),
     fifths: bool,
 ) -> fmt::Result {
-    // Gradients span the code area, not the quiet zone.
+    // Gradients span the given square: the code area (not the quiet
+    // zone), or for the background the card.
     let side = size as f64;
     let c = origin as f64 + side / 2.0;
     let attr = |w: &mut W, name: &str, v: f64| -> fmt::Result {

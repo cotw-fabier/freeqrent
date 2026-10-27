@@ -153,6 +153,10 @@ pub fn inputs() -> Vec<String> {
             r##"{"modules":"dots","palette":{"fg.2":"#7a0000","fg.3":"#1e3a8a","fg.4":"#065f46"},"intro":"ripple"}"##,
         ),
         render(
+            "gradient background",
+            r##"{"palette":{"bg":"radial-gradient(oklch(97% .02 300), oklch(90% .05 300))","fg":"#2e1065"},"frame":{"kind":"rounded","radius":3},"shadow":1}"##,
+        ),
+        render(
             "round border settling",
             r#"{"modules":"dots","frame":{"kind":"circle","ring":"solid"},"border":"solid","shadow":1,"seed":3,"intro":"settle"}"#,
         ),

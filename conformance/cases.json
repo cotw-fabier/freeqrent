@@ -385,6 +385,28 @@
       }
     },
     {
+      "name": "gradient background",
+      "fn": "render",
+      "payload": {
+        "text": "https://example.com/conformance"
+      },
+      "style": {
+        "palette": {
+          "bg": "radial-gradient(oklch(97% .02 300), oklch(90% .05 300))",
+          "fg": "#2e1065"
+        },
+        "frame": {
+          "kind": "rounded",
+          "radius": 3
+        },
+        "shadow": 1
+      },
+      "expect": {
+        "sha256": "9b04cc513cad208baea3254c9658e080fc671db26c0940e1158f9014d224f072",
+        "length": 3879
+      }
+    },
+    {
       "name": "round border settling",
       "fn": "render",
       "payload": {

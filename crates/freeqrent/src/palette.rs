@@ -16,7 +16,8 @@ use crate::num::write_scaled;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Token {
-    /// Canvas background. Solid colors only; may be `transparent`.
+    /// Canvas background: a color (may be `transparent`) or a gradient
+    /// across the card (SPEC §6.1).
     Bg,
     /// Data modules.
     Fg,
@@ -181,12 +182,13 @@ impl Token {
         }
     }
 
-    /// True for the tokens that accept gradients: `fg` and the data
+    /// True for the tokens that accept gradients: `bg`, `fg` and the data
     /// colors, the finder tokens and `logo.frame`.
     pub fn accepts_gradient(self) -> bool {
         matches!(
             self,
-            Token::Fg
+            Token::Bg
+                | Token::Fg
                 | Token::Fg2
                 | Token::Fg3
                 | Token::Fg4
@@ -775,20 +777,60 @@ impl Palette {
         out
     }
 
-    /// The background color.
+    /// The background color; for a gradient, its average along the
+    /// gradient (what a picture is traced against, and what a dark twin
+    /// is placed by).
     pub fn background(&self) -> Color {
         match self.get(Token::Bg) {
             Some(Paint::Solid(c)) => *c,
-            _ => unreachable!("bg is always a solid color"),
+            Some(Paint::Gradient(g)) => {
+                let samples = gradient_samples(g);
+                let n = samples.len() as f64;
+                let mut sum = [0.0; 4];
+                for (rgb, a) in &samples {
+                    for i in 0..3 {
+                        sum[i] += rgb[i] * a;
+                    }
+                    sum[3] += a;
+                }
+                let a = sum[3] / n;
+                let byte = |i: usize| {
+                    let v = if sum[3] > 0.0 { sum[i] / sum[3] } else { 0.0 };
+                    math::round(v.clamp(0.0, 1.0) * 255.0) as u8
+                };
+                Color::srgb(byte(0), byte(1), byte(2)).with_alpha(a as f32)
+            }
+            None => unreachable!("bg is always set"),
         }
     }
 
     /// Contrast of `token`'s resolved paint against the background. A
-    /// translucent background is judged over white.
+    /// translucent background is judged over white; against a gradient,
+    /// every point of the paint is judged against every point of the
+    /// background, so the result holds wherever they meet.
     pub fn contrast(&self, token: Token) -> Contrast {
         let white = [1.0; 3];
-        let bg = composite(self.background(), white);
-        contrast(&self.resolve(token), bg)
+        let paint = self.resolve(token);
+        let backdrops = match self.get(Token::Bg) {
+            Some(Paint::Gradient(g)) => gradient_samples(g)
+                .into_iter()
+                .map(|(rgb, a)| [0, 1, 2].map(|i| rgb[i] * a + (1.0 - a)))
+                .collect(),
+            _ => alloc::vec![composite(self.background(), white)],
+        };
+        let all: Vec<Contrast> = backdrops
+            .into_iter()
+            .map(|bg| contrast(&paint, bg))
+            .collect();
+        let delta_l = all.iter().map(|c| c.delta_l).fold(f32::INFINITY, f32::min);
+        let inverted = all[0].inverted;
+        if all.iter().any(|c| c.inverted != inverted) {
+            return Contrast {
+                delta_l: 0.0,
+                inverted: false,
+            };
+        }
+        Contrast { delta_l, inverted }
     }
 }
 
@@ -847,6 +889,26 @@ fn contrast(paint: &Paint, bg: [f64; 3]) -> Contrast {
             inverted: false,
         }
     }
+}
+
+/// Points along a gradient, as renderers interpolate it (premultiplied
+/// sRGB, 8 steps per span): straight sRGB and alpha.
+fn gradient_samples(g: &Gradient) -> Vec<([f64; 3], f64)> {
+    let mut out = Vec::new();
+    for pair in g.stops.windows(2) {
+        let (a, b) = (pair[0].color, pair[1].color);
+        let (pa, pb) = (premultiplied(a), premultiplied(b));
+        for k in 0..=8 {
+            let t = k as f64 / 8.0;
+            let alpha = a.alpha() as f64 * (1.0 - t) + b.alpha() as f64 * t;
+            let rgb = [0, 1, 2].map(|i| {
+                let v = pa[i] * (1.0 - t) + pb[i] * t;
+                if alpha > 0.0 { v / alpha } else { 0.0 }
+            });
+            out.push((rgb, alpha));
+        }
+    }
+    out
 }
 
 fn premultiplied(c: Color) -> [f64; 3] {
@@ -976,8 +1038,28 @@ mod tests {
         assert!(matches!(err.error, ColorError::Syntax { .. }));
         let err = Palette::from_tokens([("fgg", "#123")]).unwrap_err();
         assert_eq!(err.error, ColorError::UnknownToken);
-        let err = Palette::from_tokens([("bg", "linear-gradient(#fff, #eee)")]).unwrap_err();
+        let err = Palette::from_tokens([("timing", "linear-gradient(#000, #333)")]).unwrap_err();
+        assert_eq!(err.token, "timing");
         assert_eq!(err.error, ColorError::GradientNotAllowed);
+    }
+
+    #[test]
+    fn gradient_backgrounds_judge_the_worst_point() {
+        let fg = |bg: &str| {
+            Palette::from_tokens([("bg", bg), ("fg", "#000")])
+                .unwrap()
+                .contrast(Token::Fg)
+        };
+        // The darker end decides.
+        let grey = fg("#999").delta_l;
+        let gradient = fg("linear-gradient(#fff, #999)");
+        assert!((gradient.delta_l - grey).abs() < 0.01 && !gradient.inverted);
+        // A background crossing the ink's lightness has no contrast at all.
+        assert_eq!(fg("linear-gradient(#fff, #000)").delta_l, 0.0);
+        // A picture or a dark twin sees the average.
+        let p = Palette::from_tokens([("bg", "linear-gradient(#ffffff, #000000)")]).unwrap();
+        let [r, g, b] = p.background().to_srgb();
+        assert!((r - 0.5).abs() < 0.01 && r == g && g == b);
     }
 
     #[test]

@@ -5,7 +5,9 @@
 mod common;
 
 use common::assert_scans;
-use freeqrent::{Axis, ColorSpread, Ecc, ModuleShape, Palette, QrCode, Style, Token, Warning};
+use freeqrent::{
+    Axis, ColorSpread, Ecc, Frame, FrameRing, ModuleShape, Palette, QrCode, Style, Token, Warning,
+};
 use freeqrent_verify::rasterize;
 
 fn shapes() -> Vec<ModuleShape> {
@@ -166,6 +168,38 @@ fn data_colors_scan() {
             assert_scans(&style, &format!("{spread:?} {shape:?}"));
             let twin = style.palette(palette.dark_twin()).allow_inverted(true);
             assert_scans(&twin, &format!("{spread:?} {shape:?} dark"));
+        }
+    }
+}
+
+#[test]
+fn gradient_backgrounds_scan() {
+    // Backgrounds whose darkest point sits at the warning band from fg,
+    // linear and radial, on square and round frames, light and inverted.
+    let backgrounds = [
+        "linear-gradient(135deg, #ffffff, oklch(90% .05 300))",
+        "radial-gradient(oklch(96% .03 85), oklch(88% .06 60))",
+    ];
+    let frames = [
+        Frame::Square,
+        Frame::Circle {
+            filler_density: 0.5,
+            ring: FrameRing::Solid,
+        },
+    ];
+    for bg in backgrounds {
+        let palette = Palette::from_tokens([("bg", bg), ("fg", "#1d2433")]).unwrap();
+        assert!(palette.contrast(Token::Fg).delta_l >= 0.6, "{bg}");
+        for frame in frames {
+            for shape in [ModuleShape::SQUARE, ModuleShape::Dots { size: 0.85 }] {
+                let style = Style::new()
+                    .palette(palette.clone())
+                    .modules(shape)
+                    .frame(frame);
+                assert_scans(&style, &format!("{bg} {frame:?} {shape:?}"));
+                let twin = style.palette(palette.dark_twin()).allow_inverted(true);
+                assert_scans(&twin, &format!("{bg} {frame:?} {shape:?} dark"));
+            }
         }
     }
 }

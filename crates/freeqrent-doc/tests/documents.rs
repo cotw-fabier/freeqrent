@@ -449,9 +449,9 @@ fn errors_name_their_path() {
             "palette.fg",
         ),
         (
-            r#"{"palette":{"bg":"linear-gradient(90deg, #fff, #eee)"}}"#.into(),
+            r#"{"palette":{"timing":"linear-gradient(90deg, #000, #333)"}}"#.into(),
             "invalid_style",
-            "palette.bg",
+            "palette.timing",
         ),
         (
             r#"{"quiet_zone":256}"#.into(),

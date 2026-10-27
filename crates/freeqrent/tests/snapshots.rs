@@ -211,3 +211,15 @@ fn data_colors_by_region() {
         );
     insta::assert_snapshot!(render(style, 1));
 }
+
+#[test]
+fn gradient_background() {
+    let style = Style::new().frame(Frame::RoundedSquare(3.0)).palette(
+        Palette::from_tokens([
+            ("bg", "linear-gradient(135deg, #fdfbf7, oklch(92% .04 300))"),
+            ("fg", "#2e1065"),
+        ])
+        .unwrap(),
+    );
+    insta::assert_snapshot!(render(style, 1));
+}

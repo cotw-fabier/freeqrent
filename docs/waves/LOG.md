@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261026211921 · M7.5 · Gradient backgrounds
+
+- Landed: `bg` takes linear and radial gradients, spanning the card. Contrast is judged every point of a paint against every point of the background, so the worst meeting decides; `Palette::background()` returns the gradient's average where one color is needed (pictures, dark twins). Logo plates and a picture's light sub-cells follow `bg`'s gradient. Works from the Style document and the CLI (`--bg PAINT`) with no new keys.
+- Decision: `Breathe` and palette shifts on `bg` need a solid background and leave a gradient still. The tests that showed a gradient refused now use `timing`, which still takes solid colors only.
+- Measured: linear and radial backgrounds with their darkest point at ΔL 0.6 from `fg`, square and round frames, square and dots, light and dark twin, v1/5/10/25: all pass the full bar.
+- Checks: all clean; new snapshot `gradient_background`, the others unchanged; one new conformance case, no existing hash changed.
+
 ## 20261026210723 · M7.5 · Data colors
 
 - Landed: tokens `fg.2`, `fg.3`, `fg.4`. Data modules are spread across `fg` and each one that's set, per module or, with `Style::color_spread(ColorSpread::Regions)`, per run of touching modules (a liquid blob, a bar). Each color is a layer of its own, so contrast checks, intros, plans, dark twins, re-theming and gradients apply to it unchanged. Style document `color_spread`, schema, CLI `--spread`. The 4-connected region finder moved from `animate` to `scene` for it.

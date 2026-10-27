@@ -183,7 +183,7 @@ let report = style.check(&qr);   // ScanReport { errors, warnings, min_contrast,
 
 | Token | Applies to | Default |
 |---|---|---|
-| `bg` | Canvas background (can be `transparent`; solid colors only) | `#fefcf8` (warm white) |
+| `bg` | Canvas background (can be `transparent`, or a gradient across the card *(W20261026211921)*) | `#fefcf8` (warm white) |
 | `fg` | Data modules | `#17161c` (near-black) |
 | `finder.outer` | Finder outer ring | `fg` |
 | `finder.eye` | Finder 3×3 center | `fg` |
@@ -202,6 +202,8 @@ Values can be any CSS color: hex (`#rgb[a]`, `#rrggbb[aa]`), `rgb()`/`rgba()`, `
 Parsed values are **re-serialized**, never copied: each color keeps the space it was written in (hex, `oklch()`, `oklab()`) at fixed precision and is written back in a canonical short form (`oklch(32% .08 265)`). Nothing from the input string reaches the SVG verbatim. OKLCH/OKLab colors outside sRGB are gamut-mapped by reducing chroma at constant lightness and hue, for the literal fallback and the contrast math. The core implements its own `pow`/`cbrt`/`sin`/`cos` on `f64` (stable `core` has none), so color math is identical on every platform. *(rev. W20261025211731)*
 
 **Data colors** *(W20261026210723)*: data modules are spread across `fg` and each of `fg.2`–`fg.4` that is set, so a code can be drawn in Bauhaus primaries or a Memphis set. `Style::color_spread(ColorSpread::Modules | Regions)` picks a color per module (the default) or per run of modules that touch in the module shape (a liquid blob, a bar, a rounded cluster; dots and gapped squares fall back to modules). Picks are seeded from `Style::seed` (or the code), with a generator of their own, so filler stays where it was. Each color is its own layer and its own path, contrast-checked like `fg`, re-themable as `--qr-fg-2` and so on, and takes gradients. Finder, alignment and timing tokens are unchanged; a picture (§7.7) keeps its own ink. Measured: three hues at ΔL 0.63 plus near-black, by module and by region, in square, dots, liquid and bars, light and dark twin, v1/5/10/25, pass the full bar (`freeqrent-verify/tests/styles.rs`).
+
+**Gradient backgrounds** *(W20261026211921)*: `bg` takes a linear or radial gradient, which spans the card (the other tokens' gradients span the code area). Contrast is judged conservatively: every point of a token's paint against every point of the background (sampled as renderers interpolate, premultiplied sRGB, 8 steps a span), so a gradient's darkest end decides against dark modules; a background crossing the ink's lightness has none. Where the core needs one background color (tracing a picture, placing a dark twin, translucency), `Palette::background()` is the gradient's average. The logo plate and a picture's light sub-cells follow `bg`, so they show its gradient. Idles and palette shifts that change the background's color (`Breathe`, `palette_from` on `bg`) need a solid one and leave a gradient still. Measured: linear and radial backgrounds with their darkest point at ΔL 0.6 from `fg`, square and round frames, square and dot modules, light and dark twin, v1/5/10/25, pass the full bar.
 
 ### 6.2 Output form
 

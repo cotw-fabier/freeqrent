@@ -43,7 +43,8 @@ Style:
   --alignment match|RING[/EYE]
   --emphasis none|accent|outline
   --timing plain|dotted|dashed
-  --fg COLOR, --bg COLOR   shortcuts for --token fg=COLOR, --token bg=COLOR
+  --fg PAINT, --bg PAINT   shortcuts for --token fg=PAINT, --token bg=PAINT
+                           (both take gradients; bg's spans the card)
   --token NAME=PAINT       any color token, e.g. finder.eye=oklch(55% .2 30)
                            or fg=\"linear-gradient(135deg, #123, #456)\"
   --palette-from-image FILE
