@@ -81,7 +81,17 @@ void main() {
         );
         return;
       }
-      final bytes = utf8.encode(run(c));
+      final text = run(c);
+      // Every structured result is plain JSON the typed models read.
+      switch (c['fn']) {
+        case 'plan':
+          expect(AnimationPlan.parse(text).layers, isNotEmpty);
+        case 'check':
+          ScanReport.fromJson(jsonDecode(text) as Map<String, Object?>);
+        case 'palette_from_css' || 'palette_from_html' || 'palette_from_image':
+          PaletteResult.fromJson(jsonDecode(text) as Map<String, Object?>);
+      }
+      final bytes = utf8.encode(text);
       expect(bytes.length, expect_['length'], reason: 'length');
       expect(
         sha256.convert(bytes).toString(),

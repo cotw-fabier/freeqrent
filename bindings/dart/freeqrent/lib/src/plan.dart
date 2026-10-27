@@ -18,34 +18,6 @@ PlanPoint _point(Object? v) {
 double _d(Object? v, [double fallback = 0]) =>
     v == null ? fallback : (v as num).toDouble();
 
-/// Makes the plan's numbers valid JSON. The core writes numbers the CSS
-/// way, without a leading zero (`.9`, `-.5`), which JSON doesn't allow;
-/// this puts the zero back outside strings and changes nothing else.
-String normalizePlanJson(String text) {
-  final out = StringBuffer();
-  var inString = false;
-  for (var i = 0; i < text.length; i++) {
-    final c = text.codeUnitAt(i);
-    if (inString) {
-      out.writeCharCode(c);
-      if (c == 0x5c /* \ */ && i + 1 < text.length) {
-        out.writeCharCode(text.codeUnitAt(++i));
-      } else if (c == 0x22 /* " */ ) {
-        inString = false;
-      }
-      continue;
-    }
-    if (c == 0x22) inString = true;
-    if (c == 0x2e /* . */ ) {
-      final prev = i > 0 ? text.codeUnitAt(i - 1) : 0;
-      final isDigit = prev >= 0x30 && prev <= 0x39;
-      if (!isDigit) out.write('0');
-    }
-    out.writeCharCode(c);
-  }
-  return out.toString();
-}
-
 /// What a layer is (`LayerRole`).
 enum PlanRole {
   background('background'),
@@ -589,7 +561,7 @@ final class AnimationPlan {
 
   /// Parses the plan JSON `FreeQrent.planJson` returns.
   factory AnimationPlan.parse(String text) => AnimationPlan._fromJson(
-    jsonDecode(normalizePlanJson(text)) as Map<String, Object?>,
+    jsonDecode(text) as Map<String, Object?>,
   );
 
   /// The parsed JSON, for fields this model doesn't name.

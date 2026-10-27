@@ -103,17 +103,6 @@ void main() {
     expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
   });
 
-  test('plan numbers are made valid JSON without touching strings', () {
-    expect(
-      normalizePlanJson('{"a":.5,"b":[-.25,1.5],"c":"m.5 .5"}'),
-      '{"a":0.5,"b":[-0.25,1.5],"c":"m.5 .5"}',
-    );
-    expect(
-      normalizePlanJson(r'{"a":"x\".5","b":.1}'),
-      r'{"a":"x\".5","b":0.1}',
-    );
-  });
-
   test('colors convert like the core', () {
     expect(CssColor.parse('#17161c').srgb8, [0x17, 0x16, 0x1c]);
     expect(CssColor.parse('#abc').srgb8, [0xaa, 0xbb, 0xcc]);
