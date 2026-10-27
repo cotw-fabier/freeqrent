@@ -1,0 +1,17 @@
+# Dart and Flutter build state
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec_overrides.yaml
+# Rust builds (the hook builds under .dart_tool/; a manual cargo build may
+# land here)
+target/
+*.dylib
+*.so
+*.dll
+*.a
+*.lib
+*.wasm
+# Failed golden comparisons
+**/failures/

@@ -1,0 +1,92 @@
+name: dart
+
+on:
+  push:
+    paths:
+      - "bindings/dart/**"
+      - ".github/workflows/dart.yml"
+      - "crates/freeqrent/**"
+      - "crates/freeqrent-doc/**"
+      - "crates/freeqrent-ffi/**"
+      - "conformance/**"
+      - "schema/**"
+  pull_request:
+    paths:
+      - "bindings/dart/**"
+      - ".github/workflows/dart.yml"
+      - "crates/freeqrent/**"
+      - "crates/freeqrent-doc/**"
+      - "crates/freeqrent-ffi/**"
+      - "conformance/**"
+      - "schema/**"
+
+permissions:
+  contents: read
+
+jobs:
+  dart:
+    name: dart test + flutter test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Native Assets hook builds bindings/dart/freeqrent/rust with the
+      # toolchain pinned in its rust-toolchain.toml (rustup installs it on
+      # first use); the golden generator builds with the same one.
+      - name: Rust
+        run: |
+          rustup --version
+          cd bindings/dart/freeqrent/rust && rustup show active-toolchain
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.4
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            bindings/dart/freeqrent/.dart_tool/hooks_runner
+            bindings/dart/freeqrent_flutter/.dart_tool/hooks_runner
+          key: hooks-${{ matrix.os }}-${{ hashFiles('crates/**/*.rs', 'crates/**/Cargo.toml', 'bindings/dart/freeqrent/rust/**') }}
+
+      - name: freeqrent (dart test)
+        working-directory: bindings/dart/freeqrent
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed lib test tool hook
+          dart analyze --fatal-infos
+          dart run tool/generate.dart --check
+          dart test
+
+      - name: Golden references are current
+        working-directory: bindings/dart/freeqrent_flutter
+        run: |
+          cargo run --release --locked --manifest-path goldens/Cargo.toml
+          git diff --exit-code -- test/goldens
+
+      - name: freeqrent_flutter (flutter test)
+        working-directory: bindings/dart/freeqrent_flutter
+        run: |
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze --fatal-infos
+          flutter test
+
+      - name: Example app builds
+        working-directory: bindings/dart/freeqrent_flutter/example
+        run: |
+          flutter pub get
+          flutter analyze --fatal-infos
+          if [ "$RUNNER_OS" = "macOS" ]; then flutter build macos --debug; fi
+
+      - name: cargo deny
+        run: |
+          cargo install --locked cargo-deny@0.20.2
+          cargo deny --manifest-path bindings/dart/freeqrent/rust/Cargo.toml --config deny.toml check
+          cargo deny --manifest-path bindings/dart/freeqrent_flutter/goldens/Cargo.toml --config deny.toml check

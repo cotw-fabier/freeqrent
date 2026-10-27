@@ -1,0 +1,19 @@
+# Writes the reference images FreeQrentAnimated's golden tests compare
+# against (SPEC §10.4): each case's static SVG from freeqrent-doc,
+# rasterized by resvg through freeqrent-verify, as grayscale PNG.
+#
+#   cargo run --manifest-path goldens/Cargo.toml
+[package]
+name = "freeqrent-flutter-goldens"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+publish = false
+
+[dependencies]
+freeqrent-doc = { path = "../../../../crates/freeqrent-doc" }
+freeqrent-verify = { path = "../../../../crates/freeqrent-verify" }
+png = "=0.18.1"
+
+[workspace]
