@@ -5,7 +5,7 @@
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner,
     CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
-    FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
+    FrameRing, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
     LogoTiming, Mask, ModuleShape, Palette, Preset, QrCode, Rgba8Image, RingShape, StaggerOrder,
     Style, TargetSize, Texture, TimingStyle, TrackingGrid, Trigger, Version,
 };
@@ -502,6 +502,27 @@ fn errors_name_their_path() {
         (r#"{"idle":["spin"]}"#.into(), "invalid_style", "idle[0]"),
         (r#"{"logo":{}}"#.into(), "invalid_style", "logo"),
         (
+            r#"{"modules":{"kind":"glyph"}}"#.into(),
+            "invalid_style",
+            "modules",
+        ),
+        (
+            r#"{"modules":{"kind":"glyph","svg":"<p/>"}}"#.into(),
+            "invalid_glyph",
+            "modules.svg",
+        ),
+        (
+            r#"{"finders":{"eye":{"kind":"glyph","raster":"/9j/4AAQ"}}}"#.into(),
+            "invalid_glyph",
+            "finders.eye.raster",
+        ),
+        (
+            r#"{"alignment":{"shape":{"kind":"own","ring":{"kind":"glyph","svg":"<svg/>"}}}}"#
+                .into(),
+            "invalid_style",
+            "alignment.shape.ring.kind",
+        ),
+        (
             r#"{"logo":{"svg":"<html/>"}}"#.into(),
             "invalid_logo",
             "logo.svg",
@@ -789,4 +810,66 @@ fn frames_are_the_cores_still_frames() {
     let e = freeqrent_doc::render_frame(Payload::Text(text), r##"{"palette":{"fg":"#ccc"}}"##, 0)
         .unwrap_err();
     assert_eq!(e.code, "contrast_too_low");
+}
+
+#[test]
+fn glyphs_reach_their_parts() {
+    let mark = Glyph::svg(MARK).unwrap();
+    let svg = quote(MARK);
+    let s = style(&format!(
+        r#"{{"modules":{{"kind":"glyph","svg":{svg},"keep_colors":true}}}}"#
+    ));
+    assert_eq!(
+        s.module_glyph_options(),
+        Some(&mark.clone().keep_colors(true))
+    );
+    assert_eq!(s.module_shape(), ModuleShape::SQUARE);
+
+    // A custom ring keeps the built-in eye; a corner's built-in ring brings
+    // its matching eye and drops the inherited custom eye.
+    let s = style(&format!(
+        r#"{{"finders":{{"ring":{{"kind":"glyph","svg":{svg}}},"eye":"circle","corners":{{"top-right":{{"ring":"leaf"}},"bottom-left":{{"eye":{{"kind":"glyph","raster":"{PNG}"}}}}}}}}}}"#
+    ));
+    let png = Glyph::raster(unbase64(PNG), freeqrent::RasterFormat::Png).unwrap();
+    assert_eq!(s.corner_glyph_options(Corner::TopLeft), (Some(&mark), None));
+    assert_eq!(s.finder_style().at(Corner::TopLeft).1, EyeShape::Circle);
+    assert_eq!(s.corner_glyph_options(Corner::TopRight), (None, None));
+    assert_eq!(
+        s.finder_style().at(Corner::TopRight),
+        (RingShape::Leaf, EyeShape::Leaf)
+    );
+    assert_eq!(
+        s.corner_glyph_options(Corner::BottomLeft),
+        (Some(&mark), Some(&png))
+    );
+}
+
+/// A JSON string literal.
+fn quote(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn unbase64(text: &str) -> Vec<u8> {
+    const ABC: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut bits = 0u32;
+    let mut n = 0;
+    let mut out = Vec::new();
+    for c in text.bytes().filter(|&c| c != b'=') {
+        bits = bits << 6 | ABC.iter().position(|&a| a == c).unwrap() as u32;
+        n += 6;
+        if n >= 8 {
+            n -= 8;
+            out.push((bits >> n) as u8);
+        }
+    }
+    out
 }

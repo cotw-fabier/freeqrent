@@ -2,6 +2,20 @@
 
 All four Phase 1 crates (`freeqrent`, `freeqrent-image`, `freeqrent-verify`, `freeqrent-cli`) share one version. From 1.0 on, the core follows semver: enums and reports that may grow are `#[non_exhaustive]`, so new shapes, presets, tokens or warnings arrive in minor releases. Output changes (the SVG for a given input) are called out here, even when the API doesn't change.
 
+## 1.2.0 (unreleased)
+
+### Core
+
+- **Custom shapes** (SPEC §7.1, §7.2): `Glyph::svg` (sanitized like a logo) or `Glyph::raster` (PNG, GIF or WebP with transparency) as the data modules (`Style::module_glyph`), every finder's ring or eye (`Style::finder_glyphs`), or one corner's (`Style::corner_glyphs`). The picture is fitted into each module, 7×7 ring or 3×3 eye, painted as a silhouette in the layer's token, or in its own colors with `Glyph::keep_colors`. New warnings `CustomModules`, `CustomFinder`, `GlyphColors`; new error `GlyphOnPicture`. Plans carry `PlanLayer::glyph`.
+- Additive: existing styles render byte for byte as before (snapshots and conformance hashes unchanged).
+
+### Boundary, CLI and bindings
+
+- Style documents take `{"kind":"glyph","svg"|"raster","keep_colors"}` for `modules`, `finders.ring`/`eye` and each corner's; error code `invalid_glyph`. Schema and conformance suite regenerated (88 cases).
+- CLI and npm bin: `--shape-file`, `--ring-file`, `--eye-file`, `--corner-ring-file`, `--corner-eye-file`, `--keep-glyph-colors`.
+- Typed styles in every binding gain the glyph variants. `FreeQrentAnimated` draws glyph layers: raster glyphs from the style, SVG glyphs through `glyphImage`.
+- `freeqrent_verify::Bar::for_report` holds custom finders to the rounded finder's bar.
+
 ## 1.1.0 (2026-10-27)
 
 The first GitHub release: the core with M7.5's design styles, and the language bindings (M7, M8) with prebuilt libraries. Nothing is on crates.io, npm, PyPI or pub.dev yet (M9).

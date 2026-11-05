@@ -2,6 +2,14 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261031121341 · 1.2 · Custom shapes: SVG and PNG glyphs for modules, rings and eyes
+
+- Landed: `Glyph` (SVG sanitized as a logo; PNG/GIF/WebP inlined once, JPEG refused), `Style::module_glyph`, `finder_glyphs`, `corner_glyphs`; drawn as one definition per picture and box size, `<use>`d per module under an alpha mask on the layer's path (silhouette in the token, the default) or bare (`keep_colors`). Warnings `custom_modules`, `custom_finder`, `glyph_colors`; error `glyph_on_picture`; `PlanLayer::glyph`. Document `{"kind":"glyph",…}` under `modules` and finder rings/eyes, `invalid_glyph`; CLI and npm bin `--shape-file`, `--ring-file`, `--eye-file`, `--corner-ring-file`, `--corner-eye-file`, `--keep-glyph-colors`; typed glyph variants in every binding; Flutter stamps glyphs with `drawAtlas` (raster from the style, SVG via `glyphImage`).
+- Decisions: glyphs are a `Style` field, not shape variants (the enums are `Copy` and 1.1.0 is out). Silhouette by default, own colors opt-in (owner, 2026-10-31). The schema adds `glyph` as one more kind of `ModuleShape`, `Ring` and `Eye` so the binding generators need no changes; the parser keeps refusing it under `alignment`. A built-in shape and a file for the same part are refused at the CLI, since the document holds one.
+- Measured: heart, star, plus, 0.7 dot, PNG disc and a two-color keep-colors badge pass the full bar at v1/5/10/25 on square and round frames, so custom modules keep it; a rounded ring glyph loses rqrr as `RoundedFinder` does, so custom finders take that bar. A square hole under a radius-2 ring lost ZXing at v25; a hollow module glyph and a four-corners ring fail verify, as they should. A 50%-alpha PNG eye failed: alpha is ink.
+- Checks: new `freeqrent-verify/tests/glyphs.rs`, a `glyphs` snapshot, 7 conformance cases (existing hashes unchanged), surface equivalences byte-identical, 3 Flutter goldens matching resvg with no module differing.
+- Follow-up: ROADMAP "Custom shapes, next steps". The README doctests (broken by the 2026-10-27 README rewrite: `?` outside a function) now end in a hidden `Ok(())`.
+
 ## 20261027014811 · M9 prep · The repository is lowercase
 
 - Landed: the GitHub repository is renamed `cotw-fabier/freeqrent` (GitHub redirects the old name), the remote follows, and every link, the schema's `$id` and the Go module path (`github.com/cotw-fabier/freeqrent/bindings/go`) are lowercase, so Go users don't need the capitals the module proxy escapes.

@@ -161,8 +161,56 @@ fn module_shape() -> Value {
                 ],
                 &[],
             ),
+            glyph(),
         ],
     )
+}
+
+/// A custom shape (SPEC §7.1, §7.2): one of `svg` or `raster`.
+fn glyph() -> Value {
+    let mut schema = variant(
+        "glyph",
+        vec![
+            (
+                "svg",
+                described(string(), "An SVG document; it is sanitized."),
+            ),
+            (
+                "raster",
+                described(r("Base64"), "PNG, GIF or WebP bytes, with transparency."),
+            ),
+            (
+                "keep_colors",
+                described(
+                    boolean(),
+                    "Draw the picture in its own colors instead of its silhouette in the layer's token.",
+                ),
+            ),
+        ],
+        &[],
+    );
+    if let Value::Object(members) = &mut schema {
+        members.push((
+            "oneOf".to_string(),
+            Value::Array(vec![
+                obj(vec![("required", Value::Array(vec![s("svg")]))]),
+                obj(vec![("required", Value::Array(vec![s("raster")]))]),
+            ]),
+        ));
+    }
+    described(
+        schema,
+        "A custom shape drawn in place of the built-in one (not for alignment patterns).",
+    )
+}
+
+/// A finder ring or eye: a built-in shape, or (for finders, not alignment
+/// patterns) a custom one.
+fn ring_or_eye(names: &[&str]) -> Value {
+    let mut variants = plain(names, &["rounded"]);
+    variants.push(variant("rounded", vec![("radius", number())], &[]));
+    variants.push(glyph());
+    union(names, variants)
 }
 
 fn shape_with_radius(names: &[&str]) -> Value {
@@ -707,8 +755,8 @@ pub fn schema() -> Value {
     let defs = obj(vec![
         ("Style", style()),
         ("ModuleShape", module_shape()),
-        ("Ring", shape_with_radius(RINGS)),
-        ("Eye", shape_with_radius(EYES)),
+        ("Ring", ring_or_eye(RINGS)),
+        ("Eye", ring_or_eye(EYES)),
         ("RingAndEye", ring_and_eye()),
         ("Finders", finders()),
         ("Alignment", alignment()),

@@ -85,10 +85,10 @@ function words(line) {
   return out;
 }
 
+// A command-line word, with a placeholder in it (`$SVG`, or
+// `top-right=$SVG`) standing for the file's path.
 function flag(word) {
-  if (word === '$SVG') return files.svg;
-  if (word === '$PNG' || word === '$IMAGE') return files.png;
-  return word;
+  return word.replaceAll('$SVG', files.svg).replaceAll('$PNG', files.png).replaceAll('$IMAGE', files.png);
 }
 
 function documentOf(json) {

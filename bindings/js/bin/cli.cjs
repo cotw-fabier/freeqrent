@@ -41,6 +41,7 @@ const SWITCHES = new Set([
   'dark',
   'no-logo-backdrop',
   'keep-modules',
+  'keep-glyph-colors',
   'no-steer',
   'caption-regular',
   'check',
@@ -65,6 +66,11 @@ const VALUES = new Set([
   'shape',
   'finder',
   'corner',
+  'shape-file',
+  'ring-file',
+  'eye-file',
+  'corner-ring-file',
+  'corner-eye-file',
   'alignment',
   'emphasis',
   'timing',
@@ -421,6 +427,31 @@ function logo(source, io) {
   return { raster: new Uint8Array(bytes) };
 }
 
+/** A custom shape file as a `{"kind": "glyph"}` shape, like the CLI's load_glyph. */
+function glyph(flag, source, io, keep) {
+  const bytes = readFile(flag, source, io);
+  const start = bytes.findIndex((b) => !(b === 0x20 || (b >= 0x09 && b <= 0x0d)));
+  const g = { kind: 'glyph' };
+  if (source.toLowerCase().endsWith('.svg') || (start >= 0 && bytes[start] === 0x3c)) {
+    try {
+      g.svg = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      throw new Usage(`--${flag} ${source}: not UTF-8`);
+    }
+  } else {
+    const sig = (s) => s.every((b, i) => bytes[i] === b);
+    const raster =
+      isPng(bytes) ||
+      sig([0x47, 0x49, 0x46, 0x38]) ||
+      (sig([0x52, 0x49, 0x46, 0x46]) && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP');
+    if (isJpeg(bytes)) throw new Usage(`--${flag} ${source}: JPEG has no transparency; use PNG, GIF, WebP or SVG for a shape`);
+    if (!raster) throw new Usage(`--${flag} ${source}: not an SVG, PNG, GIF or WebP file`);
+    g.raster = new Uint8Array(bytes);
+  }
+  if (keep) g.keep_colors = true;
+  return g;
+}
+
 /**
  * The logo for palette extraction's `logo` option, so the frame keeps apart
  * from its colors as the CLI's does: an SVG's text, or a PNG's pixels. GIF
@@ -446,6 +477,7 @@ function parse(argv, io = nodeIo) {
   const s = {
     tokens: [],
     corners: [],
+    cornerFiles: [],
     textures: [],
     idle: [],
     fromTokens: [],
@@ -491,6 +523,23 @@ function parse(argv, io = nodeIo) {
       case 'finder':
         s.finder = ringAndEye(flag, v);
         break;
+      case 'shape-file':
+        s.shapeFile = v;
+        break;
+      case 'ring-file':
+        s.ringFile = v;
+        break;
+      case 'eye-file':
+        s.eyeFile = v;
+        break;
+      case 'corner-ring-file':
+      case 'corner-eye-file': {
+        const eq = v.indexOf('=');
+        if (eq < 0) throw new Usage(`--${flag}: expected CORNER=FILE, got ${JSON.stringify(v)}`);
+        const corner = oneOf(flag, v.slice(0, eq), ['top-left', 'top-right', 'bottom-left']);
+        s.cornerFiles.push([corner, flag === 'corner-ring-file' ? 'ring' : 'eye', v.slice(eq + 1), flag]);
+        break;
+      }
       case 'corner': {
         const eq = v.indexOf('=');
         if (eq < 0) throw new Usage(`--${flag}: expected CORNER=RING[/EYE], got ${JSON.stringify(v)}`);
@@ -735,12 +784,37 @@ function build(s, text, io) {
     throw new Usage('--art sets the whole style; use --halftone with --preset');
   }
 
+  // Custom shapes: a file and a built-in shape for one part clash, as in
+  // the CLI, since the document holds one of them.
+  const keep = has('keep-glyph-colors');
+  const anyFile =
+    s.shapeFile !== undefined || s.ringFile !== undefined || s.eyeFile !== undefined || s.cornerFiles.length > 0;
+  if (keep && !anyFile) throw new Usage('--keep-glyph-colors needs a shape file');
+  const clash = (what) => new Usage(`${what} set the same part; give one`);
+  if (s.shape !== undefined && s.shapeFile !== undefined) throw clash('--shape and --shape-file');
+  if (s.finder !== undefined && s.ringFile !== undefined) throw clash('--finder and --ring-file');
+  if (s.finder !== undefined && s.finder.eye !== undefined && s.eyeFile !== undefined) {
+    throw clash('--finder RING/EYE and --eye-file');
+  }
+  for (const [corner, shapes] of s.corners) {
+    const named = (part) => s.cornerFiles.some(([c, p]) => c === corner && p === part);
+    if (named('ring') || (shapes.eye !== undefined && named('eye'))) {
+      throw clash('--corner and --corner-ring-file or --corner-eye-file');
+    }
+  }
+
   if (s.shape !== undefined) doc.modules = s.shape;
-  if (s.finder !== undefined || s.corners.length > 0) {
+  if (s.shapeFile !== undefined) doc.modules = glyph('shape-file', s.shapeFile, io, keep);
+  if (s.finder !== undefined || s.corners.length > 0 || s.ringFile !== undefined || s.eyeFile !== undefined || s.cornerFiles.length > 0) {
     doc.finders = { ...s.finder };
-    if (s.corners.length > 0) {
+    if (s.ringFile !== undefined) doc.finders.ring = glyph('ring-file', s.ringFile, io, keep);
+    if (s.eyeFile !== undefined) doc.finders.eye = glyph('eye-file', s.eyeFile, io, keep);
+    if (s.corners.length > 0 || s.cornerFiles.length > 0) {
       doc.finders.corners = {};
-      for (const [corner, shapes] of s.corners) doc.finders.corners[corner] = shapes;
+      for (const [corner, shapes] of s.corners) doc.finders.corners[corner] = { ...shapes };
+      for (const [corner, part, file, flag] of s.cornerFiles) {
+        doc.finders.corners[corner] = { ...doc.finders.corners[corner], [part]: glyph(flag, file, io, keep) };
+      }
     }
   }
   if (s.alignment !== undefined || s.emphasis !== undefined) {

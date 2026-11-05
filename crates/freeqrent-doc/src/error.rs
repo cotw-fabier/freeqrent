@@ -4,7 +4,9 @@
 
 use std::fmt;
 
-use freeqrent::{EncodeError, ExtractError, ImageError, LogoError, RenderError, Warning};
+use freeqrent::{
+    EncodeError, ExtractError, GlyphError, ImageError, LogoError, RenderError, Warning,
+};
 
 use crate::json::{self, ObjectWriter};
 
@@ -212,6 +214,7 @@ pub(crate) fn render_error_parts(e: &RenderError) -> (&'static str, Detail) {
             "replay_too_soon"
         }
         RenderError::ShadowNeedsBackground => "shadow_needs_background",
+        RenderError::GlyphOnPicture => "glyph_on_picture",
         RenderError::Write => "write",
         _ => "render_error",
     };
@@ -256,6 +259,9 @@ pub(crate) fn warning_parts(w: &Warning) -> (&'static str, Detail) {
             "small_in_print"
         }
         Warning::RoundedFinder => "rounded_finder",
+        Warning::CustomModules => "custom_modules",
+        Warning::CustomFinder => "custom_finder",
+        Warning::GlyphColors => "glyph_colors",
         Warning::LongIntro { ms } => {
             d.int("ms", ms);
             "long_intro"
@@ -305,6 +311,21 @@ pub(crate) fn image_error(path: &str, e: ImageError) -> DocError {
 }
 
 /// A logo that can't be read, at `path`.
+pub(crate) fn glyph_error(path: &str, e: GlyphError) -> DocError {
+    let mut d = Detail::new();
+    d.str("path", path);
+    let reason = match e {
+        GlyphError::NotSvg => "not_svg",
+        GlyphError::NoSize => "no_size",
+        GlyphError::NotImage(_) => "not_image",
+        GlyphError::NoAlpha(_) => "no_alpha",
+        GlyphError::TooLarge { .. } => "too_large",
+        _ => "glyph_error",
+    };
+    d.str("reason", reason);
+    DocError::new("invalid_glyph", format!("{path}: {e}"), d)
+}
+
 pub(crate) fn logo_error(path: &str, e: LogoError) -> DocError {
     let mut d = Detail::new();
     d.str("path", path);

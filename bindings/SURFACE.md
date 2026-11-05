@@ -49,6 +49,10 @@ A payload is text (UTF-8, segmented like the CLI's `TEXT`) or bytes. Every funct
 | `--timing plain\|dotted\|dashed` | `timing` |
 | `--quiet-zone N` | `quiet_zone` |
 | `--seed N` | `seed` |
+| `--shape-file FILE` | `modules`: `{"kind": "glyph", "svg"}` (the SVG's text) or `{"kind": "glyph", "raster"}` (PNG, GIF or WebP, base64) |
+| `--ring-file FILE`, `--eye-file FILE` | `finders.ring`, `finders.eye`: `{"kind": "glyph", …}` |
+| `--corner-ring-file CORNER=FILE`, `--corner-eye-file CORNER=FILE` | `finders.corners.CORNER.ring`, `.eye`: `{"kind": "glyph", …}` |
+| `--keep-glyph-colors` | `keep_colors` true on every glyph |
 
 ```equivalences
 --preset candy                       => {"preset":"candy"}
@@ -68,6 +72,19 @@ A payload is text (UTF-8, segmented like the CLI's `TEXT`) or bytes. Every funct
 --timing dotted                      => {"timing":"dotted"}
 --quiet-zone 2                       => {"quiet_zone":2}
 --seed 7 --shape dots                => {"seed":7,"modules":"dots"}
+```
+
+`$SVG` and `$PNG` stand for a shape file: its path on the command line, its text or base64 in the document. A finder's shape files go under its built-in shapes: a `--corner` (or a corner's built-in `ring` or `eye`) drops them for the parts it names, and a corner's own file goes over everything.
+
+```equivalences
+--shape-file $SVG                    => {"modules":{"kind":"glyph","svg":$SVG}}
+--shape-file $PNG --keep-glyph-colors => {"modules":{"kind":"glyph","raster":$PNG,"keep_colors":true}}
+--ring-file $SVG --eye-file $PNG     => {"finders":{"ring":{"kind":"glyph","svg":$SVG},"eye":{"kind":"glyph","raster":$PNG}}}
+--preset leaf --ring-file $SVG       => {"preset":"leaf","finders":{"ring":{"kind":"glyph","svg":$SVG}}}
+--finder squircle --eye-file $SVG    => {"finders":{"ring":"squircle","eye":{"kind":"glyph","svg":$SVG}}}
+--eye-file $SVG --corner top-left=leaf => {"finders":{"eye":{"kind":"glyph","svg":$SVG},"corners":{"top-left":{"ring":"leaf"}}}}
+--eye-file $SVG --corner top-left=leaf/circle => {"finders":{"eye":{"kind":"glyph","svg":$SVG},"corners":{"top-left":{"ring":"leaf","eye":"circle"}}}}
+--finder squircle --corner-ring-file top-right=$SVG --corner-eye-file bottom-left=$PNG => {"finders":{"ring":"squircle","corners":{"top-right":{"ring":{"kind":"glyph","svg":$SVG}},"bottom-left":{"eye":{"kind":"glyph","raster":$PNG}}}}}
 ```
 
 ## Colors

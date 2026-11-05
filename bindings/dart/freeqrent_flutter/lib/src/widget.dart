@@ -71,6 +71,7 @@ class FreeQrentAnimated extends StatefulWidget {
     this.paletteDuration = const Duration(milliseconds: 300),
     this.paletteCurve = Curves.easeOutCubic,
     this.logo,
+    this.glyphImage,
     this.size,
     this.visibleFraction = 0.5,
     this.semanticLabel,
@@ -90,6 +91,7 @@ class FreeQrentAnimated extends StatefulWidget {
     this.paletteDuration = const Duration(milliseconds: 300),
     this.paletteCurve = Curves.easeOutCubic,
     this.logo,
+    this.glyphImage,
     this.size,
     this.visibleFraction = 0.5,
     this.semanticLabel,
@@ -124,6 +126,13 @@ class FreeQrentAnimated extends StatefulWidget {
   /// for example from flutter_svg; a raster logo in the style is used when
   /// this is null).
   final ImageProvider? logo;
+
+  /// The picture for a custom shape (SPEC §7.1, §7.2) by part (`modules`,
+  /// `ring` or `eye`) and finder corner (`top-left`, …; null for modules).
+  /// An SVG glyph needs one, for example from flutter_svg; a raster glyph
+  /// in the style is used when this gives null. A glyph without a picture
+  /// is drawn as its boxes.
+  final ImageProvider? Function(String part, String? corner)? glyphImage;
 
   /// The width; the height follows the code's aspect. Null fills the
   /// available width (or 240 without a bound).
@@ -171,6 +180,8 @@ class _FreeQrentAnimatedState extends State<FreeQrentAnimated>
   Map<String, String> _palette = const {};
   Map<String, String>? _paletteFrom;
   ui.Image? _logoImage;
+  Map<String, ui.Image> _glyphImages = const {};
+  final Map<String, (ImageStream, ImageStreamListener)> _glyphStreams = {};
   ImageStream? _logoStream;
   ImageStreamListener? _logoListener;
   ScrollPosition? _scroll;
@@ -191,7 +202,11 @@ class _FreeQrentAnimatedState extends State<FreeQrentAnimated>
   QrScene _makeScene() {
     final plan =
         widget.plan ?? FreeQrent.plan(widget.payload!, style: widget.style);
-    return QrScene(plan, logo: LogoOptions.fromStyle(widget.style));
+    return QrScene(
+      plan,
+      logo: LogoOptions.fromStyle(widget.style),
+      glyphs: GlyphSources.fromStyle(widget.style),
+    );
   }
 
   Map<String, String> _merged() => {
@@ -271,6 +286,7 @@ class _FreeQrentAnimatedState extends State<FreeQrentAnimated>
       _palette = _merged();
       _paletteFrom = null;
       _resolveLogo();
+      _resolveGlyphs();
       if (_startsOnBuild) {
         _play();
       } else {
@@ -292,6 +308,7 @@ class _FreeQrentAnimatedState extends State<FreeQrentAnimated>
       }
     }
     if (old.logo != widget.logo) _resolveLogo();
+    if (old.glyphImage != widget.glyphImage) _resolveGlyphs();
   }
 
   bool _sameStyle(Object? a, Object? b) {
@@ -310,6 +327,7 @@ class _FreeQrentAnimatedState extends State<FreeQrentAnimated>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _resolveLogo();
+    _resolveGlyphs();
     final scroll = Scrollable.maybeOf(context)?.position;
     if (scroll != _scroll) {
       _scroll?.removeListener(_checkVisible);
@@ -335,6 +353,45 @@ class _FreeQrentAnimatedState extends State<FreeQrentAnimated>
       if (mounted) setState(() => _logoImage = info.image);
     });
     stream.addListener(_logoListener!);
+  }
+
+  /// Resolves each custom shape's picture: [FreeQrentAnimated.glyphImage]'s,
+  /// or the style's raster.
+  void _resolveGlyphs() {
+    final wanted = <String, ImageProvider>{};
+    for (final l in _plan.layers) {
+      final g = l.glyph;
+      if (g == null) continue;
+      final key = GlyphSources.key(g.part, l.corner);
+      final raster = _scene.glyphs.raster[key];
+      final provider =
+          widget.glyphImage?.call(
+            g.part,
+            g.part == 'modules' ? null : l.corner,
+          ) ??
+          (raster == null ? null : MemoryImage(raster));
+      if (provider != null) wanted[key] = provider;
+    }
+    final config = createLocalImageConfiguration(context);
+    for (final key in [..._glyphStreams.keys]) {
+      if (wanted.containsKey(key)) continue;
+      final (stream, listener) = _glyphStreams.remove(key)!;
+      stream.removeListener(listener);
+      _glyphImages = {..._glyphImages}..remove(key);
+    }
+    for (final MapEntry(:key, value: provider) in wanted.entries) {
+      final stream = provider.resolve(config);
+      final current = _glyphStreams[key];
+      if (current != null && current.$1.key == stream.key) continue;
+      if (current != null) current.$1.removeListener(current.$2);
+      final listener = ImageStreamListener((info, _) {
+        if (mounted) {
+          setState(() => _glyphImages = {..._glyphImages, key: info.image});
+        }
+      });
+      stream.addListener(listener);
+      _glyphStreams[key] = (stream, listener);
+    }
   }
 
   bool get _watchesVisibility => widget.trigger == FreeQrentTrigger.visible;
@@ -365,6 +422,9 @@ class _FreeQrentAnimatedState extends State<FreeQrentAnimated>
     _replay?.cancel();
     _scroll?.removeListener(_checkVisible);
     if (_logoListener != null) _logoStream?.removeListener(_logoListener!);
+    for (final (stream, listener) in _glyphStreams.values) {
+      stream.removeListener(listener);
+    }
     if (widget.controller?._state == this) widget.controller!._state = null;
     _clock.dispose();
     _blend.dispose();
@@ -397,6 +457,7 @@ class _FreeQrentAnimatedState extends State<FreeQrentAnimated>
             atRest: reduced || _finished || _plan.tracks.isEmpty,
             palette: PaletteBlend(_palette, from: _paletteFrom, t: t),
             logoImage: _logoImage,
+            glyphImages: _glyphImages,
           ),
         );
       },

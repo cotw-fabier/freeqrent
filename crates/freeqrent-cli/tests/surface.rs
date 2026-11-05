@@ -130,12 +130,14 @@ fn files(test: &str) -> Files {
 }
 
 impl Files {
+    /// A command-line word, with a placeholder in it (`$SVG`, or
+    /// `top-right=$SVG`) standing for the file's path.
     fn flag(&self, word: &str) -> String {
-        match word {
-            "$SVG" => self.dir.join("mark.svg").display().to_string(),
-            "$PNG" | "$IMAGE" => self.dir.join("picture.png").display().to_string(),
-            w => w.to_string(),
-        }
+        let svg = self.dir.join("mark.svg").display().to_string();
+        let png = self.dir.join("picture.png").display().to_string();
+        word.replace("$SVG", &svg)
+            .replace("$PNG", &png)
+            .replace("$IMAGE", &png)
     }
 
     fn document(&self, json: &str) -> String {

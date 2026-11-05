@@ -65,6 +65,15 @@ test('a bigint seed is written exactly', () => {
   assert.equal(fq.render(TEXT, { seed: 7n }), fq.render(TEXT, { seed: 7 }));
 });
 
+test('custom shapes take SVG text or raster bytes, and warn', () => {
+  const png = rgbaPng(picture());
+  const asBytes = fq.render(TEXT, { finders: { eye: { kind: 'glyph', raster: new Uint8Array(png) } } });
+  const asText = fq.render(TEXT, { finders: { eye: { kind: 'glyph', raster: png.toString('base64') } } });
+  assert.equal(asBytes, asText);
+  const report = fq.check(TEXT, { modules: { kind: 'glyph', svg: MARK, keep_colors: true } });
+  assert.deepEqual(report.warnings.map((w) => w.code), ['custom_modules', 'glyph_colors']);
+});
+
 test('bytes in a style are sent as base64, and ImageData as an image', () => {
   const png = rgbaPng(picture());
   const asBytes = fq.render(TEXT, { logo: { raster: new Uint8Array(png) }, encoding: { ecc: 'H' } });
@@ -169,6 +178,11 @@ test('errors carry code, message and parsed detail', () => {
   fails(() => fq.render(TEXT, { colour: 'red' }), 'invalid_style', (d) => assert.equal(d.path, 'colour'));
   fails(() => fq.render(TEXT, { shadow: NaN }), 'invalid_style', (d) => assert.equal(d.path, 'shadow'));
   fails(() => fq.render(TEXT, { preset: 'ink', art: { image: picture() } }), 'invalid_style');
+  fails(() => fq.render(TEXT, { modules: { kind: 'glyph', svg: 'not svg' } }), 'invalid_glyph', (d) => {
+    assert.equal(d.path, 'modules.svg');
+    assert.equal(d.reason, 'not_svg');
+  });
+  fails(() => fq.render(TEXT, { modules: { kind: 'glyph', svg: MARK }, halftone: { image: picture() } }), 'glyph_on_picture');
   fails(() => fq.render(TEXT, { logo: { svg: 'not svg' } }), 'invalid_logo', (d) => {
     assert.equal(d.path, 'logo.svg');
     assert.equal(d.reason, 'not_svg');

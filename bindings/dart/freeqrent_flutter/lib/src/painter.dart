@@ -85,6 +85,7 @@ class QrScenePainter extends CustomPainter {
     required this.palette,
     this.atRest = false,
     this.logoImage,
+    this.glyphImages = const {},
     super.repaint,
   });
 
@@ -102,6 +103,10 @@ class QrScenePainter extends CustomPainter {
 
   /// The logo's picture, fitted into its content box.
   final ui.Image? logoImage;
+
+  /// The custom shapes' pictures, by [GlyphSources.key]. A glyph layer
+  /// without one is drawn as its boxes.
+  final Map<String, ui.Image> glyphImages;
 
   AnimationPlan get _plan => scene.plan;
 
@@ -357,6 +362,8 @@ class QrScenePainter extends CustomPainter {
         canvas.restore();
       case PlanRole.scanlines:
         _scanlines(canvas, path);
+      case _ when layer.glyph != null:
+        _glyph(canvas, path, layer, fill);
       case _ when layer.stroke != null && layer.cells != null:
         _subcells(canvas, path, layer, fill);
       default:
@@ -375,6 +382,40 @@ class QrScenePainter extends CustomPainter {
     0, 0, 1, 0,
     m[4], m[5], 0, 1,
   ]);
+
+  /// A custom shape (SPEC §7.1, §7.2): its picture fitted (`meet`) into
+  /// each box, as the token's paint where the picture is, or in its own
+  /// colors.
+  void _glyph(Canvas canvas, Path path, PlanLayer layer, CssColor? fill) {
+    final g = layer.glyph!;
+    final image = glyphImages[GlyphSources.key(g.part, layer.corner)];
+    final paint = _fill(layer.token, color: fill, alpha: layer.fillOpacity);
+    if (image == null) {
+      canvas.drawPath(path, paint);
+      return;
+    }
+    final w = image.width.toDouble(), h = image.height.toDouble();
+    final scale = g.side / math.max(w, h);
+    final dx = (g.side - w * scale) / 2, dy = (g.side - h * scale) / 2;
+    final source = Rect.fromLTWH(0, 0, w, h);
+    void stamp(Paint p) => canvas.drawAtlas(
+      image,
+      [for (final at in g.at) RSTransform(scale, 0, at.x + dx, at.y + dy)],
+      List.filled(g.at.length, source),
+      null,
+      null,
+      null,
+      p..filterQuality = FilterQuality.medium,
+    );
+    if (g.keepColors) {
+      stamp(Paint());
+      return;
+    }
+    canvas.saveLayer(boundsOf(path), Paint());
+    stamp(Paint());
+    canvas.drawPath(path, paint..blendMode = BlendMode.srcIn);
+    canvas.restore();
+  }
 
   /// A picture's sub-cells: lines in fifths of a module from the code's
   /// corner, stroked with butt caps.
@@ -559,5 +600,6 @@ class QrScenePainter extends CustomPainter {
       old.timeMs != timeMs ||
       old.atRest != atRest ||
       old.palette != palette ||
-      old.logoImage != logoImage;
+      old.logoImage != logoImage ||
+      old.glyphImages != glyphImages;
 }

@@ -13,7 +13,7 @@ from typing import Any, ClassVar, Literal, Mapping, Optional, Sequence, Tuple, U
 from ._base import Doc
 from ._pixels import rgba_of
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 
 Preset = Literal[
     "classic",
@@ -240,6 +240,25 @@ class Bars(Doc):
 
 
 @dataclass
+class GlyphModules(Doc):
+    """``{"kind": "glyph"}``, one of ``ModuleShape``.
+
+    A custom shape drawn in place of the built-in one (not for alignment patterns).
+
+    Attributes:
+        svg: An SVG document; it is sanitized.
+        raster: PNG, GIF or WebP bytes, with transparency.
+        keep_colors: Draw the picture in its own colors instead of its silhouette in the layer's token.
+    """
+
+    kind: ClassVar[Literal["glyph"]] = "glyph"
+
+    svg: Optional[str] = None
+    raster: Optional[Union[bytes, str]] = None
+    keep_colors: Optional[bool] = None
+
+
+@dataclass
 class Finders(Doc):
     """The ``Finders`` part of a Style document."""
 
@@ -279,6 +298,25 @@ class RoundedRing(Doc):
 
 
 @dataclass
+class GlyphRing(Doc):
+    """``{"kind": "glyph"}``, one of ``Ring``.
+
+    A custom shape drawn in place of the built-in one (not for alignment patterns).
+
+    Attributes:
+        svg: An SVG document; it is sanitized.
+        raster: PNG, GIF or WebP bytes, with transparency.
+        keep_colors: Draw the picture in its own colors instead of its silhouette in the layer's token.
+    """
+
+    kind: ClassVar[Literal["glyph"]] = "glyph"
+
+    svg: Optional[str] = None
+    raster: Optional[Union[bytes, str]] = None
+    keep_colors: Optional[bool] = None
+
+
+@dataclass
 class SquareEye(Doc):
     """``{"kind": "square"}``, one of ``Eye``."""
 
@@ -313,6 +351,25 @@ class RoundedEye(Doc):
     kind: ClassVar[Literal["rounded"]] = "rounded"
 
     radius: Optional[float] = None
+
+
+@dataclass
+class GlyphEye(Doc):
+    """``{"kind": "glyph"}``, one of ``Eye``.
+
+    A custom shape drawn in place of the built-in one (not for alignment patterns).
+
+    Attributes:
+        svg: An SVG document; it is sanitized.
+        raster: PNG, GIF or WebP bytes, with transparency.
+        keep_colors: Draw the picture in its own colors instead of its silhouette in the layer's token.
+    """
+
+    kind: ClassVar[Literal["glyph"]] = "glyph"
+
+    svg: Optional[str] = None
+    raster: Optional[Union[bytes, str]] = None
+    keep_colors: Optional[bool] = None
 
 
 @dataclass
@@ -782,6 +839,7 @@ ModuleShape = Union[
     Dots,
     Liquid,
     Bars,
+    GlyphModules,
 ]
 
 Ring = Union[
@@ -790,6 +848,7 @@ Ring = Union[
     SquircleRing,
     LeafRing,
     RoundedRing,
+    GlyphRing,
 ]
 
 Eye = Union[
@@ -799,6 +858,7 @@ Eye = Union[
     SquircleEye,
     LeafEye,
     RoundedEye,
+    GlyphEye,
 ]
 
 AlignmentShape = Union[
@@ -940,6 +1000,9 @@ __all__ = [
     "FrameName",
     "FrameRing",
     "Glow",
+    "GlyphEye",
+    "GlyphModules",
+    "GlyphRing",
     "Grain",
     "Halftone",
     "HalftoneInk",

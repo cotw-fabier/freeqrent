@@ -10,7 +10,7 @@ import (
 )
 
 // SchemaVersion is the x-freeqrent-version of the schema these types were generated from.
-const SchemaVersion = "1.1.0"
+const SchemaVersion = "1.2.0"
 
 // Style: a Style document (SPEC §10.1). Every key is optional.
 type Style struct {
@@ -409,9 +409,9 @@ const (
 	FitContain Fit = "contain"
 )
 
-// ModuleShape is one of Square, Rounded, Dots, Liquid, Bars, written as an
-// object tagged by "kind". A document may also give "square", "rounded",
-// "dots", "liquid" or "bars" as a bare name.
+// ModuleShape is one of Square, Rounded, Dots, Liquid, Bars, Glyph, written
+// as an object tagged by "kind". A document may also give "square",
+// "rounded", "dots", "liquid" or "bars" as a bare name.
 type ModuleShape interface {
 	isModuleShape()
 }
@@ -455,6 +455,13 @@ func decodeModuleShape(data []byte) (ModuleShape, error) {
 			return Bars{}, nil
 		}
 		var v Bars
+		err := json.Unmarshal(data, &v)
+		return v, err
+	case "glyph":
+		if bare {
+			return nil, fmt.Errorf("freeqrent: ModuleShape %q needs an object", kind)
+		}
+		var v Glyph
 		err := json.Unmarshal(data, &v)
 		return v, err
 	}
@@ -693,6 +700,61 @@ const (
 	AxisVertical   Axis = "vertical"
 )
 
+// Glyph is the ModuleShape {"kind": "glyph"}. A custom shape drawn in place
+// of the built-in one (not for alignment patterns).
+type Glyph struct {
+	// An SVG document; it is sanitized.
+	SVG *string `json:"svg,omitzero"`
+	// PNG, GIF or WebP bytes, with transparency.
+	Raster []byte `json:"raster,omitzero"`
+	// Draw the picture in its own colors instead of its silhouette in the
+	// layer's token.
+	KeepColors *bool `json:"keep_colors,omitzero"`
+}
+
+func (Glyph) isModuleShape() {}
+
+// MarshalJSON writes the variant with its "kind".
+func (v Glyph) MarshalJSON() ([]byte, error) {
+	type plain Glyph
+	return json.Marshal(struct {
+		Kind string `json:"kind"`
+		plain
+	}{"glyph", plain(v)})
+}
+
+// UnmarshalJSON reads the object strictly: unknown keys are errors.
+func (v *Glyph) UnmarshalJSON(data []byte) error {
+	fields, keys, err := objectFields(data, "Glyph")
+	if err != nil {
+		return err
+	}
+	*v = Glyph{}
+	for _, k := range keys {
+		raw := fields[k]
+		var err error
+		switch k {
+		case "kind":
+			var kind string
+			if err = json.Unmarshal(raw, &kind); err == nil && kind != "glyph" {
+				err = fmt.Errorf("%q isn't glyph", kind)
+			}
+		case "svg":
+			err = json.Unmarshal(raw, &v.SVG)
+		case "raster":
+			err = json.Unmarshal(raw, &v.Raster)
+		case "keep_colors":
+			err = json.Unmarshal(raw, &v.KeepColors)
+		default:
+			err = fmt.Errorf("isn't a key of Glyph")
+		}
+		if err != nil {
+			return fmt.Errorf("freeqrent: Glyph.%s: %w", k, err)
+		}
+	}
+	return nil
+}
+
 // Finders mirrors the schema's Finders.
 type Finders struct {
 	Ring    Ring     `json:"ring,omitzero"`
@@ -727,9 +789,9 @@ func (v *Finders) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Ring is one of RingSquare, RingSquircle, RingLeaf, RingRounded, written as
-// an object tagged by "kind". A document may also give "square", "squircle",
-// "leaf" or "rounded" as a bare name.
+// Ring is one of RingSquare, RingSquircle, RingLeaf, RingRounded, RingGlyph,
+// written as an object tagged by "kind". A document may also give "square",
+// "squircle", "leaf" or "rounded" as a bare name.
 type Ring interface {
 	isRing()
 }
@@ -766,6 +828,13 @@ func decodeRing(data []byte) (Ring, error) {
 			return RingRounded{}, nil
 		}
 		var v RingRounded
+		err := json.Unmarshal(data, &v)
+		return v, err
+	case "glyph":
+		if bare {
+			return nil, fmt.Errorf("freeqrent: Ring %q needs an object", kind)
+		}
+		var v RingGlyph
 		err := json.Unmarshal(data, &v)
 		return v, err
 	}
@@ -939,9 +1008,64 @@ func (v *RingRounded) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// RingGlyph is the Ring {"kind": "glyph"}. A custom shape drawn in place of
+// the built-in one (not for alignment patterns).
+type RingGlyph struct {
+	// An SVG document; it is sanitized.
+	SVG *string `json:"svg,omitzero"`
+	// PNG, GIF or WebP bytes, with transparency.
+	Raster []byte `json:"raster,omitzero"`
+	// Draw the picture in its own colors instead of its silhouette in the
+	// layer's token.
+	KeepColors *bool `json:"keep_colors,omitzero"`
+}
+
+func (RingGlyph) isRing() {}
+
+// MarshalJSON writes the variant with its "kind".
+func (v RingGlyph) MarshalJSON() ([]byte, error) {
+	type plain RingGlyph
+	return json.Marshal(struct {
+		Kind string `json:"kind"`
+		plain
+	}{"glyph", plain(v)})
+}
+
+// UnmarshalJSON reads the object strictly: unknown keys are errors.
+func (v *RingGlyph) UnmarshalJSON(data []byte) error {
+	fields, keys, err := objectFields(data, "RingGlyph")
+	if err != nil {
+		return err
+	}
+	*v = RingGlyph{}
+	for _, k := range keys {
+		raw := fields[k]
+		var err error
+		switch k {
+		case "kind":
+			var kind string
+			if err = json.Unmarshal(raw, &kind); err == nil && kind != "glyph" {
+				err = fmt.Errorf("%q isn't glyph", kind)
+			}
+		case "svg":
+			err = json.Unmarshal(raw, &v.SVG)
+		case "raster":
+			err = json.Unmarshal(raw, &v.Raster)
+		case "keep_colors":
+			err = json.Unmarshal(raw, &v.KeepColors)
+		default:
+			err = fmt.Errorf("isn't a key of RingGlyph")
+		}
+		if err != nil {
+			return fmt.Errorf("freeqrent: RingGlyph.%s: %w", k, err)
+		}
+	}
+	return nil
+}
+
 // Eye is one of EyeSquare, EyeCircle, EyeSquircle, EyeLeaf, EyeRounded,
-// written as an object tagged by "kind". A document may also give "square",
-// "circle", "squircle", "leaf" or "rounded" as a bare name.
+// EyeGlyph, written as an object tagged by "kind". A document may also give
+// "square", "circle", "squircle", "leaf" or "rounded" as a bare name.
 type Eye interface {
 	isEye()
 }
@@ -985,6 +1109,13 @@ func decodeEye(data []byte) (Eye, error) {
 			return EyeRounded{}, nil
 		}
 		var v EyeRounded
+		err := json.Unmarshal(data, &v)
+		return v, err
+	case "glyph":
+		if bare {
+			return nil, fmt.Errorf("freeqrent: Eye %q needs an object", kind)
+		}
+		var v EyeGlyph
 		err := json.Unmarshal(data, &v)
 		return v, err
 	}
@@ -1194,6 +1325,61 @@ func (v *EyeRounded) UnmarshalJSON(data []byte) error {
 		}
 		if err != nil {
 			return fmt.Errorf("freeqrent: EyeRounded.%s: %w", k, err)
+		}
+	}
+	return nil
+}
+
+// EyeGlyph is the Eye {"kind": "glyph"}. A custom shape drawn in place of
+// the built-in one (not for alignment patterns).
+type EyeGlyph struct {
+	// An SVG document; it is sanitized.
+	SVG *string `json:"svg,omitzero"`
+	// PNG, GIF or WebP bytes, with transparency.
+	Raster []byte `json:"raster,omitzero"`
+	// Draw the picture in its own colors instead of its silhouette in the
+	// layer's token.
+	KeepColors *bool `json:"keep_colors,omitzero"`
+}
+
+func (EyeGlyph) isEye() {}
+
+// MarshalJSON writes the variant with its "kind".
+func (v EyeGlyph) MarshalJSON() ([]byte, error) {
+	type plain EyeGlyph
+	return json.Marshal(struct {
+		Kind string `json:"kind"`
+		plain
+	}{"glyph", plain(v)})
+}
+
+// UnmarshalJSON reads the object strictly: unknown keys are errors.
+func (v *EyeGlyph) UnmarshalJSON(data []byte) error {
+	fields, keys, err := objectFields(data, "EyeGlyph")
+	if err != nil {
+		return err
+	}
+	*v = EyeGlyph{}
+	for _, k := range keys {
+		raw := fields[k]
+		var err error
+		switch k {
+		case "kind":
+			var kind string
+			if err = json.Unmarshal(raw, &kind); err == nil && kind != "glyph" {
+				err = fmt.Errorf("%q isn't glyph", kind)
+			}
+		case "svg":
+			err = json.Unmarshal(raw, &v.SVG)
+		case "raster":
+			err = json.Unmarshal(raw, &v.Raster)
+		case "keep_colors":
+			err = json.Unmarshal(raw, &v.KeepColors)
+		default:
+			err = fmt.Errorf("isn't a key of EyeGlyph")
+		}
+		if err != nil {
+			return fmt.Errorf("freeqrent: EyeGlyph.%s: %w", k, err)
 		}
 	}
 	return nil

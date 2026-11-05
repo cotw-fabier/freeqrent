@@ -18,6 +18,13 @@ pub const SUITE: &str = "conformance/cases.json";
 pub const SCHEMA: &str = "schema/freeqrent.schema.json";
 
 const MARK: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#a3302a"/><path d="M3 5h4" stroke="#fff"/></svg>"##;
+/// A square ring a module thick, for a finder's 7×7 box.
+const RING: &str =
+    r#"<svg viewBox="0 0 7 7"><path fill-rule="evenodd" d="M0 0h7v7H0zM1 1v5h5V1z"/></svg>"#;
+/// A JPEG's signature, which a glyph refuses (no transparency).
+const JPEG: &str = "/9j/4AAQSkZJRgABAQAAAQABAAD/2w==";
+/// A 4×4 PNG, opaque but for its corners: a glyph's alpha is its ink.
+const SHAPE_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGUlEQVR42mMQEdFgAOL/UMyAzAFjrAIoWgAwHBD1hE2mqQAAAABJRU5ErkJggg==";
 /// A 1×1 PNG.
 const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
@@ -108,6 +115,7 @@ fn render(name: &str, style: &str) -> String {
 /// Every input, in suite order.
 pub fn inputs() -> Vec<String> {
     let logo = quote(MARK);
+    let ring = quote(RING);
     let disc = disc();
     let bands = bands();
     let mut cases = vec![render("default", "{}")];
@@ -203,6 +211,15 @@ pub fn inputs() -> Vec<String> {
             "raster logo",
             &format!(r#"{{"logo":{{"raster":"{PNG}","size":"small","shape":{{"kind":"rounded","radius":1}}}},"encoding":{{"ecc":"H"}}}}"#),
         ),
+        render("svg module glyph", &format!(r#"{{"modules":{{"kind":"glyph","svg":{logo}}}}}"#)),
+        render(
+            "raster eye glyph",
+            &format!(r#"{{"finders":{{"ring":"rounded","eye":{{"kind":"glyph","raster":"{SHAPE_PNG}"}}}}}}"#),
+        ),
+        render(
+            "corner ring glyph in its colors",
+            &format!(r#"{{"finders":{{"corners":{{"top-right":{{"ring":{{"kind":"glyph","svg":{ring},"keep_colors":true}}}}}}}},"frame":{{"kind":"circle","filler_density":0.5}},"modules":{{"kind":"glyph","svg":{logo}}}}}"#),
+        ),
         render(
             "orbit logo turning",
             &format!(r#"{{"logo":{{"svg":{logo},"frame":{{"kind":"orbit","moon":2}}}},"idle":["logo-turn","logo-glint"],"encoding":{{"ecc":"Q"}}}}"#),
@@ -248,6 +265,11 @@ pub fn inputs() -> Vec<String> {
             "check",
             &format!(r#""payload":{{"text":"{URL}"}},"style":{{"logo":{{"svg":{logo},"scale":0.2}},"encoding":{{"ecc":"H"}}}}"#),
         ),
+        case(
+            "check glyphs",
+            "check",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"modules":{{"kind":"glyph","svg":{logo}}},"finders":{{"eye":{{"kind":"glyph","raster":"{SHAPE_PNG}","keep_colors":true}}}}}}"#),
+        ),
         case("check halftone", "check", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{{"image":{disc}}}}}"#)),
         case("plan ripple", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"preset":"ink","intro":"ripple","idle":["shimmer"]}}"#)),
         case(
@@ -255,11 +277,26 @@ pub fn inputs() -> Vec<String> {
             "plan",
             &format!(r#""payload":{{"text":"{URL}"}},"style":{{"logo":{{"svg":{logo},"frame":"beads"}},"intro":{{"preset":"sweep","frame":"draw"}},"encoding":{{"ecc":"Q"}}}}"#),
         ),
+        case(
+            "plan glyphs",
+            "plan",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"modules":{{"kind":"glyph","svg":{logo}}},"finders":{{"ring":{{"kind":"glyph","svg":{ring}}}}},"intro":"settle"}}"#),
+        ),
         case("error unknown key", "render", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"shape":"dots"}}"#)),
         case("error shadow", "render", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"frame":"none","shadow":1}}"#)),
         case("error contrast", "render", &format!(r##""payload":{{"text":"{URL}"}},"style":{{"palette":{{"fg":"#ccc"}}}}"##)),
         case("error too long", "render", &format!(r#""payload":{{"text":"{}"}},"style":{{"encoding":{{"ecc":"H"}}}}"#, "x".repeat(3000))),
         case("error logo", "render", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"logo":{{"svg":"<html></html>"}}}}"#)),
+        case(
+            "error glyph",
+            "render",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"modules":{{"kind":"glyph","raster":"{JPEG}"}}}}"#),
+        ),
+        case(
+            "error glyph on a picture",
+            "render",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"modules":{{"kind":"glyph","svg":{logo}}},"halftone":{{"image":{disc}}}}}"#),
+        ),
         case(
             "error logo too large",
             "render",

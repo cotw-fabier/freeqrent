@@ -711,6 +711,19 @@ impl SvgDoc {
         w: &mut W,
         prefix: Option<&str>,
     ) -> fmt::Result {
+        match prefix {
+            Some(p) => self.write_body_in(w, Some(format_args!("{p}-logo"))),
+            None => self.write_body_in(w, None),
+        }
+    }
+
+    /// Writes the content, with IDs and references prefixed by `{ns}-`
+    /// (unchanged without one).
+    pub(crate) fn write_body_in<W: Write + ?Sized>(
+        &self,
+        w: &mut W,
+        ns: Option<fmt::Arguments<'_>>,
+    ) -> fmt::Result {
         let mut tags: Vec<&str> = Vec::new();
         let mut i = 0;
         while i < self.nodes.len() {
@@ -722,8 +735,8 @@ impl SvgDoc {
                         for seg in &value.0 {
                             match seg {
                                 Seg::Text(t) => escape(w, t)?,
-                                Seg::Id(id) => match prefix {
-                                    Some(p) => write!(w, "{p}-logo-{id}")?,
+                                Seg::Id(id) => match ns {
+                                    Some(ns) => write!(w, "{ns}-{id}")?,
                                     None => w.write_str(id)?,
                                 },
                             }

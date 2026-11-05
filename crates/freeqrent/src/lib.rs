@@ -159,6 +159,7 @@ mod error;
 mod extract;
 mod geometry;
 mod gf;
+mod glyph;
 #[cfg(feature = "halftone")]
 mod halftone;
 mod image;
@@ -197,8 +198,8 @@ pub use animate::{
 #[cfg(feature = "animate")]
 pub mod plan {
     pub use crate::animate::{
-        AnimationPlan, Fallback, Keyframe, PlanCaption, PlanLayer, PlanOutline, Property, Reveal,
-        RevealShape, Target, Track, Value,
+        AnimationPlan, Fallback, Keyframe, PlanCaption, PlanGlyph, PlanLayer, PlanOutline,
+        Property, Reveal, RevealShape, Target, Track, Value,
     };
 }
 pub use check::{
@@ -213,6 +214,7 @@ pub use extract::{
     Choice, EXTRACT_CONTRAST, ExtractError, INVERTED_CONTRAST, Origin, PaletteOpts, PaletteReport,
     Swatch,
 };
+pub use glyph::{Glyph, GlyphError, GlyphPart, MAX_GLYPH_RASTER, MAX_GLYPH_SVG};
 #[cfg(feature = "halftone")]
 pub use halftone::{Clarity, DEFAULT_BANDS, DEFAULT_CLARITY, Fit, Halftone, Ink, Steering};
 pub use image::{ImageError, Rgba8Image};

@@ -20,6 +20,7 @@ use core::fmt::{self, Write};
 
 use crate::color::Color;
 use crate::geometry::{Grid, Path};
+use crate::glyph::GlyphPart;
 use crate::math;
 use crate::matrix::{Corner, QrMatrix};
 use crate::num::write_scaled;
@@ -798,6 +799,27 @@ pub struct PlanLayer {
     pub corner: Option<Corner>,
     /// Scale origin, in viewBox units.
     pub origin: (f32, f32),
+    /// For a part a custom shape draws (SPEC §7.1, §7.2): the path is the
+    /// boxes the shape fits into, and this says where it goes. The plan
+    /// doesn't carry the picture; players read it from the style.
+    pub glyph: Option<PlanGlyph>,
+}
+
+/// A custom shape drawn into a plan layer's boxes.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct PlanGlyph {
+    /// The part: the style's module glyph, or the ring or eye glyph of the
+    /// layer's [`corner`](PlanLayer::corner).
+    pub part: GlyphPart,
+    /// The side of each box, in viewBox units; the picture is fitted into
+    /// it (`meet`, centered).
+    pub side: f32,
+    /// Each box's top-left corner, in viewBox units.
+    pub at: Vec<(f32, f32)>,
+    /// Drawn in its own colors; otherwise its alpha is painted in the
+    /// layer's token.
+    pub keep_colors: bool,
 }
 
 /// A logo frame stroked along its path (SPEC §7.3).
@@ -939,17 +961,12 @@ fn pieces(
         };
         match &layer.part {
             Part::Modules(grid) => {
-                for (c, b) in cells(grid, n as usize, o, scene::touches(&style.modules)) {
+                for (c, b) in cells(grid, n as usize, o, scene::modules_touch(style)) {
                     push(Unit::Cells(c), b);
                 }
             }
             Part::Filler(grid) => {
-                for (c, b) in cells(
-                    grid,
-                    canvas.side as usize,
-                    0.0,
-                    scene::touches(&style.modules),
-                ) {
+                for (c, b) in cells(grid, canvas.side as usize, 0.0, scene::modules_touch(style)) {
                     push(Unit::Cells(c), b);
                 }
             }
@@ -1154,6 +1171,13 @@ fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<El
                 Part::Ring => Part::Ring,
                 Part::Halftone => Part::Halftone,
             };
+            let origin = ((b.0 + b.2) / 2.0, (b.1 + b.3) / 2.0);
+            if let Some(mut e) = svg::glyph_element(style, qr, canvas, layer, &part) {
+                e.group = Some(group);
+                e.origin = origin;
+                elements.push(e);
+                continue;
+            }
             let mut path = Path::new();
             svg::draw_part(style, qr, canvas, &part, &mut path);
             if path.is_empty() {
@@ -2774,6 +2798,15 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
             group: e.group,
             corner: e.corner,
             origin: (e.origin.0 as f32, e.origin.1 as f32),
+            glyph: e.glyph.as_ref().map(|g| {
+                let u = |v: i64| v as f32 / crate::geometry::UNIT as f32;
+                PlanGlyph {
+                    part: g.part,
+                    side: g.part.side() as f32,
+                    at: g.at.iter().map(|&(x, y)| (u(x), u(y))).collect(),
+                    keep_colors: g.keep_colors,
+                }
+            }),
         })
         .collect();
     let (tracks, reveal, total_ms, trigger) = match motion {
@@ -2952,6 +2985,27 @@ impl AnimationPlan {
             if let Some(c) = l.corner {
                 w.write_str(",\"corner\":")?;
                 json_str(w, corner_name(c))?;
+            }
+            if let Some(g) = &l.glyph {
+                w.write_str(",\"glyph\":{\"part\":")?;
+                json_str(w, g.part.name())?;
+                w.write_str(",\"side\":")?;
+                json_num(w, g.side)?;
+                if g.keep_colors {
+                    w.write_str(",\"keepColors\":true")?;
+                }
+                w.write_str(",\"at\":[")?;
+                for (j, &(x, y)) in g.at.iter().enumerate() {
+                    if j > 0 {
+                        w.write_char(',')?;
+                    }
+                    w.write_char('[')?;
+                    json_num(w, x)?;
+                    w.write_char(',')?;
+                    json_num(w, y)?;
+                    w.write_char(']')?;
+                }
+                w.write_str("]}")?;
             }
             w.write_str(",\"origin\":[")?;
             json_num(w, l.origin.0)?;

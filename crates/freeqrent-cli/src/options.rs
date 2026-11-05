@@ -126,20 +126,30 @@ pub fn finder(value: &str) -> Result<(RingShape, EyeShape), String> {
 
 /// `CORNER=RING[/EYE]` with CORNER one of `top-left`, `top-right`,
 /// `bottom-left`.
+fn corner_name(name: &str) -> Result<Corner, String> {
+    match name {
+        "top-left" => Ok(Corner::TopLeft),
+        "top-right" => Ok(Corner::TopRight),
+        "bottom-left" => Ok(Corner::BottomLeft),
+        _ => Err(format!(
+            "unknown corner {name:?}: try top-left, top-right or bottom-left"
+        )),
+    }
+}
+
+/// `CORNER=FILE`, for `--corner-ring-file` and `--corner-eye-file`.
+pub fn corner_file(value: &str) -> Result<(Corner, String), String> {
+    let (name, file) = value
+        .split_once('=')
+        .ok_or_else(|| format!("expected CORNER=FILE, got {value:?}"))?;
+    Ok((corner_name(name)?, file.to_string()))
+}
+
 pub fn corner(value: &str) -> Result<(Corner, RingShape, EyeShape), String> {
     let (name, shapes) = value
         .split_once('=')
         .ok_or_else(|| format!("expected CORNER=RING[/EYE], got {value:?}"))?;
-    let corner = match name {
-        "top-left" => Corner::TopLeft,
-        "top-right" => Corner::TopRight,
-        "bottom-left" => Corner::BottomLeft,
-        _ => {
-            return Err(format!(
-                "unknown corner {name:?}: try top-left, top-right or bottom-left"
-            ));
-        }
-    };
+    let corner = corner_name(name)?;
     let (ring, eye) = finder(shapes)?;
     Ok((corner, ring, eye))
 }

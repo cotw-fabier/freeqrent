@@ -192,6 +192,22 @@ void main() {
         },
       },
     ),
+    'glyphs': (
+      QrStyle(
+        modules: const QrModuleShape.glyph(svg: logoSvg),
+        finders: QrFinders(
+          ring: QrRing.glyph(raster: Uint8List.fromList([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+          eye: const QrEye.glyph(svg: logoSvg, keepColors: true),
+        ),
+      ),
+      {
+        'modules': {'kind': 'glyph', 'svg': logoSvg},
+        'finders': {
+          'ring': {'kind': 'glyph', 'raster': 'iVBORw0KGgo='},
+          'eye': {'kind': 'glyph', 'svg': logoSvg, 'keep_colors': true},
+        },
+      },
+    ),
     'logo': (
       const QrStyle(
         modules: QrModuleShape.liquid(),

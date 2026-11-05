@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/cotw-fabier/freeqrent/main/schema/freeqrent.schema.json",
   "title": "freeQRent Style document",
-  "x-freeqrent-version": "1.1.0",
+  "x-freeqrent-version": "1.2.0",
   "$ref": "#/$defs/Style",
   "$defs": {
     "Style": {
@@ -239,6 +239,43 @@
             "kind"
           ],
           "additionalProperties": false
+        },
+        {
+          "description": "A custom shape drawn in place of the built-in one (not for alignment patterns).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "glyph"
+            },
+            "svg": {
+              "description": "An SVG document; it is sanitized.",
+              "type": "string"
+            },
+            "raster": {
+              "description": "PNG, GIF or WebP bytes, with transparency.",
+              "$ref": "#/$defs/Base64"
+            },
+            "keep_colors": {
+              "description": "Draw the picture in its own colors instead of its silhouette in the layer's token.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "svg"
+              ]
+            },
+            {
+              "required": [
+                "raster"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -302,6 +339,43 @@
             "kind"
           ],
           "additionalProperties": false
+        },
+        {
+          "description": "A custom shape drawn in place of the built-in one (not for alignment patterns).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "glyph"
+            },
+            "svg": {
+              "description": "An SVG document; it is sanitized.",
+              "type": "string"
+            },
+            "raster": {
+              "description": "PNG, GIF or WebP bytes, with transparency.",
+              "$ref": "#/$defs/Base64"
+            },
+            "keep_colors": {
+              "description": "Draw the picture in its own colors instead of its silhouette in the layer's token.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "svg"
+              ]
+            },
+            {
+              "required": [
+                "raster"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -378,6 +452,43 @@
             "kind"
           ],
           "additionalProperties": false
+        },
+        {
+          "description": "A custom shape drawn in place of the built-in one (not for alignment patterns).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "glyph"
+            },
+            "svg": {
+              "description": "An SVG document; it is sanitized.",
+              "type": "string"
+            },
+            "raster": {
+              "description": "PNG, GIF or WebP bytes, with transparency.",
+              "$ref": "#/$defs/Base64"
+            },
+            "keep_colors": {
+              "description": "Draw the picture in its own colors instead of its silhouette in the layer's token.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "svg"
+              ]
+            },
+            {
+              "required": [
+                "raster"
+              ]
+            }
+          ]
         }
       ]
     },

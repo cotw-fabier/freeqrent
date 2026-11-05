@@ -184,11 +184,13 @@ impl Bar {
     /// drops the degraded render (that is what the warning means); a
     /// rounded-finder warning drops rqrr, which can't locate rounded rings,
     /// and the degraded render, which round rings miss at large versions.
+    /// A custom finder is held to the rounded finder's bar; custom modules
+    /// keep the full bar (the reference glyphs meet it, W20261031121341).
     /// An inverted code is read inverted.
     pub fn for_report(report: &ScanReport) -> Bar {
         let warned = |f: fn(&Warning) -> bool| report.warnings.iter().any(f);
         let low_contrast = warned(|w| matches!(w, Warning::LowContrast { .. }));
-        let rounded = warned(|w| matches!(w, Warning::RoundedFinder));
+        let rounded = warned(|w| matches!(w, Warning::RoundedFinder | Warning::CustomFinder));
         Bar {
             degraded: !low_contrast && !rounded,
             rqrr: !rounded,

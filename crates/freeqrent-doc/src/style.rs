@@ -10,13 +10,13 @@
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner,
     CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
-    FrameRing, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
+    FrameRing, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
     LogoTiming, Mask, ModuleShape, Paint, Palette, Preset, QrBuilder, QrCode, RasterFormat,
     RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, Token, TrackingGrid, Trigger,
     Version,
 };
 
-use crate::error::{DocError, logo_error};
+use crate::error::{DocError, glyph_error, logo_error};
 use crate::json::{self, Value};
 use crate::read::{
     Obj, array_of, base64_of, bool_of, f32_of, image_of, name_of, pair_of, str_of, tagged, u8_of,
@@ -186,12 +186,21 @@ fn document(v: &Value) -> Result<Document, DocError> {
         (None, None) => Style::new(),
     };
 
-    if let Some(shape) = o.opt("modules", modules)? {
-        style = style.modules(shape);
+    match o.opt("modules", modules)? {
+        Some(Shape::Builtin(shape)) => style = style.modules(shape),
+        Some(Shape::Glyph(glyph)) => style = style.module_glyph(glyph),
+        None => {}
     }
     if let Some((value, path)) = o.get("finders") {
         let base = style.finder_style();
-        style = style.finders(finders(value, &path, base)?);
+        let (finder_style, glyphs) = finders(value, &path, base)?;
+        style = style.finders(finder_style);
+        for (corner, (ring, eye)) in [Corner::TopLeft, Corner::TopRight, Corner::BottomLeft]
+            .into_iter()
+            .zip(glyphs)
+        {
+            style = style.corner_glyphs(corner, ring, eye);
+        }
     }
     if let Some((value, path)) = o.get("alignment") {
         let base = style.alignment_style();
@@ -320,7 +329,57 @@ fn or_empty<'a>(o: Option<Obj<'a>>, empty: &'a Value) -> Obj<'a> {
 
 static EMPTY: Value = Value::Object(Vec::new());
 
-fn modules(v: &Value, path: &str) -> Result<ModuleShape, DocError> {
+/// A shape key's value: a built-in shape, or a custom one (`{"kind":
+/// "glyph", "svg" | "raster", "keep_colors"}`).
+#[derive(Clone, Debug)]
+enum Shape<T> {
+    Builtin(T),
+    Glyph(Glyph),
+}
+
+/// Whether `v` is a `{"kind": "glyph", …}` object.
+fn is_glyph(v: &Value) -> bool {
+    matches!(v, Value::Object(entries)
+        if entries.iter().any(|(k, v)| k == "kind" && *v == Value::String("glyph".into())))
+}
+
+/// A custom shape: exactly one of `svg` (text) or `raster` (base64 PNG,
+/// GIF or WebP), and `keep_colors`.
+fn glyph(v: &Value, path: &str) -> Result<Glyph, DocError> {
+    let mut o = Obj::new(v, path)?;
+    o.req("kind", |v, p| name_of(v, p, &["glyph"]))?;
+    let glyph = match (o.has("svg"), o.has("raster")) {
+        (true, false) => {
+            let (svg, p) = o.get("svg").expect("present");
+            Glyph::svg(str_of(svg, &p)?).map_err(|e| glyph_error(&p, e))?
+        }
+        (false, true) => {
+            let (raster, p) = o.get("raster").expect("present");
+            let bytes = base64_of(raster, &p)?;
+            let format = RasterFormat::sniff(&bytes)
+                .ok_or_else(|| DocError::invalid(&p, "not a PNG, GIF or WebP image"))?;
+            Glyph::raster(bytes, format).map_err(|e| glyph_error(&p, e))?
+        }
+        _ => {
+            return Err(DocError::invalid(
+                path,
+                "a glyph needs exactly one of svg or raster",
+            ));
+        }
+    };
+    let keep = o.opt("keep_colors", bool_of)?.unwrap_or(false);
+    o.finish()?;
+    Ok(glyph.keep_colors(keep))
+}
+
+fn modules(v: &Value, path: &str) -> Result<Shape<ModuleShape>, DocError> {
+    if is_glyph(v) {
+        return Ok(Shape::Glyph(glyph(v, path)?));
+    }
+    Ok(Shape::Builtin(module_shape(v, path)?))
+}
+
+fn module_shape(v: &Value, path: &str) -> Result<ModuleShape, DocError> {
     let (kind, o) = tagged(v, path, MODULE_SHAPES)?;
     let mut o = or_empty(o, &EMPTY);
     let shape = match kind {
@@ -348,7 +407,15 @@ fn modules(v: &Value, path: &str) -> Result<ModuleShape, DocError> {
     Ok(shape)
 }
 
-fn ring(v: &Value, path: &str) -> Result<RingShape, DocError> {
+fn ring(v: &Value, path: &str) -> Result<Shape<RingShape>, DocError> {
+    if is_glyph(v) {
+        return Ok(Shape::Glyph(glyph(v, path)?));
+    }
+    Ok(Shape::Builtin(ring_shape(v, path)?))
+}
+
+/// A built-in ring (alignment patterns take no custom shapes).
+fn ring_shape(v: &Value, path: &str) -> Result<RingShape, DocError> {
     let (kind, o) = tagged(v, path, RINGS)?;
     let mut o = or_empty(o, &EMPTY);
     let shape = match kind {
@@ -361,7 +428,15 @@ fn ring(v: &Value, path: &str) -> Result<RingShape, DocError> {
     Ok(shape)
 }
 
-fn eye(v: &Value, path: &str) -> Result<EyeShape, DocError> {
+fn eye(v: &Value, path: &str) -> Result<Shape<EyeShape>, DocError> {
+    if is_glyph(v) {
+        return Ok(Shape::Glyph(glyph(v, path)?));
+    }
+    Ok(Shape::Builtin(eye_shape(v, path)?))
+}
+
+/// A built-in eye.
+fn eye_shape(v: &Value, path: &str) -> Result<EyeShape, DocError> {
     let (kind, o) = tagged(v, path, EYES)?;
     let mut o = or_empty(o, &EMPTY);
     let shape = match kind {
@@ -386,27 +461,44 @@ fn matching_eye(ring: RingShape) -> EyeShape {
     }
 }
 
-/// `{"ring", "eye"}`: either may be left out; a ring alone brings its
-/// matching eye.
-fn ring_and_eye(
-    o: &mut Obj<'_>,
-    base: (RingShape, EyeShape),
-) -> Result<(RingShape, EyeShape), DocError> {
+/// A corner's ring and eye: built-in shapes, and the custom shapes that
+/// replace them.
+type Finder = (RingShape, EyeShape, Option<Glyph>, Option<Glyph>);
+
+/// `{"ring", "eye"}`: either may be left out; a built-in ring alone brings
+/// its matching eye. A part given as a built-in shape drops a custom one
+/// it inherited; a custom ring or eye replaces that part only.
+fn ring_and_eye(o: &mut Obj<'_>, base: Finder) -> Result<Finder, DocError> {
     let r = o.opt("ring", ring)?;
     let e = o.opt("eye", eye)?;
-    Ok(match (r, e) {
-        (None, None) => base,
-        (Some(r), None) => (r, matching_eye(r)),
-        (None, Some(e)) => (base.0, e),
-        (Some(r), Some(e)) => (r, e),
-    })
+    let mut out = match r {
+        None => base,
+        Some(Shape::Builtin(r)) => (r, matching_eye(r), None, base.3),
+        Some(Shape::Glyph(g)) => (base.0, base.1, Some(g), base.3),
+    };
+    match e {
+        None => {}
+        Some(Shape::Builtin(e)) => (out.1, out.3) = (e, None),
+        Some(Shape::Glyph(g)) => out.3 = Some(g),
+    }
+    Ok(out)
 }
 
-fn finders(v: &Value, path: &str, base: FinderStyle) -> Result<FinderStyle, DocError> {
+/// The finder style, and each corner's custom ring and eye (top-left,
+/// top-right, bottom-left).
+type Finders = (FinderStyle, [(Option<Glyph>, Option<Glyph>); 3]);
+
+fn finders(v: &Value, path: &str, base: FinderStyle) -> Result<Finders, DocError> {
     let mut o = Obj::new(v, path)?;
-    let given = o.has("ring") || o.has("eye");
-    let (r, e) = ring_and_eye(&mut o, (base.outer, base.eye))?;
+    // Custom shapes leave the base's built-in finders as they are.
+    let builtin = |key: &str| {
+        matches!(v, Value::Object(entries)
+            if entries.iter().any(|(k, v)| k == key && !is_glyph(v)))
+    };
+    let given = builtin("ring") || builtin("eye");
+    let (r, e, rg, eg) = ring_and_eye(&mut o, (base.outer, base.eye, None, None))?;
     let mut style = if !given { base } else { FinderStyle::new(r, e) };
+    let mut glyphs = [(rg.clone(), eg.clone()), (rg.clone(), eg.clone()), (rg, eg)];
     if let Some((value, cpath)) = o.get("corners") {
         for (name, value, p) in Obj::new(value, &cpath)?.entries() {
             let corner = match name {
@@ -415,14 +507,22 @@ fn finders(v: &Value, path: &str, base: FinderStyle) -> Result<FinderStyle, DocE
                 "bottom-left" => Corner::BottomLeft,
                 _ => return Err(unknown(&p, name, CORNERS)),
             };
+            let i = match corner {
+                Corner::TopLeft => 0,
+                Corner::TopRight => 1,
+                _ => 2,
+            };
             let mut c = Obj::new(value, &p)?;
-            let (r, e) = ring_and_eye(&mut c, style.at(corner))?;
+            let (r, e) = style.at(corner);
+            let (gr, ge) = glyphs[i].clone();
+            let (r, e, gr, ge) = ring_and_eye(&mut c, (r, e, gr, ge))?;
             c.finish()?;
             style = style.corner(corner, r, e);
+            glyphs[i] = (gr, ge);
         }
     }
     o.finish()?;
-    Ok(style)
+    Ok((style, glyphs))
 }
 
 fn alignment(v: &Value, path: &str, base: AlignmentStyle) -> Result<AlignmentStyle, DocError> {
@@ -442,8 +542,8 @@ fn alignment(v: &Value, path: &str, base: AlignmentStyle) -> Result<AlignmentSty
                     "\"own\" needs an object with a ring",
                 ));
             };
-            let outer = s.req("ring", ring)?;
-            let eye = match s.opt("eye", eye)? {
+            let outer = s.req("ring", ring_shape)?;
+            let eye = match s.opt("eye", eye_shape)? {
                 Some(e) => e,
                 None => match outer {
                     RingShape::Rounded(_) => EyeShape::Circle,

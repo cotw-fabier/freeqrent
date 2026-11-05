@@ -4,8 +4,9 @@
 
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner, Ecc,
-    Effect, Emphasis, EyeShape, FinderStyle, Frame, FrameRing, Intro, Logo, LogoShape, ModuleShape,
-    Palette, Preset, QrCode, QrMatrix, RingShape, Style, Texture, TimingStyle, Version,
+    Effect, Emphasis, EyeShape, FinderStyle, Frame, FrameRing, Glyph, Intro, Logo, LogoShape,
+    ModuleShape, Palette, Preset, QrCode, QrMatrix, RingShape, Style, Texture, TimingStyle,
+    Version,
 };
 
 fn code(version: u8) -> QrMatrix {
@@ -264,5 +265,30 @@ fn caption_with_border_and_shadow() {
         .shadow(1.5)
         .caption(Caption::new("SCAN ME").font(CaptionFont::Mono).tracking(10))
         .palette(Palette::from_tokens([("bg", "#ffd93d"), ("fg", "#000")]).unwrap());
+    insta::assert_snapshot!(render(style, 1));
+}
+
+/// Custom shapes (SPEC §7.1, §7.2): a vector module glyph tinted in `fg`,
+/// a raster eye in its own colors at one corner, a ring glyph elsewhere.
+#[test]
+fn glyphs() {
+    let heart = Glyph::svg(
+        r##"<svg viewBox="0 0 10 10"><path id="h" fill="#e11" d="M5 9 1 5a2.4 2.4 0 0 1 4-3 2.4 2.4 0 0 1 4 3z"/></svg>"##,
+    )
+    .unwrap();
+    let ring = Glyph::svg(
+        r#"<svg viewBox="0 0 7 7"><path fill-rule="evenodd" d="M0 0h7v7H0zM1 1v5h5V1z"/></svg>"#,
+    )
+    .unwrap();
+    let png = Glyph::raster(
+        &b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR"[..],
+        freeqrent::RasterFormat::Png,
+    )
+    .unwrap()
+    .keep_colors(true);
+    let style = Style::new()
+        .module_glyph(heart)
+        .finder_glyphs(Some(ring), None)
+        .corner_glyphs(Corner::BottomLeft, None, Some(png));
     insta::assert_snapshot!(render(style, 1));
 }

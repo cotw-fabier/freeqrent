@@ -244,6 +244,7 @@ let svg = Style::new()
     .palette(Palette::from_tokens([("fg", "oklch(32% .08 265)")])?)
     .label("https://example.com")
     .render(&qr)?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 Or start from a preset, an ordinary style to change like any other: `classic`, `ink`, `candy`, `terminal`, `sunset`, `bubble`, `ribbon` or `leaf` (`Style::presets()` lists them).
@@ -255,6 +256,7 @@ let qr = QrCode::encode("https://example.com", Ecc::M)?;
 let svg = Style::preset("candy").unwrap()
     .modules(ModuleShape::Dots { size: 0.9 })
     .render(&qr)?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ### Logos
@@ -272,6 +274,7 @@ let style = Style::new()
     .logo(Logo::svg(mark)?.scale(0.22).shape(LogoShape::Circle).frame(LogoFrame::Ring));
 let qr = QrCode::builder().ecc(Ecc::Q).encode_text_for("https://example.com", &style)?;
 let svg = style.render(&qr)?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ### Palettes from a brand
@@ -287,6 +290,7 @@ let (palette, report) = Palette::from_css(":root { --brand: #1d3b72; --paper: #f
 let image = Rgba8Image::filled(8, 8, [29, 59, 114, 255])?;
 let (from_pixels, _) = Palette::from_image(&image, PaletteOpts::new())?;
 let style = Style::new().palette(palette); // report.choices says where each token came from
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ### Pictures and motion
@@ -300,6 +304,7 @@ let qr = QrCode::encode("https://example.com", Ecc::M)?;
 let svg = Style::preset("ink").unwrap()
     .intro(Intro::new(Preset::Ripple).duration_ms(900))
     .render(&qr)?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ### Checking and verifying

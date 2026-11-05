@@ -12,7 +12,8 @@ use alloc::vec::Vec;
 use core::fmt::{self, Write};
 
 use crate::color::Color;
-use crate::geometry::{self, Path, UNIT};
+use crate::geometry::{self, Grid, Path, UNIT};
+use crate::glyph::{Glyph, GlyphPart};
 use crate::logo::{self, Content};
 use crate::math;
 use crate::matrix::{Corner, QrMatrix};
@@ -20,7 +21,7 @@ use crate::num::write_scaled;
 use crate::palette::{Gradient, GradientKind, Paint, Palette, Token};
 use crate::scanbox::{self, AlignmentShape};
 use crate::scene::{self, Canvas, LayerRole, Part, Round};
-use crate::style::{Border, CaptionFont, Effect, Frame, Style};
+use crate::style::{Border, CaptionFont, Effect, Frame, ModuleShape, Style};
 
 /// The paths to draw, one per (token, fill rule), in paint order; a
 /// picture's sub-cells keep their own elements.
@@ -31,12 +32,18 @@ fn build_paths(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
             paths.extend(halftone_elements(style, qr));
             continue;
         }
+        // A custom shape's parts are elements of their own.
+        if let Some(e) = glyph_element(style, qr, canvas, &layer, &layer.part) {
+            paths.push(e);
+            continue;
+        }
         let evenodd = layer.part.evenodd();
         let i = match paths.iter().position(|e| {
             e.token == layer.token
                 && e.evenodd == evenodd
                 && e.fade == layer.fade
                 && e.role != LayerRole::Halftone
+                && e.glyph.is_none()
         }) {
             Some(i) => i,
             None => {
@@ -109,6 +116,88 @@ pub(crate) fn halftone_strokes(
 #[cfg(not(feature = "halftone"))]
 pub(crate) fn halftone_elements(_: &Style, _: &QrMatrix) -> Vec<Element> {
     Vec::new()
+}
+
+/// Where a custom shape draws `part`, if one does: the boxes' top-left
+/// corners, in path units.
+fn glyph_draw(style: &Style, qr: &QrMatrix, canvas: &Canvas, part: &Part) -> Option<GlyphDraw> {
+    let origin = canvas.origin * UNIT;
+    let cells = |grid: &Grid, size: usize, origin: i64| {
+        let mut at = Vec::new();
+        for y in 0..size as i64 {
+            for x in 0..size as i64 {
+                if grid.get(x, y) {
+                    at.push((origin + x * UNIT, origin + y * UNIT));
+                }
+            }
+        }
+        at
+    };
+    let finder = |c: Corner, inset: i64| {
+        let (x, y) = scene::finder_origin(c, qr.size());
+        alloc::vec![(origin + (x + inset) * UNIT, origin + (y + inset) * UNIT)]
+    };
+    let (kind, corner, at) = match part {
+        Part::Modules(grid) => (
+            GlyphPart::Modules,
+            None,
+            cells(grid, qr.size() as usize, origin),
+        ),
+        Part::Filler(grid) => (
+            GlyphPart::Modules,
+            None,
+            cells(grid, canvas.side as usize, 0),
+        ),
+        Part::FinderOuter(corners) if corners.len() == 1 => {
+            (GlyphPart::Ring, Some(corners[0]), finder(corners[0], 0))
+        }
+        Part::FinderEye(corners) if corners.len() == 1 => {
+            (GlyphPart::Eye, Some(corners[0]), finder(corners[0], 2))
+        }
+        _ => return None,
+    };
+    let glyph = style.glyphs.get(kind, corner)?;
+    Some(GlyphDraw {
+        part: kind,
+        corner,
+        def: style.glyphs.def(kind, corner)?,
+        keep_colors: glyph.keep_colors,
+        at,
+    })
+}
+
+/// A layer part that a custom shape draws, as one element: its path is the
+/// boxes the shape is fitted into (what it may paint), and it carries
+/// where the shape goes.
+pub(crate) fn glyph_element(
+    style: &Style,
+    qr: &QrMatrix,
+    canvas: &Canvas,
+    layer: &scene::Layer,
+    part: &Part,
+) -> Option<Element> {
+    let draw = glyph_draw(style, qr, canvas, part)?;
+    let mut path = Path::new();
+    match part {
+        Part::Modules(grid) => {
+            geometry::draw_modules(&ModuleShape::SQUARE, grid, canvas.origin * UNIT, &mut path)
+        }
+        Part::Filler(grid) => geometry::draw_modules(&ModuleShape::SQUARE, grid, 0, &mut path),
+        _ => {
+            let side = draw.part.side() as i64 * UNIT;
+            for &(x, y) in &draw.at {
+                path.rect(x, y, side, side);
+            }
+        }
+    }
+    if draw.at.is_empty() {
+        return None;
+    }
+    let mut e = Element::new(layer.role(), layer.token, false, path);
+    e.fade = layer.fade;
+    e.corner = draw.corner;
+    e.glyph = Some(draw);
+    Some(e)
 }
 
 /// Appends one layer part's geometry to `path`.
@@ -244,6 +333,20 @@ pub(crate) struct Element {
     pub(crate) joins: bool,
     /// The share of its paint it keeps (`Texture::Ink`), 1 for all.
     pub(crate) fade: f32,
+    /// A custom shape drawn into the path's boxes (SPEC §7.1, §7.2).
+    pub(crate) glyph: Option<GlyphDraw>,
+}
+
+/// Where a custom shape is drawn.
+#[derive(Clone, Debug)]
+pub(crate) struct GlyphDraw {
+    pub(crate) part: GlyphPart,
+    pub(crate) corner: Option<Corner>,
+    /// Its index in `Glyphs::distinct`.
+    pub(crate) def: usize,
+    pub(crate) keep_colors: bool,
+    /// The top-left corners of its boxes, in path units.
+    pub(crate) at: Vec<(i64, i64)>,
 }
 
 impl Element {
@@ -263,6 +366,7 @@ impl Element {
             outline: None,
             joins: false,
             fade: 1.0,
+            glyph: None,
         }
     }
 }
@@ -551,6 +655,7 @@ pub(crate) fn write<W: Write + ?Sized>(
         })
         .filter(|e| e.role != LayerRole::Logo || backdrop)
         .filter(|e| e.color.is_none())
+        .filter(|e| !e.glyph.as_ref().is_some_and(|g| g.keep_colors))
         .map(|e| (e.token, e.stroke.is_some(), e.outline.is_some()));
     for (token, cells, outline) in painted {
         // An outline's gradient is in the document's space, like a fill's.
@@ -608,9 +713,21 @@ pub(crate) fn write<W: Write + ?Sized>(
     )?;
 
     let effects = has_effects(style);
-    if !gradients.is_empty() || !stroke_gradients.is_empty() || effects {
+    // Each custom shape once per box size it's drawn at.
+    let mut glyph_defs: Vec<(usize, u8)> = Vec::new();
+    for g in elements.iter().filter_map(|e| e.glyph.as_ref()) {
+        if !glyph_defs.contains(&(g.def, g.part.side())) {
+            glyph_defs.push((g.def, g.part.side()));
+        }
+    }
+    if !gradients.is_empty() || !stroke_gradients.is_empty() || effects || !glyph_defs.is_empty() {
         out.line()?;
         out.w.write_str("<defs>")?;
+        let distinct = style.glyphs.distinct();
+        for &(def, side) in &glyph_defs {
+            out.nested_line()?;
+            write_glyph_def(out.w, distinct[def], &prefix, def, side)?;
+        }
         if effects {
             out.nested_line()?;
             write_effects(out.w, style, &prefix, n, scene::seed(style, qr))?;
@@ -766,6 +883,7 @@ pub(crate) fn write<W: Write + ?Sized>(
                 write_pose(out.w, e)?;
                 write!(out.w, " d=\"{}\"/>", e.path.data())?;
             }
+            _ if e.glyph.is_some() => write_glyph(out.w, palette, e, &prefix, i)?,
             _ if e.stroke.is_some() => {
                 let next_joins = elements.get(i + 1).is_some_and(|n| n.joins);
                 write_subcells(out.w, palette, e, &prefix, &canvas, qr.size(), next_joins)?
@@ -798,6 +916,91 @@ pub(crate) fn write<W: Write + ?Sized>(
         out.w.write_char('\n')?;
     }
     Ok(())
+}
+
+/// A custom shape's definition: the picture fitted (`meet`) into a box of
+/// `side` modules at the origin, its IDs in a namespace of its own.
+fn write_glyph_def<W: Write + ?Sized>(
+    w: &mut W,
+    glyph: &Glyph,
+    prefix: &str,
+    def: usize,
+    side: u8,
+) -> fmt::Result {
+    write!(w, "<g id=\"{prefix}-glyph{def}-{side}\">")?;
+    match &glyph.content {
+        Content::Svg(doc) => {
+            write!(w, "<svg width=\"{side}\" height=\"{side}\" viewBox=\"")?;
+            doc.write_view_box(w)?;
+            w.write_str("\">")?;
+            doc.write_body_in(w, Some(format_args!("{prefix}-glyph{def}-{side}")))?;
+            w.write_str("</svg>")?;
+        }
+        Content::Raster { format, data } => {
+            write!(
+                w,
+                "<image width=\"{side}\" height=\"{side}\" href=\"data:{};base64,",
+                format.mime()
+            )?;
+            logo::base64(w, data)?;
+            w.write_str("\"/>")?;
+        }
+    }
+    w.write_str("</g>")
+}
+
+/// A custom shape's element (SPEC §7.1, §7.2): one `use` per box. As a
+/// silhouette, the boxes are painted in the token through a mask of the
+/// shape's alpha, so the paint and the motion stay those of a path; in its
+/// own colors, the uses are drawn in a group that carries the motion.
+fn write_glyph<W: Write + ?Sized>(
+    w: &mut W,
+    palette: &Palette,
+    e: &Element,
+    prefix: &str,
+    index: usize,
+) -> fmt::Result {
+    let Some(g) = &e.glyph else {
+        return Ok(());
+    };
+    let uses = |w: &mut W| -> fmt::Result {
+        for &(x, y) in &g.at {
+            write!(
+                w,
+                "<use href=\"#{prefix}-glyph{}-{}\" x=\"",
+                g.def,
+                g.part.side()
+            )?;
+            write_scaled(w, x, 3)?;
+            w.write_str("\" y=\"")?;
+            write_scaled(w, y, 3)?;
+            w.write_str("\"/>")?;
+        }
+        Ok(())
+    };
+    if g.keep_colors {
+        // A group only when there's motion to carry.
+        if e.anim.is_none() && e.pose.is_none() {
+            return uses(w);
+        }
+        w.write_str("<g")?;
+        if let Some(n) = e.anim {
+            write!(w, " class=\"{prefix}-e{n}\"")?;
+        }
+        write_pose(w, e)?;
+        w.write_char('>')?;
+        uses(w)?;
+        return w.write_str("</g>");
+    }
+    write!(
+        w,
+        "<mask id=\"{prefix}-gm{index}\" mask-type=\"alpha\" maskUnits=\"userSpaceOnUse\">"
+    )?;
+    uses(w)?;
+    write!(w, "</mask><path mask=\"url(#{prefix}-gm{index})\"")?;
+    write_element_paint(w, palette, e, prefix)?;
+    write_pose(w, e)?;
+    write!(w, " d=\"{}\"/>", e.path.data())
 }
 
 /// A path in sub-cells: a nested viewport over the code's modules, so the
@@ -1438,6 +1641,21 @@ fn id_prefix(style: &Style, qr: &QrMatrix) -> String {
         match &logo.content {
             Content::Svg(doc) => doc.to_document().bytes().for_each(&mut eat),
             Content::Raster { data, .. } => data.iter().copied().for_each(&mut eat),
+        }
+    }
+    // Custom shapes bring their own IDs too.
+    if style.glyphs.any() {
+        let g = &style.glyphs;
+        for glyph in core::iter::once(&g.modules).chain(&g.ring).chain(&g.eye) {
+            let Some(glyph) = glyph else {
+                eat(0);
+                continue;
+            };
+            eat(1 + glyph.keep_colors as u8);
+            match &glyph.content {
+                Content::Svg(doc) => doc.to_document().bytes().for_each(&mut eat),
+                Content::Raster { data, .. } => data.iter().copied().for_each(&mut eat),
+            }
         }
     }
     // An intro adds classes and keyframes, so two animations of one code

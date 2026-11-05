@@ -42,6 +42,65 @@ class LogoOptions {
   final Uint8List? raster;
 }
 
+/// The custom shapes' pictures a plan doesn't carry (SPEC §7.1, §7.2):
+/// raster glyphs' bytes from the Style document, by [GlyphSources.key].
+/// An SVG glyph has none here; give the widget an image for it.
+class GlyphSources {
+  /// No raster glyphs.
+  const GlyphSources([this.raster = const {}]);
+
+  /// Reads them from a Style document's `modules` and `finders`, a corner's
+  /// own ring or eye going over the one given for every finder.
+  factory GlyphSources.fromStyle(Object? style) {
+    try {
+      final doc = _decode(FreeQrent.styleJson(style));
+      if (doc is! Map) return const GlyphSources();
+      final out = <String, Uint8List>{};
+      Uint8List? rasterOf(Object? v) =>
+          v is Map && v['kind'] == 'glyph' && v['raster'] is String
+          ? _base64(v['raster'] as String)
+          : null;
+      final modules = rasterOf(doc['modules']);
+      if (modules != null) out[key('modules', null)] = modules;
+      final finders = doc['finders'];
+      if (finders is Map) {
+        final corners = finders['corners'];
+        for (final corner in const ['top-left', 'top-right', 'bottom-left']) {
+          final own = corners is Map ? corners[corner] : null;
+          for (final part in const ['ring', 'eye']) {
+            final given = own is Map && own.containsKey(part)
+                ? own[part]
+                : finders[part];
+            final bytes = rasterOf(given);
+            if (bytes != null) out[key(part, corner)] = bytes;
+          }
+        }
+      }
+      return GlyphSources(out);
+    } on Object {
+      return const GlyphSources();
+    }
+  }
+
+  /// The key of a glyph: `modules`, or a finder part at a corner
+  /// (`ring:top-left`).
+  static String key(String part, String? corner) =>
+      part == 'modules' ? part : '$part:$corner';
+
+  /// Raster glyphs' file bytes, by key.
+  final Map<String, Uint8List> raster;
+
+  /// The raster glyphs decoded, by key.
+  Future<Map<String, ui.Image>> decode() async {
+    final out = <String, ui.Image>{};
+    for (final MapEntry(:key, :value) in raster.entries) {
+      final codec = await ui.instantiateImageCodec(value);
+      out[key] = (await codec.getNextFrame()).image;
+    }
+    return out;
+  }
+}
+
 Object? _decode(String json) => jsonDecode(json);
 
 Uint8List _base64(String s) =>
@@ -50,14 +109,17 @@ Uint8List _base64(String s) =>
 /// A plan with its paths parsed.
 class QrScene {
   /// Prepares [plan] for drawing.
-  QrScene(this.plan, {this.logo = const LogoOptions()})
-    : paths = [
-        for (final l in plan.layers)
-          parseSvgPath(l.path)
-            ..fillType = l.evenOdd
-                ? ui.PathFillType.evenOdd
-                : ui.PathFillType.nonZero,
-      ] {
+  QrScene(
+    this.plan, {
+    this.logo = const LogoOptions(),
+    this.glyphs = const GlyphSources(),
+  }) : paths = [
+         for (final l in plan.layers)
+           parseSvgPath(l.path)
+             ..fillType = l.evenOdd
+                 ? ui.PathFillType.evenOdd
+                 : ui.PathFillType.nonZero,
+       ] {
     final finders = [
       for (var i = 0; i < plan.layers.length; i++)
         if (plan.layers[i].role == PlanRole.finderOuter) boundsOf(paths[i]),
@@ -101,6 +163,9 @@ class QrScene {
 
   /// What the plan doesn't say about the logo.
   final LogoOptions logo;
+
+  /// The custom shapes' raster pictures, from the style.
+  final GlyphSources glyphs;
 
   /// Each layer's path, in viewBox units.
   final List<ui.Path> paths;

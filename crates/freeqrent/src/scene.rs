@@ -211,6 +211,12 @@ pub(crate) fn filler(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Grid {
     grid
 }
 
+/// Whether the style's neighboring modules touch: never for a custom
+/// shape, which each module draws on its own.
+pub(crate) fn modules_touch(style: &Style) -> bool {
+    style.glyphs.modules.is_none() && touches(&style.modules)
+}
+
 /// Whether neighboring modules of `shape` touch, so a region must stay in
 /// one element (and, spread by region, in one color).
 pub(crate) fn touches(shape: &ModuleShape) -> bool {
@@ -561,7 +567,7 @@ fn spread(style: &Style, qr: &QrMatrix, data: Grid) -> Vec<(Token, Grid)> {
     }
     let size = qr.size() as usize;
     let mut grids: Vec<Grid> = tokens.iter().map(|_| Grid::new(size)).collect();
-    let connected = style.spread == ColorSpread::Regions && touches(&style.modules);
+    let connected = style.spread == ColorSpread::Regions && modules_touch(style);
     let mut rng = SplitMix64::new(seed(style, qr) ^ SPREAD_SALT);
     for region in regions(&data, size, connected) {
         let pick = (rng.next_f64() * tokens.len() as f64) as usize;
@@ -588,7 +594,7 @@ fn ink(style: &Style, rng: &mut SplitMix64, size: usize, grid: Grid) -> Vec<(f32
     let levels = [1.0, 1.0 - fade / 2.0, 1.0 - fade];
     let mut grids: Vec<Grid> = levels.iter().map(|_| Grid::new(size)).collect();
     // Like the colors, by touching region when the spread is.
-    let connected = style.spread == ColorSpread::Regions && touches(&style.modules);
+    let connected = style.spread == ColorSpread::Regions && modules_touch(style);
     for region in regions(&grid, size, connected) {
         let pick = (rng.next_f64() * levels.len() as f64) as usize;
         for (x, y) in region {
@@ -690,8 +696,10 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
     }
 
     // One finder layer for all three corners, unless a corner has its own
-    // token: then each corner gets a layer, so it can be re-themed alone.
+    // token or a custom shape: then each corner gets a layer, so it can be
+    // re-themed or drawn alone.
     let palette = &style.palette;
+    let glyphs = style.glyphs.any_finder();
     for (shared, per_corner, part) in [
         (
             Token::FinderOuter,
@@ -700,9 +708,10 @@ pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
         ),
         (Token::FinderEye, Token::CornerEye, Part::FinderEye),
     ] {
-        if CORNERS
-            .iter()
-            .any(|&c| palette.get(per_corner(c)).is_some())
+        if glyphs
+            || CORNERS
+                .iter()
+                .any(|&c| palette.get(per_corner(c)).is_some())
         {
             for c in CORNERS {
                 layers.push(Layer {

@@ -556,3 +556,59 @@ fn extracted_frames_keep_apart_from_the_logo() {
         stderr(&framed)
     );
 }
+
+#[test]
+fn shape_files_draw_the_parts_they_name() {
+    let dir = std::env::temp_dir().join(format!("freeqrent-glyphs-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let heart = dir.join("heart.svg");
+    std::fs::write(
+        &heart,
+        r#"<svg viewBox="0 0 10 10"><path d="M5 9 1 5a2.4 2.4 0 0 1 4-3 2.4 2.4 0 0 1 4 3z"/></svg>"#,
+    )
+    .unwrap();
+    let jpeg = dir.join("photo.jpg");
+    std::fs::write(&jpeg, [0xff, 0xd8, 0xff, 0xe0, 0, 0x10]).unwrap();
+    let heart = heart.to_str().unwrap();
+
+    let out = freeqrent(&[
+        "HELLO",
+        "--shape-file",
+        heart,
+        "--eye-file",
+        heart,
+        "--verify",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stdout(&out).contains("-glyph0-1\""));
+    assert!(stderr(&out).contains("warning: the modules are a custom shape"));
+    assert!(stderr(&out).contains("warning: a finder is a custom shape"));
+
+    let jpeg = jpeg.to_str().unwrap();
+    for (args, message) in [
+        (&["HELLO", "--shape-file", jpeg][..], "no transparency"),
+        (
+            &["HELLO", "--shape", "dots", "--shape-file", heart],
+            "--shape and --shape-file set the same part",
+        ),
+        (
+            &["HELLO", "--finder", "leaf/circle", "--eye-file", heart],
+            "--finder RING/EYE and --eye-file",
+        ),
+        (
+            &[
+                "HELLO",
+                "--corner",
+                "top-left=leaf",
+                "--corner-ring-file",
+                &format!("top-left={heart}"),
+            ],
+            "--corner and --corner-ring-file",
+        ),
+        (&["HELLO", "--keep-glyph-colors"], "needs a shape file"),
+    ] {
+        let out = freeqrent(args);
+        assert!(!out.status.success(), "{args:?}");
+        assert!(stderr(&out).contains(message), "{args:?}: {}", stderr(&out));
+    }
+}

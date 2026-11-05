@@ -81,6 +81,11 @@ func TestTypedStylesMatchTheirJSON(t *testing.T) {
 		), `{"logo":{"svg":` + jsonString(logoSVG) + `,"frame":{"kind":"orbit","width":0.6},"shape":"circle"},
 			"intro":{"preset":"sweep","logo":"spin","logo_timing":"with","ease":{"kind":"custom","x1":0.2,"y1":0,"x2":0,"y2":1}},
 			"idle":["logo-glint"],"encoding":{"ecc":"Q"}}`},
+		{"glyphs", NewStyle(
+			WithModules(Glyph{SVG: Ptr(logoSVG)}),
+			WithFinders(Finders{Ring: RingGlyph{Raster: []byte("\x89PNG\r\n\x1a\n")}, Eye: EyeGlyph{SVG: Ptr(logoSVG), KeepColors: Ptr(true)}}),
+		), `{"modules":{"kind":"glyph","svg":` + jsonString(logoSVG) + `},
+			"finders":{"ring":{"kind":"glyph","raster":"iVBORw0KGgo="},"eye":{"kind":"glyph","svg":` + jsonString(logoSVG) + `,"keep_colors":true}}}`},
 		{"palette shift", NewStyle(
 			WithIntro(PaletteShift{PaletteFrom: Palette{TokenFG: "#c2410c"}, DurationMS: Ptr[uint32](900), Trigger: TriggerHover{}}),
 		), `{"intro":{"palette_from":{"fg":"#c2410c"},"duration_ms":900,"trigger":"hover"}}`},

@@ -180,6 +180,19 @@ PAIRS: List[Any] = [
     (fq.Style(caption="scan me"), {"caption": "scan me"}),
     (fq.Style(caption=fq.Caption("$ scan", font="mono", tracking=10)), {"caption": {"text": "$ scan", "font": "mono", "tracking": 10}}),
     (
+        fq.Style(
+            modules=fq.GlyphModules(svg=SVG),
+            finders=fq.Finders(ring=fq.GlyphRing(raster=b"\x89PNG\r\n\x1a\n"), eye=fq.GlyphEye(svg=SVG, keep_colors=True)),
+        ),
+        {
+            "modules": {"kind": "glyph", "svg": SVG},
+            "finders": {
+                "ring": {"kind": "glyph", "raster": "iVBORw0KGgo="},
+                "eye": {"kind": "glyph", "svg": SVG, "keep_colors": True},
+            },
+        },
+    ),
+    (
         fq.Style(logo=fq.Logo(svg=SVG, frame=fq.RingLogoFrame(width=0.4), shape=fq.RoundedLogoShape(radius=0.3)), encoding=fq.Encoding(ecc="H")),
         {"logo": {"svg": SVG, "frame": {"kind": "ring", "width": 0.4}, "shape": {"kind": "rounded", "radius": 0.3}}, "encoding": {"ecc": "H"}},
     ),
@@ -273,7 +286,7 @@ def test_variants_carry_their_kind() -> None:
     assert fq.Dots.kind == "dots" and fq.Glow().kind == "glow"
     assert fq.NoneFrame.kind == "none" and fq.ClassTrigger.kind == "class"
     shapes = typing.get_args(fq.ModuleShape)
-    assert [getattr(s, "kind", None) for s in shapes[1:]] == ["square", "rounded", "dots", "liquid", "bars"]
+    assert [getattr(s, "kind", None) for s in shapes[1:]] == ["square", "rounded", "dots", "liquid", "bars", "glyph"]
 
 
 def test_a_bad_value_is_refused_by_the_core_with_its_path() -> None:

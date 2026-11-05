@@ -9,10 +9,11 @@ use core::fmt;
 #[cfg(feature = "animate")]
 use crate::animate::{Idle, Intro};
 use crate::check::{self, RenderError, ScanReport};
+use crate::glyph::{self, Glyph, Glyphs};
 #[cfg(feature = "halftone")]
 use crate::halftone::Halftone;
 use crate::logo::Logo;
-use crate::matrix::QrMatrix;
+use crate::matrix::{Corner, QrMatrix};
 use crate::palette::Palette;
 use crate::scanbox::{AlignmentStyle, FinderStyle, TimingStyle};
 use crate::svg;
@@ -330,6 +331,7 @@ pub struct Style {
     pub(crate) caption: Option<Caption>,
     pub(crate) seed: Option<u64>,
     pub(crate) logo: Option<Logo>,
+    pub(crate) glyphs: Glyphs,
     #[cfg(feature = "halftone")]
     pub(crate) halftone: Option<Halftone>,
     #[cfg(feature = "animate")]
@@ -365,6 +367,7 @@ impl Default for Style {
             caption: None,
             seed: None,
             logo: None,
+            glyphs: Glyphs::default(),
             #[cfg(feature = "halftone")]
             halftone: None,
             #[cfg(feature = "animate")]
@@ -587,6 +590,39 @@ impl Style {
         self
     }
 
+    /// Draws the data modules, plain timing and round-frame filler with a
+    /// custom shape (SPEC §7.1), fitted into each module. It replaces
+    /// [`Style::modules`]' shape; alignment patterns keep theirs. The
+    /// library can't see inside the picture, so the report warns
+    /// ([`Warning::CustomModules`](crate::Warning::CustomModules)): verify
+    /// that it scans.
+    pub fn module_glyph(mut self, glyph: Glyph) -> Style {
+        self.glyphs.modules = Some(glyph);
+        self
+    }
+
+    /// Draws every finder's ring (7×7) and eye (3×3) with custom shapes
+    /// (SPEC §7.2); `None` keeps that part's [`FinderStyle`] shape.
+    pub fn finder_glyphs(mut self, ring: Option<Glyph>, eye: Option<Glyph>) -> Style {
+        self.glyphs.ring = [ring.clone(), ring.clone(), ring];
+        self.glyphs.eye = [eye.clone(), eye.clone(), eye];
+        self
+    }
+
+    /// Draws one finder's ring and eye with custom shapes; `None` keeps
+    /// that part's [`FinderStyle`] shape.
+    pub fn corner_glyphs(
+        mut self,
+        corner: Corner,
+        ring: Option<Glyph>,
+        eye: Option<Glyph>,
+    ) -> Style {
+        let i = glyph::corner_index(corner);
+        self.glyphs.ring[i] = ring;
+        self.glyphs.eye[i] = eye;
+        self
+    }
+
     /// Builds the code from a picture (SPEC §7.7). Encode with
     /// [`QrBuilder::encode_text_for`](crate::QrBuilder::encode_text_for)
     /// so the free data bits are steered to match it.
@@ -683,6 +719,17 @@ impl Style {
     /// The logo, if any.
     pub fn logo_options(&self) -> Option<&Logo> {
         self.logo.as_ref()
+    }
+
+    /// The custom shape drawing the modules, if any.
+    pub fn module_glyph_options(&self) -> Option<&Glyph> {
+        self.glyphs.modules.as_ref()
+    }
+
+    /// The custom shapes drawing `corner`'s ring and eye, if any.
+    pub fn corner_glyph_options(&self, corner: Corner) -> (Option<&Glyph>, Option<&Glyph>) {
+        let i = glyph::corner_index(corner);
+        (self.glyphs.ring[i].as_ref(), self.glyphs.eye[i].as_ref())
     }
 
     /// The frame.

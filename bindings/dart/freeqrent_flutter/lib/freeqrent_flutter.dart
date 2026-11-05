@@ -16,6 +16,6 @@ library;
 export 'package:freeqrent/freeqrent.dart';
 
 export 'src/painter.dart' show QrScenePainter, PaletteBlend, lerpPaint;
-export 'src/scene.dart' show QrScene, LogoOptions;
+export 'src/scene.dart' show QrScene, LogoOptions, GlyphSources;
 export 'src/svg_path.dart' show parseSvgPath;
 export 'src/widget.dart';

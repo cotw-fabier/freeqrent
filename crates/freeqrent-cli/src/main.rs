@@ -13,8 +13,8 @@ use std::process::ExitCode;
 
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Border, Caption, CaptionFont, Clarity, ColorSpread, Corner,
-    Ease, Ecc, Effect, Emphasis, EyeShape, FinderStyle, Fit, FrameRing, Halftone, Idle, Ink, Intro,
-    Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape, Origin, Paint,
+    Ease, Ecc, Effect, Emphasis, EyeShape, FinderStyle, Fit, FrameRing, Glyph, Halftone, Idle, Ink,
+    Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape, Origin, Paint,
     Palette, PaletteOpts, PaletteReport, Preset, QrBuilder, QrCode, QrMatrix, RasterFormat,
     Rgba8Image, RingShape, ScanReport, StaggerOrder, Style, TargetSize, Texture, TimingStyle,
     Token, TrackingGrid, Trigger, Version,
@@ -40,6 +40,14 @@ Style:
                            eyes:  square rounded[:r] circle squircle leaf
   --corner CORNER=RING[/EYE]
                            override one finder (top-left, top-right, bottom-left)
+  --shape-file FILE        a custom module shape: SVG, or PNG, GIF or WebP with
+                           transparency, fitted into each module and painted
+                           in its token. Fill the module's center; --verify it
+  --ring-file FILE         a custom shape for every finder's 7x7 ring
+  --eye-file FILE          a custom shape for every finder's 3x3 eye
+  --corner-ring-file CORNER=FILE, --corner-eye-file CORNER=FILE
+                           a custom ring or eye for one finder
+  --keep-glyph-colors      draw custom shapes in their own colors (unchecked)
   --alignment match|RING[/EYE]
   --emphasis none|accent|outline
   --timing plain|dotted|dashed
@@ -181,6 +189,16 @@ pub struct StyleArgs {
     shape: Option<ModuleShape>,
     finder: Option<(RingShape, EyeShape)>,
     corners: Vec<(Corner, RingShape, EyeShape)>,
+    /// Each `--corner`'s corner, and whether it named an eye.
+    corner_eyes: Vec<(Corner, bool)>,
+    /// Whether `--finder` named an eye.
+    finder_eye: bool,
+    shape_file: Option<String>,
+    ring_file: Option<String>,
+    eye_file: Option<String>,
+    corner_ring_files: Vec<(Corner, String)>,
+    corner_eye_files: Vec<(Corner, String)>,
+    keep_glyph_colors: bool,
     alignment: Option<AlignmentShape>,
     emphasis: Option<Emphasis>,
     timing: Option<TimingStyle>,
@@ -305,6 +323,25 @@ fn load_logo(source: &str) -> Result<Logo, String> {
     logo.map_err(|e| format!("--logo {source}: {e}"))
 }
 
+/// Reads a custom shape file for `--flag`: SVG by extension or content,
+/// otherwise a raster format recognized by its signature.
+fn load_glyph(flag: &str, source: &str, keep_colors: bool) -> Result<Glyph, String> {
+    let bytes = fs::read(source).map_err(|e| format!("--{flag} {source}: {e}"))?;
+    let looks_svg =
+        source.to_ascii_lowercase().ends_with(".svg") || bytes.trim_ascii_start().starts_with(b"<");
+    let glyph = if looks_svg {
+        let text = String::from_utf8(bytes).map_err(|_| format!("--{flag} {source}: not UTF-8"))?;
+        Glyph::svg(&text)
+    } else {
+        let format = RasterFormat::sniff(&bytes)
+            .ok_or_else(|| format!("--{flag} {source}: not an SVG, PNG, GIF or WebP file"))?;
+        Glyph::raster(bytes, format)
+    };
+    glyph
+        .map(|g| g.keep_colors(keep_colors))
+        .map_err(|e| format!("--{flag} {source}: {e}"))
+}
+
 /// The colors of `--logo`, so an extracted frame keeps apart from them: a
 /// vector logo's paints, or a raster's swatches by share.
 fn logo_colors(source: &str) -> Result<Vec<freeqrent::Color>, String> {
@@ -324,6 +361,82 @@ fn logo_colors(source: &str) -> Result<Vec<freeqrent::Color>, String> {
 }
 
 impl StyleArgs {
+    /// The custom shapes of `--shape-file`, `--ring-file`, `--eye-file` and
+    /// the per-corner files, on `style`.
+    fn glyphs(&self, mut style: Style) -> Result<Style, String> {
+        let keep = self.keep_glyph_colors;
+        let load = |flag: &str, file: &Option<String>| {
+            file.as_deref()
+                .map(|f| load_glyph(flag, f, keep))
+                .transpose()
+        };
+        if self.shape_file.is_none()
+            && self.ring_file.is_none()
+            && self.eye_file.is_none()
+            && self.corner_ring_files.is_empty()
+            && self.corner_eye_files.is_empty()
+        {
+            if keep {
+                return Err("--keep-glyph-colors needs a shape file".to_string());
+            }
+            return Ok(style);
+        }
+        // A shape file and a built-in shape for the same part can't both be
+        // drawn; the style document holds one of them, so neither may the
+        // command line.
+        let clash = |what: &str| Err(format!("{what} set the same part; give one"));
+        if self.shape.is_some() && self.shape_file.is_some() {
+            return clash("--shape and --shape-file");
+        }
+        if self.finder.is_some() && self.ring_file.is_some() {
+            return clash("--finder and --ring-file");
+        }
+        if self.finder_eye && self.eye_file.is_some() {
+            return clash("--finder RING/EYE and --eye-file");
+        }
+        for &(corner, named_eye) in &self.corner_eyes {
+            let named = |files: &[(Corner, String)]| files.iter().any(|(c, _)| *c == corner);
+            if named(&self.corner_ring_files) || (named_eye && named(&self.corner_eye_files)) {
+                return clash("--corner and --corner-ring-file or --corner-eye-file");
+            }
+        }
+        if let Some(glyph) = load("shape-file", &self.shape_file)? {
+            style = style.module_glyph(glyph);
+        }
+        let ring = load("ring-file", &self.ring_file)?;
+        let eye = load("eye-file", &self.eye_file)?;
+        if ring.is_some() || eye.is_some() {
+            style = style.finder_glyphs(ring, eye);
+        }
+        // A `--corner` names that finder's ring, and maybe its eye: those
+        // parts drop the shape files given for every finder.
+        for &(corner, named_eye) in &self.corner_eyes {
+            let (_, eye) = style.corner_glyph_options(corner);
+            let eye = if named_eye { None } else { eye.cloned() };
+            style = style.corner_glyphs(corner, None, eye);
+        }
+        for corner in [Corner::TopLeft, Corner::TopRight, Corner::BottomLeft] {
+            let given = |files: &[(Corner, String)], flag: &str| {
+                files
+                    .iter()
+                    .rev()
+                    .find(|(c, _)| *c == corner)
+                    .map(|(_, f)| load_glyph(flag, f, keep))
+                    .transpose()
+            };
+            let r = given(&self.corner_ring_files, "corner-ring-file")?;
+            let e = given(&self.corner_eye_files, "corner-eye-file")?;
+            if r.is_none() && e.is_none() {
+                continue;
+            }
+            let (base_r, base_e) = style.corner_glyph_options(corner);
+            let r = r.or_else(|| base_r.cloned());
+            let e = e.or_else(|| base_e.cloned());
+            style = style.corner_glyphs(corner, r, e);
+        }
+        Ok(style)
+    }
+
     /// Applies a flag without a value. Returns `false` when `flag` isn't
     /// one.
     pub fn set_switch(&mut self, flag: &str) -> bool {
@@ -333,6 +446,7 @@ impl StyleArgs {
             "dark" => self.dark = true,
             "no-logo-backdrop" => self.no_logo_backdrop = true,
             "keep-modules" => self.keep_modules = true,
+            "keep-glyph-colors" => self.keep_glyph_colors = true,
             "no-steer" => self.no_steer = true,
             "caption-regular" => self.caption_regular = true,
             _ => return false,
@@ -346,8 +460,20 @@ impl StyleArgs {
         match flag {
             "preset" => self.preset = Some(options::preset_style(value)?),
             "shape" => self.shape = Some(options::shape(value)?),
-            "finder" => self.finder = Some(options::finder(value)?),
-            "corner" => self.corners.push(options::corner(value)?),
+            "finder" => {
+                self.finder = Some(options::finder(value)?);
+                self.finder_eye = value.contains('/');
+            }
+            "corner" => {
+                let (corner, ring, eye) = options::corner(value)?;
+                self.corners.push((corner, ring, eye));
+                self.corner_eyes.push((corner, value.contains('/')));
+            }
+            "shape-file" => self.shape_file = Some(value.to_string()),
+            "ring-file" => self.ring_file = Some(value.to_string()),
+            "eye-file" => self.eye_file = Some(value.to_string()),
+            "corner-ring-file" => self.corner_ring_files.push(options::corner_file(value)?),
+            "corner-eye-file" => self.corner_eye_files.push(options::corner_file(value)?),
             "alignment" => self.alignment = Some(options::alignment(value)?),
             "emphasis" => self.emphasis = Some(options::emphasis(value)?),
             "timing" => self.timing = Some(options::timing(value)?),
@@ -672,6 +798,7 @@ impl StyleArgs {
         if let Some(h) = halftone {
             style = style.halftone(h);
         }
+        style = self.glyphs(style)?;
         if let Some(source) = &self.logo {
             let mut logo = load_logo(source)?
                 .backdrop(!self.no_logo_backdrop)

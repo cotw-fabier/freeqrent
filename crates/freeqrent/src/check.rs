@@ -6,6 +6,7 @@ use core::fmt;
 
 use crate::Ecc;
 use crate::geometry::Grid;
+use crate::glyph::GlyphPart;
 #[cfg(feature = "halftone")]
 use crate::halftone::{self, Steering};
 use crate::logo::{self, LogoShape};
@@ -166,6 +167,9 @@ pub enum RenderError {
     /// and an opaque background: without them it would show through the
     /// quiet zone and between the modules.
     ShadowNeedsBackground,
+    /// Custom shapes ([`Glyph`](crate::Glyph)) can't be drawn on a
+    /// picture (SPEC §7.7), whose modules are sub-cells.
+    GlyphOnPicture,
     /// The output sink returned an error.
     Write,
 }
@@ -218,6 +222,9 @@ impl fmt::Display for RenderError {
             ),
             RenderError::ShadowNeedsBackground => {
                 f.write_str("a shadow needs a frame and an opaque background")
+            }
+            RenderError::GlyphOnPicture => {
+                f.write_str("custom shapes can't be drawn on a picture code")
             }
             RenderError::Write => f.write_str("the output sink failed"),
         }
@@ -294,6 +301,18 @@ pub enum Warning {
         /// How many.
         count: usize,
     },
+    /// The data modules are a custom shape ([`Style::module_glyph`](crate::Style::module_glyph)).
+    /// Scanners read each module's center, and the library can't see how
+    /// much of it the picture fills: verify the code
+    /// (`freeqrent_verify::verify_style`, or the CLI's `--verify`).
+    CustomModules,
+    /// A finder's ring or eye is a custom shape. Scanners find a code by
+    /// the finders' 1:1:3:1:1 profile, which is now up to the picture:
+    /// verify the code. Like [`Warning::RoundedFinder`], quirc-style
+    /// decoders may lose it.
+    CustomFinder,
+    /// A custom shape keeps its own colors, whose contrast isn't checked.
+    GlyphColors,
 }
 
 /// Intros longer than this raise [`Warning::LongIntro`] (SPEC §8.1).
@@ -351,6 +370,15 @@ impl fmt::Display for Warning {
             ),
             Warning::TranslucentBackground => f.write_str(
                 "bg is translucent; contrast was judged over white and depends on the page",
+            ),
+            Warning::CustomModules => f.write_str(
+                "the modules are a custom shape, which can't be checked; verify that the code scans",
+            ),
+            Warning::CustomFinder => f.write_str(
+                "a finder is a custom shape, which can't be checked; verify that the code scans",
+            ),
+            Warning::GlyphColors => f.write_str(
+                "a custom shape keeps its own colors, whose contrast isn't checked",
             ),
         }
     }
@@ -780,7 +808,10 @@ fn check_scan_boxes(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut
     let mut rings = Vec::new();
     for corner in scene::CORNERS {
         let (ring, eye) = style.finders.at(corner);
-        rings.push(ring);
+        // A custom ring replaces the shape; its own warning says so.
+        if style.glyphs.get(GlyphPart::Ring, Some(corner)).is_none() {
+            rings.push(ring);
+        }
         if let RingShape::Rounded(r) = ring {
             in_range(errors, "FinderStyle.outer radius", r, 0.0, 2.5);
         }
@@ -799,6 +830,31 @@ fn check_scan_boxes(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut
     }
     if rings.iter().any(|&r| r != RingShape::Square) {
         warnings.push(Warning::RoundedFinder);
+    }
+    check_glyphs(style, errors, warnings);
+}
+
+/// Custom shapes (SPEC §7.1, §7.2): the library can't see inside them, so
+/// they always warn.
+fn check_glyphs(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut Vec<Warning>) {
+    let g = &style.glyphs;
+    if !g.any() {
+        return;
+    }
+    #[cfg(feature = "halftone")]
+    if style.halftone.is_some() {
+        errors.push(RenderError::GlyphOnPicture);
+    }
+    let _ = &errors;
+    if g.modules.is_some() {
+        warnings.push(Warning::CustomModules);
+    }
+    if g.any_finder() {
+        warnings.push(Warning::CustomFinder);
+    }
+    let all = core::iter::once(&g.modules).chain(&g.ring).chain(&g.eye);
+    if all.flatten().any(|glyph| glyph.keep_colors) {
+        warnings.push(Warning::GlyphColors);
     }
 }
 

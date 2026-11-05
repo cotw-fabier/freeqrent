@@ -56,6 +56,7 @@ Future<Gray> draw(
   bool atRest = false,
   double scale = 8,
   Map<String, String>? palette,
+  Map<String, ui.Image> glyphs = const {},
   String? dumpTo,
 }) async {
   final vb = scene.plan.viewBox;
@@ -67,6 +68,7 @@ Future<Gray> draw(
     timeMs: timeMs,
     atRest: atRest,
     palette: PaletteBlend(palette ?? scene.plan.palette),
+    glyphImages: glyphs,
   ).paint(canvas, ui.Size(vb.x * scale, vb.y * scale));
   final picture = recorder.endRecording();
   final image = await picture.toImage(w, h);

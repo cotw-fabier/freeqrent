@@ -94,6 +94,31 @@ final class PlanOutline {
   final double dashOffset;
 }
 
+/// A custom shape drawn into a layer's boxes (SPEC §7.1, §7.2). The plan
+/// doesn't carry the picture: a player reads it from the style's
+/// `modules`, or the ring or eye of the layer's corner.
+final class PlanGlyph {
+  PlanGlyph._fromJson(Map<String, Object?> j)
+    : part = j['part'] as String,
+      side = _d(j['side']),
+      keepColors = j['keepColors'] == true,
+      at = [for (final p in j['at'] as List) _point(p)];
+
+  /// `modules`, `ring` or `eye`.
+  final String part;
+
+  /// Each box's side, in viewBox units; the picture is fitted into it
+  /// (`meet`, centered).
+  final double side;
+
+  /// Drawn in its own colors; otherwise its alpha is painted in the layer's
+  /// token.
+  final bool keepColors;
+
+  /// Each box's top-left corner, in viewBox units.
+  final List<PlanPoint> at;
+}
+
 /// One drawn layer, in paint order.
 final class PlanLayer {
   PlanLayer._fromJson(Map<String, Object?> j)
@@ -112,6 +137,9 @@ final class PlanLayer {
       group = j['group'] as int?,
       corner = j['corner'] as String?,
       origin = _point(j['origin']),
+      glyph = j['glyph'] == null
+          ? null
+          : PlanGlyph._fromJson(j['glyph'] as Map<String, Object?>),
       path = j['path'] as String;
 
   /// The role as the plan names it.
@@ -154,6 +182,10 @@ final class PlanLayer {
 
   /// Transform origin, in viewBox units.
   final PlanPoint origin;
+
+  /// For a part a custom shape draws: where it goes. The path is then the
+  /// boxes it fits into.
+  final PlanGlyph? glyph;
 
   /// SVG path data in viewBox units.
   final String path;

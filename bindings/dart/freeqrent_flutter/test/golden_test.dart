@@ -19,7 +19,12 @@ void main() {
     test('final frame of $name matches resvg', () async {
       final style = c['style'];
       final plan = FreeQrent.plan(payload, style: style);
-      final scene = QrScene(plan, logo: LogoOptions.fromStyle(style));
+      final scene = QrScene(
+        plan,
+        logo: LogoOptions.fromStyle(style),
+        glyphs: GlyphSources.fromStyle(style),
+      );
+      final glyphs = await scene.glyphs.decode();
       final reference = await Gray.png(File('test/goldens/$name.png'));
       final vb = ui.Size(plan.viewBox.x, plan.viewBox.y);
       expect(reference.width, (vb.width * scale).ceil());
@@ -45,6 +50,7 @@ void main() {
             scene,
             atRest: true,
             scale: scale,
+            glyphs: glyphs,
             dumpTo: dump == null ? null : '$dump-rest.png',
           ),
         ),
@@ -54,6 +60,7 @@ void main() {
             scene,
             timeMs: plan.totalMs.toDouble(),
             scale: scale,
+            glyphs: glyphs,
             dumpTo: dump == null ? null : '$dump-end.png',
           ),
         ),
