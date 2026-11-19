@@ -762,7 +762,18 @@ pub(crate) fn write<W: Write + ?Sized>(
             Some((first, last))
         })
         .flatten();
+    // Glass (SPEC §7.9): the photo and its baked glass, right over the
+    // background, under the border, caption and logo.
+    #[cfg(feature = "halftone")]
+    let mut glass = crate::glass::bake(style, qr, &canvas);
     for (i, e) in elements.iter().enumerate() {
+        #[cfg(feature = "halftone")]
+        if !matches!(e.role, LayerRole::Shadow | LayerRole::Background)
+            && let Some(baked) = glass.take()
+        {
+            out.line()?;
+            write_glass(&mut out, style, &canvas, &prefix, &baked)?;
+        }
         out.line()?;
         #[cfg(feature = "animate")]
         if let (Some((first, _)), Some(m)) = (masked, &motion)
@@ -908,6 +919,11 @@ pub(crate) fn write<W: Write + ?Sized>(
             out.w.write_str("</g>")?;
         }
     }
+    #[cfg(feature = "halftone")]
+    if let Some(baked) = glass.take() {
+        out.line()?;
+        write_glass(&mut out, style, &canvas, &prefix, &baked)?;
+    }
     if out.pretty {
         out.w.write_char('\n')?;
     }
@@ -916,6 +932,60 @@ pub(crate) fn write<W: Write + ?Sized>(
         out.w.write_char('\n')?;
     }
     Ok(())
+}
+
+/// Glass ink's two images (SPEC §7.9): the photo from its own file,
+/// placed as the picture's fit and focal point choose and clipped to the
+/// card (rounded with the frame, square above a caption's band), then the
+/// baked glass over the code and its quiet zone.
+#[cfg(feature = "halftone")]
+fn write_glass<W: Write + ?Sized>(
+    out: &mut Out<'_, W>,
+    style: &Style,
+    canvas: &Canvas,
+    prefix: &str,
+    baked: &crate::glass::Baked,
+) -> fmt::Result {
+    let Some(h) = style.halftone.as_ref() else {
+        return Ok(());
+    };
+    let u = |v: f64| math::round(v * UNIT as f64) as i64;
+    let card = canvas.card * UNIT;
+    let mut clip = Path::new();
+    match style.frame {
+        Frame::RoundedSquare(r) if geometry::units(r) > 0 => {
+            let r = geometry::units(r);
+            let low = if canvas.band > 0 { 0 } else { r };
+            clip.rounded_rect(0, 0, card, card, [r, r, low, low]);
+        }
+        _ => clip.rect(0, 0, card, card),
+    }
+    write!(
+        out.w,
+        "<clipPath id=\"{prefix}-photo\"><path d=\"{}\"/></clipPath><image clip-path=\"url(#{prefix}-photo)\"",
+        clip.data()
+    )?;
+    let (x, y, w, hgt) = crate::glass::photo_box(h, canvas);
+    for (name, v) in [("x", x), ("y", y), ("width", w), ("height", hgt)] {
+        write!(out.w, " {name}=\"")?;
+        write_scaled(out.w, u(v), 3)?;
+        out.w.write_char('"')?;
+    }
+    out.w.write_str(" preserveAspectRatio=\"none\"")?;
+    if let Some((format, data)) = &h.source {
+        write!(out.w, " href=\"data:{};base64,", format.mime())?;
+        logo::base64(out.w, data)?;
+        out.w.write_char('"')?;
+    }
+    out.w.write_str("/>")?;
+    out.line()?;
+    let (at, side) = (baked.at, baked.side);
+    write!(
+        out.w,
+        "<image x=\"{at}\" y=\"{at}\" width=\"{side}\" height=\"{side}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,"
+    )?;
+    logo::base64(out.w, &baked.png)?;
+    out.w.write_str("\"/>")
 }
 
 /// A custom shape's definition: the picture fitted (`meet`) into a box of

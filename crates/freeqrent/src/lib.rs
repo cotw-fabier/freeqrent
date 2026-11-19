@@ -103,6 +103,10 @@
 //! modules, and the encoder chooses the free data bits so the modules
 //! follow it. `Style::art` is the large-image setup, with crisp tracking
 //! boxes on an alignment grid ([`TrackingGrid`]).
+//! [`Ink::Glass`] keeps the photograph whole instead, full frame, with the
+//! code baked over it as liquid glass ([`Glass`]); the photo is embedded
+//! from its own file ([`Halftone::source`]) and the glass as a PNG from
+//! the crate's own encoder ([`png::encode_rgba`]).
 //!
 //! # Animation
 //!
@@ -159,6 +163,8 @@ mod error;
 mod extract;
 mod geometry;
 mod gf;
+#[cfg(feature = "halftone")]
+mod glass;
 mod glyph;
 #[cfg(feature = "halftone")]
 mod halftone;
@@ -205,7 +211,9 @@ pub mod plan {
 }
 pub use check::{
     ANIMATED_ELEMENTS, CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, DAMAGE_BUDGET_H,
-    FRAME_FLOOR, HALFTONE_DAMAGE_BUDGET, LONG_INTRO_MS, RenderError, ScanReport, Warning,
+    FRAME_FLOOR, GLASS_FINDER_FLOOR, GLASS_FINDER_WARNING, GLASS_FULL_BAR_VERSION,
+    GLASS_PLATE_FLOOR, GLASS_RESOLUTION, GLASS_SAFE_TARGETS, GLASS_TARGET_MARGIN,
+    HALFTONE_DAMAGE_BUDGET, LARGE_OUTPUT_BYTES, LONG_INTRO_MS, RenderError, ScanReport, Warning,
 };
 pub use code::{QrBuilder, QrCode};
 pub use color::{Color, ColorError};
@@ -215,6 +223,8 @@ pub use extract::{
     Choice, EXTRACT_CONTRAST, ExtractError, INVERTED_CONTRAST, Origin, PaletteOpts, PaletteReport,
     Swatch,
 };
+#[cfg(feature = "halftone")]
+pub use glass::Glass;
 pub use glyph::{Glyph, GlyphError, GlyphPart, MAX_GLYPH_RASTER, MAX_GLYPH_SVG};
 #[cfg(feature = "halftone")]
 pub use halftone::{Clarity, DEFAULT_BANDS, DEFAULT_CLARITY, Fit, Halftone, Ink, Steering};

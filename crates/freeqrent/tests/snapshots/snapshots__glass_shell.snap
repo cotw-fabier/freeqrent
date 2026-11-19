@@ -1,0 +1,11 @@
+---
+source: crates/freeqrent/tests/snapshots.rs
+expression: elide_payloads(&svg)
+---
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 35 39" class="qr" role="img" aria-label="QR code">
+  <style>@supports (color:var(--a)){.qr0a56694a-bg{fill:var(--qr-bg,#fefcf8)}.qr0a56694a-caption{fill:var(--qr-caption,var(--qr-fg,#17161c))}}</style>
+  <rect width="35" height="39" rx="2" class="qr0a56694a-bg" fill="#fefcf8"/>
+  <clipPath id="qr0a56694a-photo"><path d="m2 0h31a2 2 0 0 1 2 2v33h-35v-33a2 2 0 0 1 2-2z"/></clipPath><image clip-path="url(#qr0a56694a-photo)" x="0" y="0" width="35" height="35" preserveAspectRatio="none" href="data:image/png;base64,[196 chars, fnv 872f20eb2194e0db]"/>
+  <image x="3" y="3" width="29" height="29" preserveAspectRatio="none" href="data:image/png;base64,[34124 chars, fnv f364ddeea57d8e82]"/>
+  <text x="17.5" y="36.8" font-family="ui-sans-serif, system-ui, sans-serif" font-size="2" font-weight="700" text-anchor="middle" dominant-baseline="central" class="qr0a56694a-caption" fill="#17161c">Scan me</text>
+</svg>

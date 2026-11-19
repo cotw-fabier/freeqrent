@@ -316,6 +316,7 @@ pub struct Style {
     pub(crate) palette: Palette,
     pub(crate) quiet_zone: u8,
     pub(crate) allow_inverted: bool,
+    pub(crate) allow_unscannable: bool,
     pub(crate) minify: bool,
     pub(crate) title: Option<String>,
     pub(crate) description: Option<String>,
@@ -352,6 +353,7 @@ impl Default for Style {
             palette: Palette::default(),
             quiet_zone: 4,
             allow_inverted: false,
+            allow_unscannable: false,
             minify: true,
             title: None,
             description: None,
@@ -425,9 +427,13 @@ impl Style {
     }
 
     /// Whether the ink (`fg`) is lighter than the background: a picture
-    /// is then traced from its light parts (SPEC §7.7).
+    /// is then traced from its light parts (SPEC §7.7). Glass paints no
+    /// `fg`: its dark modules are dark glass on any palette (§7.9).
     #[cfg(feature = "halftone")]
     pub(crate) fn inverted_ink(&self) -> bool {
+        if self.halftone.as_ref().is_some_and(|h| h.glass().is_some()) {
+            return false;
+        }
         self.palette.contrast(crate::Token::Fg).inverted
     }
 
@@ -436,6 +442,25 @@ impl Style {
     pub fn allow_inverted(mut self, allow: bool) -> Style {
         self.allow_inverted = allow;
         self
+    }
+
+    /// Renders a code the checks measured not to scan, instead of refusing
+    /// it (SPEC §9; default false). The errors this covers
+    /// ([`RenderError::GlassHaloTooNarrow`](crate::RenderError::GlassHaloTooNarrow),
+    /// [`RenderError::GlassFinderContrast`](crate::RenderError::GlassFinderContrast),
+    /// [`RenderError::GlassTargetsTooWeak`](crate::RenderError::GlassTargetsTooWeak))
+    /// become warnings of the same names, and
+    /// [`ScanReport::scannable`](crate::ScanReport::scannable) is false:
+    /// the code is drawn as asked and probably doesn't scan. Nothing else
+    /// changes; a style without such an error renders as before.
+    pub fn allow_unscannable(mut self, allow: bool) -> Style {
+        self.allow_unscannable = allow;
+        self
+    }
+
+    /// Whether codes measured not to scan render ([`Style::allow_unscannable`]).
+    pub fn unscannable_allowed(&self) -> bool {
+        self.allow_unscannable
     }
 
     /// Compact output (the default) or one element per line.
@@ -810,12 +835,20 @@ impl Style {
     }
 
     /// The animation as data (SPEC §8.5): layers and tracks, for players
-    /// other than CSS. Fails like [`render`](Style::render).
+    /// other than CSS. Fails like [`render`](Style::render), and for glass
+    /// ink, whose layers plans don't carry yet
+    /// ([`RenderError::GlassUnsupported`]).
     #[cfg(feature = "animate")]
     pub fn plan(&self, qr: &QrMatrix) -> Result<crate::AnimationPlan, RenderError> {
         let report = self.check(qr);
         if let Some(error) = report.errors.into_iter().next() {
             return Err(error);
+        }
+        #[cfg(feature = "halftone")]
+        if self.halftone.as_ref().is_some_and(|h| h.glass().is_some()) {
+            return Err(RenderError::GlassUnsupported {
+                option: "Style::plan",
+            });
         }
         Ok(crate::animate::plan(self, qr))
     }

@@ -29,6 +29,9 @@ pub enum ImageError {
     },
     /// `width × height × 4` doesn't fit in memory on this platform.
     TooLarge,
+    /// Encoded bytes ([`Halftone::source`](crate::Halftone::source)) don't
+    /// start with the signature of this format.
+    NotImage(crate::logo::RasterFormat),
 }
 
 impl fmt::Display for ImageError {
@@ -39,6 +42,7 @@ impl fmt::Display for ImageError {
                 write!(f, "expected {expected} bytes of RGBA, got {actual}")
             }
             ImageError::TooLarge => f.write_str("the image is too large"),
+            ImageError::NotImage(format) => write!(f, "the bytes aren't {}", format.mime()),
         }
     }
 }

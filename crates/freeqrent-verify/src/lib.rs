@@ -186,14 +186,18 @@ impl Bar {
     /// and the degraded render, which round rings miss at large versions.
     /// A custom finder is held to the rounded finder's bar; custom modules
     /// keep the full bar (the reference glyphs meet it, W20261031121341).
+    /// A glass code past the version where rqrr held
+    /// ([`Warning::GlassNeedsZxing`]) drops rqrr only: ZXing still reads
+    /// every render, the degraded one included (SPEC §7.9).
     /// An inverted code is read inverted.
     pub fn for_report(report: &ScanReport) -> Bar {
         let warned = |f: fn(&Warning) -> bool| report.warnings.iter().any(f);
         let low_contrast = warned(|w| matches!(w, Warning::LowContrast { .. }));
         let rounded = warned(|w| matches!(w, Warning::RoundedFinder | Warning::CustomFinder));
+        let zxing = warned(|w| matches!(w, Warning::GlassNeedsZxing { .. }));
         Bar {
             degraded: !low_contrast && !rounded,
-            rqrr: !rounded,
+            rqrr: !rounded && !zxing,
             inverted: warned(|w| matches!(w, Warning::Inverted { .. })),
         }
     }

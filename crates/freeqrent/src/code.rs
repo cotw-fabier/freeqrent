@@ -160,8 +160,9 @@ impl QrBuilder {
         let inverted = style.inverted_ink();
         let wants = |v: Version| {
             let roles = crate::matrix::skeleton(v);
-            let mut wants =
-                halftone::wants(halftone, &roles, v.size() as usize, backdrop, inverted);
+            let n = v.size() as usize;
+            let span = crate::glass::span(style, n);
+            let mut wants = halftone::wants(halftone, &roles, n, span, backdrop, inverted);
             for i in scene::cleared_in(style, v, &roles) {
                 wants[i] = Want {
                     dark: false,

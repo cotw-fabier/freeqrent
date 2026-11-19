@@ -7,7 +7,9 @@ use alloc::vec::Vec;
 
 use crate::color::{Color, linear_to_oklab, srgb_to_linear};
 use crate::geometry::{FIFTHS, Grid, Path, UNIT};
-use crate::image::Rgba8Image;
+use crate::glass::Glass;
+use crate::image::{ImageError, Rgba8Image};
+use crate::logo::RasterFormat;
 use crate::math;
 use crate::matrix::{ModuleRole, QrMatrix};
 use crate::steer::Want;
@@ -24,7 +26,8 @@ pub enum Fit {
     Contain,
 }
 
-/// How halftone sub-cells are painted (SPEC §7.7 rule 3).
+/// How halftone sub-cells are painted (SPEC §7.7 rule 3), or the picture
+/// kept whole under glass (§7.9).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Ink {
@@ -38,6 +41,10 @@ pub enum Ink {
         /// Colors per band.
         colors: u8,
     },
+    /// The photograph full frame with the code laid on it as liquid
+    /// glass (SPEC §7.9): no sub-cells, a baked glass layer over the
+    /// original photo. Needs [`Halftone::source`].
+    Glass(Glass),
 }
 
 /// Where the picture gives way to plain modules (SPEC §7.7 rule 4):
@@ -87,6 +94,8 @@ pub struct Halftone {
     pub(crate) ink: Ink,
     pub(crate) bands: (f32, f32),
     pub(crate) clarity: Clarity,
+    /// The picture's encoded file, embedded as it is ([`Ink::Glass`]).
+    pub(crate) source: Option<(RasterFormat, Vec<u8>)>,
 }
 
 /// The default [`Halftone::bands`].
@@ -104,6 +113,39 @@ impl Halftone {
             ink: Ink::Mono,
             bands: DEFAULT_BANDS,
             clarity: Clarity::default(),
+            source: None,
+        }
+    }
+
+    /// The picture's encoded file (PNG, JPEG, GIF or WebP), which
+    /// [`Ink::Glass`] embeds as the photo, untouched, as a base64 `data:`
+    /// URI. The bytes must start with `format`'s signature; they aren't
+    /// decoded, so they must be the same picture as the pixels given to
+    /// [`Halftone::new`] (any resolution, the same aspect ratio): the glass
+    /// is computed from the pixels and laid over the file.
+    pub fn source(
+        mut self,
+        bytes: impl Into<Vec<u8>>,
+        format: RasterFormat,
+    ) -> Result<Halftone, ImageError> {
+        let data = bytes.into();
+        if RasterFormat::sniff(&data) != Some(format) {
+            return Err(ImageError::NotImage(format));
+        }
+        self.source = Some((format, data));
+        Ok(self)
+    }
+
+    /// The encoded file and its format, if one was given.
+    pub fn source_file(&self) -> Option<(&[u8], RasterFormat)> {
+        self.source.as_ref().map(|(f, d)| (d.as_slice(), *f))
+    }
+
+    /// The glass, when the ink is [`Ink::Glass`].
+    pub(crate) fn glass(&self) -> Option<&Glass> {
+        match &self.ink {
+            Ink::Glass(g) => Some(g),
+            _ => None,
         }
     }
 
@@ -217,9 +259,12 @@ pub(crate) struct Cell {
 impl Cell {
     /// The cell over `backdrop` (opaque, linear sRGB), in OKLab.
     pub(crate) fn over(self, backdrop: [f64; 3]) -> [f64; 3] {
-        linear_to_oklab(core::array::from_fn(|i| {
-            (self.rgb[i] + (1.0 - self.alpha) * backdrop[i]).clamp(0.0, 1.0)
-        }))
+        linear_to_oklab(self.over_linear(backdrop))
+    }
+
+    /// The cell over `backdrop` (opaque, linear sRGB), in linear sRGB.
+    pub(crate) fn over_linear(self, backdrop: [f64; 3]) -> [f64; 3] {
+        core::array::from_fn(|i| (self.rgb[i] + (1.0 - self.alpha) * backdrop[i]).clamp(0.0, 1.0))
     }
 }
 
@@ -228,13 +273,52 @@ pub(crate) fn linear(color: Color) -> [f64; 3] {
     color.to_srgb().map(srgb_to_linear)
 }
 
+/// The part of the picture's square the code covers, as fractions of its
+/// side: all of it, except under glass, where the photo fills the whole
+/// canvas and the code is inset (SPEC §7.9).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Span {
+    pub(crate) start: f64,
+    pub(crate) len: f64,
+}
+
+impl Span {
+    pub(crate) const WHOLE: Span = Span {
+        start: 0.0,
+        len: 1.0,
+    };
+}
+
 /// Samples `image` onto an `n` × `n` grid laid over the square as `fit`
 /// and `focal` place it: box averages where cells cover several pixels,
 /// bilinear where they're smaller than one.
 pub(crate) fn sample(image: &Rgba8Image, fit: Fit, focal: (f32, f32), n: usize) -> Vec<Cell> {
+    sample_span(image, fit, focal, Span::WHOLE, n)
+}
+
+/// [`sample`] over the `span` of the square.
+pub(crate) fn sample_span(
+    image: &Rgba8Image,
+    fit: Fit,
+    focal: (f32, f32),
+    span: Span,
+    n: usize,
+) -> Vec<Cell> {
+    let sampler = Sampler::new(image, fit, focal, span, n);
+    let mut cells = Vec::with_capacity(n * n);
+    for cy in 0..n {
+        for cx in 0..n {
+            cells.push(sampler.cell(cx as i64, cy as i64));
+        }
+    }
+    cells
+}
+
+/// The square in image pixels that `fit` and `focal` lay over the code:
+/// its side and top-left corner.
+pub(crate) fn square(image: &Rgba8Image, fit: Fit, focal: (f32, f32)) -> (f64, f64, f64) {
     let (w, h) = (image.width() as f64, image.height() as f64);
-    // The square in image pixels: its side and top-left corner.
-    let (side, x0, y0) = match fit {
+    match fit {
         Fit::Cover => {
             let s = w.min(h);
             let at = |len: f64, f: f32| (f as f64 * len - s / 2.0).clamp(0.0, len - s);
@@ -244,17 +328,53 @@ pub(crate) fn sample(image: &Rgba8Image, fit: Fit, focal: (f32, f32), n: usize) 
             let s = w.max(h);
             (s, -(s - w) * focal.0 as f64, -(s - h) * focal.1 as f64)
         }
-    };
-    let linear: Vec<f64> = (0..=255u8)
-        .map(|c| srgb_to_linear(c as f64 / 255.0))
-        .collect();
-    let data = image.data();
-    let (iw, ih) = (image.width() as i64, image.height() as i64);
-    // Premultiplied linear RGBA of a pixel; transparent outside.
-    let px = |x: i64, y: i64| -> [f64; 4] {
+    }
+}
+
+/// Reads cells of an `n` × `n` grid over a span of the picture's square,
+/// one at a time (any cell, even outside the grid).
+pub(crate) struct Sampler<'a> {
+    image: &'a Rgba8Image,
+    linear: Vec<f64>,
+    x0: f64,
+    y0: f64,
+    step: f64,
+}
+
+impl<'a> Sampler<'a> {
+    pub(crate) fn new(
+        image: &'a Rgba8Image,
+        fit: Fit,
+        focal: (f32, f32),
+        span: Span,
+        n: usize,
+    ) -> Sampler<'a> {
+        let (side, x0, y0) = square(image, fit, focal);
+        let (side, x0, y0) = (
+            side * span.len,
+            x0 + side * span.start,
+            y0 + side * span.start,
+        );
+        let linear: Vec<f64> = (0..=255u8)
+            .map(|c| srgb_to_linear(c as f64 / 255.0))
+            .collect();
+        Sampler {
+            image,
+            linear,
+            x0,
+            y0,
+            step: side / n as f64,
+        }
+    }
+
+    /// Premultiplied linear RGBA of a pixel; transparent outside.
+    fn px(&self, x: i64, y: i64) -> [f64; 4] {
+        let (iw, ih) = (self.image.width() as i64, self.image.height() as i64);
         if x < 0 || y < 0 || x >= iw || y >= ih {
             return [0.0; 4];
         }
+        let data = self.image.data();
+        let linear = &self.linear;
         let i = (y * iw + x) as usize * 4;
         let a = data[i + 3] as f64 / 255.0;
         [
@@ -263,67 +383,67 @@ pub(crate) fn sample(image: &Rgba8Image, fit: Fit, focal: (f32, f32), n: usize) 
             linear[data[i + 2] as usize] * a,
             a,
         ]
-    };
-    let step = side / n as f64;
-    let mut cells = Vec::with_capacity(n * n);
-    for cy in 0..n {
-        for cx in 0..n {
-            let (left, top) = (x0 + cx as f64 * step, y0 + cy as f64 * step);
-            let mut sum = [0.0f64; 4];
-            if step < 1.0 {
-                // Bilinear at the cell's center, between pixel centers.
-                let (fx, fy) = (left + step / 2.0 - 0.5, top + step / 2.0 - 0.5);
-                let (ix, iy) = (math::floor(fx), math::floor(fy));
-                let (tx, ty) = (fx - ix, fy - iy);
-                let clamp = |v: f64, len: i64| (v as i64).clamp(0, len - 1);
-                for (dx, dy, k) in [
-                    (0, 0, (1.0 - tx) * (1.0 - ty)),
-                    (1, 0, tx * (1.0 - ty)),
-                    (0, 1, (1.0 - tx) * ty),
-                    (1, 1, tx * ty),
-                ] {
-                    // Inside the picture, edges extend; outside, it's empty.
-                    let (x, y) = (ix as i64 + dx, iy as i64 + dy);
-                    let inside = |v: f64, len: f64| v >= 0.0 && v < len;
-                    let p = if inside(fx + 0.5, w) && inside(fy + 0.5, h) {
-                        px(clamp(x as f64, iw), clamp(y as f64, ih))
-                    } else {
-                        px(x, y)
-                    };
-                    for (s, v) in sum.iter_mut().zip(p) {
-                        *s += v * k;
-                    }
-                }
-            } else {
-                // Box average with fractional coverage at the edges.
-                let (right, bottom) = (left + step, top + step);
-                let mut area = 0.0;
-                let mut y = math::floor(top);
-                while y < bottom {
-                    let ky = (y + 1.0).min(bottom) - y.max(top);
-                    let mut x = math::floor(left);
-                    while x < right {
-                        let kx = (x + 1.0).min(right) - x.max(left);
-                        let p = px(x as i64, y as i64);
-                        for (s, v) in sum.iter_mut().zip(p) {
-                            *s += v * kx * ky;
-                        }
-                        area += kx * ky;
-                        x += 1.0;
-                    }
-                    y += 1.0;
-                }
-                for s in &mut sum {
-                    *s /= area;
+    }
+
+    /// The cell at column `cx`, row `cy`.
+    pub(crate) fn cell(&self, cx: i64, cy: i64) -> Cell {
+        let (w, h) = (self.image.width() as f64, self.image.height() as f64);
+        let (iw, ih) = (self.image.width() as i64, self.image.height() as i64);
+        let step = self.step;
+        let (left, top) = (self.x0 + cx as f64 * step, self.y0 + cy as f64 * step);
+        let mut sum = [0.0f64; 4];
+        if step < 1.0 {
+            // Bilinear at the cell's center, between pixel centers.
+            let (fx, fy) = (left + step / 2.0 - 0.5, top + step / 2.0 - 0.5);
+            let (ix, iy) = (math::floor(fx), math::floor(fy));
+            let (tx, ty) = (fx - ix, fy - iy);
+            let clamp = |v: f64, len: i64| (v as i64).clamp(0, len - 1);
+            for (dx, dy, k) in [
+                (0, 0, (1.0 - tx) * (1.0 - ty)),
+                (1, 0, tx * (1.0 - ty)),
+                (0, 1, (1.0 - tx) * ty),
+                (1, 1, tx * ty),
+            ] {
+                // Inside the picture, edges extend; outside, it's empty.
+                let (x, y) = (ix as i64 + dx, iy as i64 + dy);
+                let inside = |v: f64, len: f64| v >= 0.0 && v < len;
+                let p = if inside(fx + 0.5, w) && inside(fy + 0.5, h) {
+                    self.px(clamp(x as f64, iw), clamp(y as f64, ih))
+                } else {
+                    self.px(x, y)
+                };
+                for (s, v) in sum.iter_mut().zip(p) {
+                    *s += v * k;
                 }
             }
-            cells.push(Cell {
-                rgb: [sum[0], sum[1], sum[2]],
-                alpha: sum[3].clamp(0.0, 1.0),
-            });
+        } else {
+            // Box average with fractional coverage at the edges.
+            let (right, bottom) = (left + step, top + step);
+            let mut area = 0.0;
+            let mut y = math::floor(top);
+            while y < bottom {
+                let ky = (y + 1.0).min(bottom) - y.max(top);
+                let mut x = math::floor(left);
+                while x < right {
+                    let kx = (x + 1.0).min(right) - x.max(left);
+                    let p = self.px(x as i64, y as i64);
+                    for (s, v) in sum.iter_mut().zip(p) {
+                        *s += v * kx * ky;
+                    }
+                    area += kx * ky;
+                    x += 1.0;
+                }
+                y += 1.0;
+            }
+            for s in &mut sum {
+                *s /= area;
+            }
+        }
+        Cell {
+            rgb: [sum[0], sum[1], sum[2]],
+            alpha: sum[3].clamp(0.0, 1.0),
         }
     }
-    cells
 }
 
 /// A lightness stretch: the 2nd to 98th percentile mapped onto 0–1, when
@@ -404,10 +524,11 @@ pub(crate) fn dither(lightness: &[f64], n: usize) -> Vec<bool> {
 pub(crate) fn module_lightness(
     halftone: &Halftone,
     n: usize,
+    span: Span,
     backdrop: Color,
     inverted: bool,
 ) -> Vec<f64> {
-    let cells = sample(&halftone.image, halftone.fit, halftone.focal, n);
+    let cells = sample_span(&halftone.image, halftone.fit, halftone.focal, span, n);
     let l = lightness(&cells, backdrop);
     let levels = Levels::of(&l);
     l.into_iter()
@@ -424,10 +545,11 @@ fn flip(l: f64, inverted: bool) -> f64 {
 pub(crate) fn module_targets(
     halftone: &Halftone,
     n: usize,
+    span: Span,
     backdrop: Color,
     inverted: bool,
 ) -> Vec<bool> {
-    squeezed(&module_lightness(halftone, n, backdrop, inverted), n)
+    squeezed(&module_lightness(halftone, n, span, backdrop, inverted), n)
 }
 
 fn squeezed(l: &[f64], n: usize) -> Vec<bool> {
@@ -457,13 +579,14 @@ pub(crate) fn wants(
     halftone: &Halftone,
     roles: &[ModuleRole],
     n: usize,
+    span: Span,
     backdrop: Color,
     inverted: bool,
 ) -> Vec<Want> {
-    let l = module_lightness(halftone, n, backdrop, inverted);
+    let l = module_lightness(halftone, n, span, backdrop, inverted);
     let dark = squeezed(&l, n);
     let map = halftone.priority.as_ref().map(|p| {
-        let cells = sample(p, halftone.fit, halftone.focal, n);
+        let cells = sample_span(p, halftone.fit, halftone.focal, span, n);
         lightness(&cells, Color::srgb(0, 0, 0))
     });
     let at = |x: i64, y: i64| {
@@ -657,6 +780,8 @@ pub(crate) fn subcells(
             colors.clamp(2, 16) as usize,
             inverted,
         )),
+        // Glass draws no sub-cells (`svg` never asks for them).
+        Ink::Glass(_) => None,
     };
     Subcells { side, dark, colors }
 }
@@ -856,7 +981,7 @@ mod tests {
         // 5 × 5 window, so no area of the code is flat.
         let n = 45;
         let black = Halftone::new(Rgba8Image::filled(10, 10, [0, 0, 0, 255]).unwrap());
-        let t = module_targets(&black, n, Color::srgb(255, 255, 255), false);
+        let t = module_targets(&black, n, Span::WHOLE, Color::srgb(255, 255, 255), false);
         for y in 0..n - 4 {
             for x in 0..n - 4 {
                 let light = (0..25).filter(|i| !t[(y + i / 5) * n + x + i % 5]).count();
@@ -883,7 +1008,7 @@ mod tests {
             .encode_text_for("https://example.com", &style)
             .unwrap();
         let n = qr.size() as usize;
-        let targets = module_targets(&picture, n, style.palette.background(), false);
+        let targets = module_targets(&picture, n, Span::WHOLE, style.palette.background(), false);
         let half = |left: bool| {
             let (mut hit, mut all) = (0, 0);
             for (x, y, dark, role) in qr.modules() {

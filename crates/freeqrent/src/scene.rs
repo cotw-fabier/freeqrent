@@ -102,7 +102,7 @@ impl Canvas {
 pub(crate) fn canvas(style: &Style, qr: &QrMatrix) -> Canvas {
     let n = qr.size() as i64;
     let q = style.quiet_zone as i64;
-    let border = style.border.map_or(0.0, |b| b.width().max(0.0) as f64);
+    let border = border_width(style);
     let shadow = style.shadow.map_or(0.0, |s| s.max(0.0) as f64);
     let reach = math::ceil(shadow) as i64;
     let band = style.caption.as_ref().map_or(0, |c| {
@@ -112,7 +112,7 @@ pub(crate) fn canvas(style: &Style, qr: &QrMatrix) -> Canvas {
         ring: ring_style, ..
     } = style.frame
     else {
-        let margin = math::ceil(border) as i64;
+        let margin = square_margin(style, n);
         let card = n + 2 * (q + margin);
         return Canvas {
             side: card + reach,
@@ -152,6 +152,23 @@ pub(crate) fn canvas(style: &Style, qr: &QrMatrix) -> Canvas {
             filler_r2: 2 * square * square,
         }),
     }
+}
+
+fn border_width(style: &Style) -> f64 {
+    style.border.map_or(0.0, |b| b.width().max(0.0) as f64)
+}
+
+/// The margin beyond the quiet zone of a square, rounded or frameless
+/// card, in whole modules: the border's, and under glass the photo's
+/// (SPEC §7.9).
+pub(crate) fn square_margin(style: &Style, n: i64) -> i64 {
+    let border = math::ceil(border_width(style)) as i64;
+    #[cfg(feature = "halftone")]
+    if let Some(g) = style.halftone.as_ref().and_then(|h| h.glass()) {
+        return border + crate::glass::margin(g.border, n, style.quiet_zone as i64);
+    }
+    let _ = n;
+    border
 }
 
 /// The seed for decorative choices: `Style::seed`, or a hash (FNV-1a) of
@@ -615,11 +632,16 @@ const INK_SALT: u64 = 0x0000_1a4c_f00d;
 const SPREAD_SALT: u64 = 0x005e_ed0f_c010;
 
 /// The layers in paint order: frame ring, filler, data, timing,
-/// alignment, finder rings, eyes. Empty layers are left out.
+/// alignment, finder rings, eyes. Empty layers are left out. Glass (SPEC
+/// §7.9) has none: its modules are baked into one image.
 pub(crate) fn layers(style: &Style, qr: &QrMatrix) -> Vec<Layer> {
     let size = qr.size() as usize;
     let canvas = canvas(style, qr);
     let mut layers = Vec::new();
+    #[cfg(feature = "halftone")]
+    if style.halftone.as_ref().is_some_and(|h| h.glass().is_some()) {
+        return layers;
+    }
     if canvas.round.as_ref().is_some_and(|r| r.ring.is_some()) {
         layers.push(Layer {
             fade: 1.0,

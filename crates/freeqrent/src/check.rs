@@ -92,6 +92,37 @@ pub const FRAME_FLOOR: f32 = 0.25;
 /// finder eyes first.
 pub const CONTRAST_WARNING: f32 = 0.60;
 
+/// The lightness targets every measured lens shape scanned at (SPEC §7.9):
+/// dark glass modules at most 0.25, light ones at least 0.90, in OKLab L.
+pub const GLASS_SAFE_TARGETS: (f32, f32) = (0.25, 0.90);
+/// How far glass targets may sit inside [`GLASS_SAFE_TARGETS`] (the larger
+/// of the two gaps) before the code is refused as
+/// [`RenderError::GlassTargetsTooWeak`].
+pub const GLASS_TARGET_MARGIN: f32 = 0.02;
+/// The least finder contrast (plate minus finder glass, OKLab L) at which
+/// ZXing read every measured glass code; below it, or with the plate under
+/// [`GLASS_PLATE_FLOOR`], a glass code is refused as
+/// [`RenderError::GlassFinderContrast`].
+pub const GLASS_FINDER_FLOOR: f32 = 0.58;
+/// The least plate lightness (OKLab L) at which ZXing read every measured
+/// glass code: at 0.88 and 0.90 the degraded render lost some, whatever the
+/// finder's contrast.
+pub const GLASS_PLATE_FLOOR: f32 = 0.92;
+/// Below this finder contrast (the default's, 0.62) a glass code renders
+/// with [`Warning::LowContrast`]: its degraded render was the marginal one.
+pub const GLASS_FINDER_WARNING: f32 = 0.62;
+/// The largest version whose glass codes passed the full bar (ZXing and
+/// rqrr) in every measured case at the default resolution. Above it, or
+/// below [`GLASS_RESOLUTION`], a glass code warns
+/// [`Warning::GlassNeedsZxing`].
+pub const GLASS_FULL_BAR_VERSION: u8 = 4;
+/// The default baked resolution of glass, in pixels per module
+/// ([`Glass::resolution`](crate::Glass::resolution)).
+pub const GLASS_RESOLUTION: u8 = 16;
+/// The baked glass layer's size above which a code warns
+/// [`Warning::LargeOutput`].
+pub const LARGE_OUTPUT_BYTES: usize = 1_000_000;
+
 /// A reason a code isn't rendered.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -170,6 +201,44 @@ pub enum RenderError {
     /// Custom shapes ([`Glyph`](crate::Glyph)) can't be drawn on a
     /// picture (SPEC §7.7), whose modules are sub-cells.
     GlyphOnPicture,
+    /// Glass ink embeds the picture's file as the photo, and none was
+    /// given ([`Halftone::source`](crate::Halftone::source)).
+    GlassNeedsSource,
+    /// The glass halo ([`Glass::halo`](crate::Glass::halo)) is narrower
+    /// than a module: without it, the photo in the quiet zone hid most
+    /// codes from ZXing (SPEC §7.9). [`Style::allow_unscannable`](crate::Style::allow_unscannable)
+    /// renders it anyway, with the same-named warning.
+    GlassHaloTooNarrow {
+        /// The halo, in modules.
+        halo: u8,
+    },
+    /// The finder glass is too close to its plate in lightness
+    /// ([`Glass::finders`](crate::Glass::finders)), below
+    /// [`GLASS_FINDER_FLOOR`], or the plate is darker than
+    /// [`GLASS_PLATE_FLOOR`]. Downgraded by
+    /// [`Style::allow_unscannable`](crate::Style::allow_unscannable).
+    GlassFinderContrast {
+        /// Plate minus finder glass, OKLab L.
+        delta_l: f32,
+        /// The plate's lightness.
+        plate: f32,
+    },
+    /// The glass's lightness targets ([`Glass::targets`](crate::Glass::targets))
+    /// sit further inside [`GLASS_SAFE_TARGETS`](crate::GLASS_SAFE_TARGETS)
+    /// than [`GLASS_TARGET_MARGIN`](crate::GLASS_TARGET_MARGIN). Downgraded
+    /// by [`Style::allow_unscannable`](crate::Style::allow_unscannable).
+    GlassTargetsTooWeak {
+        /// The dark target.
+        dark: f32,
+        /// The light target.
+        light: f32,
+    },
+    /// An option glass ink can't be combined with (SPEC §7.9 lists them),
+    /// e.g. `"Frame::Circle"` or `"Style.intro"`.
+    GlassUnsupported {
+        /// The option.
+        option: &'static str,
+    },
     /// The output sink returned an error.
     Write,
 }
@@ -225,6 +294,26 @@ impl fmt::Display for RenderError {
             }
             RenderError::GlyphOnPicture => {
                 f.write_str("custom shapes can't be drawn on a picture code")
+            }
+            RenderError::GlassNeedsSource => f.write_str(
+                "glass ink embeds the picture's file as the photo; give it with Halftone::source",
+            ),
+            RenderError::GlassHaloTooNarrow { halo } => write!(
+                f,
+                "a glass halo of {halo} modules; at least 1 is needed for scanners to find the code"
+            ),
+            RenderError::GlassFinderContrast { delta_l, plate } => write!(
+                f,
+                "the glass finders have contrast {delta_l:.2} on a plate of lightness {plate:.2}; at least {GLASS_FINDER_FLOOR} on {GLASS_PLATE_FLOOR} is needed"
+            ),
+            RenderError::GlassTargetsTooWeak { dark, light } => write!(
+                f,
+                "glass targets of {dark}/{light} are too weak; dark at most {:.2} and light at least {:.2} are needed",
+                GLASS_SAFE_TARGETS.0 + GLASS_TARGET_MARGIN,
+                GLASS_SAFE_TARGETS.1 - GLASS_TARGET_MARGIN
+            ),
+            RenderError::GlassUnsupported { option } => {
+                write!(f, "{option} can't be combined with glass ink")
             }
             RenderError::Write => f.write_str("the output sink failed"),
         }
@@ -313,6 +402,40 @@ pub enum Warning {
     CustomFinder,
     /// A custom shape keeps its own colors, whose contrast isn't checked.
     GlyphColors,
+    /// [`RenderError::GlassHaloTooNarrow`], rendered anyway
+    /// ([`Style::allow_unscannable`](crate::Style::allow_unscannable)).
+    GlassHaloTooNarrow {
+        /// The halo, in modules.
+        halo: u8,
+    },
+    /// [`RenderError::GlassFinderContrast`], rendered anyway.
+    GlassFinderContrast {
+        /// Plate minus finder glass, OKLab L.
+        delta_l: f32,
+        /// The plate's lightness.
+        plate: f32,
+    },
+    /// [`RenderError::GlassTargetsTooWeak`], rendered anyway.
+    GlassTargetsTooWeak {
+        /// The dark target.
+        dark: f32,
+        /// The light target.
+        light: f32,
+    },
+    /// A glass code above [`GLASS_FULL_BAR_VERSION`](crate::GLASS_FULL_BAR_VERSION)
+    /// (or baked below the default resolution). ZXing-family scanners (most
+    /// phones) read it; quirc-style decoders such as rqrr lost some in the
+    /// verify suite (SPEC §7.9).
+    GlassNeedsZxing {
+        /// The code's version.
+        version: u8,
+    },
+    /// The baked glass layer is estimated past [`LARGE_OUTPUT_BYTES`](crate::LARGE_OUTPUT_BYTES).
+    /// A lower [`Glass::resolution`](crate::Glass::resolution) shrinks it.
+    LargeOutput {
+        /// The estimated size of the layer's PNG.
+        bytes: usize,
+    },
 }
 
 /// Intros longer than this raise [`Warning::LongIntro`] (SPEC §8.1).
@@ -380,6 +503,27 @@ impl fmt::Display for Warning {
             Warning::GlyphColors => f.write_str(
                 "a custom shape keeps its own colors, whose contrast isn't checked",
             ),
+            Warning::GlassHaloTooNarrow { halo } => write!(
+                f,
+                "a glass halo of {halo} modules, rendered anyway; scanners may not find the code"
+            ),
+            Warning::GlassFinderContrast { delta_l, plate } => write!(
+                f,
+                "the glass finders have contrast {delta_l:.2} on a plate of lightness {plate:.2}, rendered anyway; scanners may not find the code"
+            ),
+            Warning::GlassTargetsTooWeak { dark, light } => write!(
+                f,
+                "glass targets of {dark}/{light}, rendered anyway; modules may read wrong"
+            ),
+            Warning::GlassNeedsZxing { version } => write!(
+                f,
+                "glass at version {version} needs a ZXing-family scanner; quirc-style decoders may not read it"
+            ),
+            Warning::LargeOutput { bytes } => write!(
+                f,
+                "the baked glass layer is about {} KB; a lower glass resolution makes it smaller",
+                bytes.div_ceil(1000)
+            ),
         }
     }
 }
@@ -406,6 +550,10 @@ pub struct ScanReport {
     /// (SPEC §7.8).
     #[cfg(feature = "halftone")]
     pub steering: Option<Steering>,
+    /// False when [`Style::allow_unscannable`](crate::Style::allow_unscannable)
+    /// turned an error into a warning: the code renders, outside the
+    /// guarantee that it scans (SPEC §9).
+    pub scannable: bool,
 }
 
 impl ScanReport {
@@ -573,8 +721,14 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         }
     }
 
+    #[cfg_attr(not(feature = "halftone"), allow(unused_mut))]
+    let mut scannable = true;
     #[cfg(feature = "halftone")]
     check_halftone(style, &mut errors, &mut warnings);
+    #[cfg(feature = "halftone")]
+    let glass_contrast = check_glass(style, qr, &mut errors, &mut warnings, &mut scannable);
+    #[cfg(not(feature = "halftone"))]
+    let glass_contrast: Option<f32> = None;
     #[cfg(feature = "animate")]
     check_intro(style, qr, &mut errors, &mut warnings);
     check_scan_boxes(style, &mut errors, &mut warnings);
@@ -585,7 +739,7 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
     if palette.background().is_translucent() {
         warnings.push(Warning::TranslucentBackground);
     }
-    let mut min_contrast = f32::INFINITY;
+    let mut min_contrast = glass_contrast.unwrap_or(f32::INFINITY);
     // Filler and the frame ring are decoration outside the quiet zone, so
     // they may be as faint as the design wants.
     let read = scene::layers(style, qr)
@@ -639,6 +793,7 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         logo_scale: style.logo.as_ref().map(|_| logo_scale(style, qr)),
         #[cfg(feature = "halftone")]
         steering: steering(style, qr),
+        scannable,
     }
 }
 
@@ -651,6 +806,7 @@ fn steering(style: &Style, qr: &QrMatrix) -> Option<Steering> {
     let targets = halftone::module_targets(
         halftone,
         n,
+        crate::glass::span(style, n),
         style.palette.background(),
         style.inverted_ink(),
     );
@@ -700,6 +856,140 @@ fn check_halftone(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut V
             });
         }
     }
+}
+
+/// Glass ink (SPEC §7.9): its options' ranges, what it can't be combined
+/// with, and the measured limits, some of which
+/// [`Style::allow_unscannable`] turns into warnings. Returns the finder
+/// contrast, the code's own.
+#[cfg(feature = "halftone")]
+fn check_glass(
+    style: &Style,
+    qr: &QrMatrix,
+    errors: &mut Vec<RenderError>,
+    warnings: &mut Vec<Warning>,
+    scannable: &mut bool,
+) -> Option<f32> {
+    use crate::scanbox::{FinderStyle, TimingStyle};
+    let h = style.halftone.as_ref()?;
+    let g = h.glass()?;
+    if h.source.is_none() {
+        errors.push(RenderError::GlassNeedsSource);
+    }
+    in_range(errors, "Glass.border", g.border, 0.0, 0.25);
+    in_range(
+        errors,
+        "Glass.halo",
+        g.halo as f32,
+        0.0,
+        style.quiet_zone as f32,
+    );
+    in_range(errors, "Glass.lens", g.lens, 0.5, 1.0);
+    in_range(
+        errors,
+        "Glass.core",
+        g.core,
+        0.3,
+        if g.lens.is_nan() {
+            1.0
+        } else {
+            g.lens.min(1.0)
+        },
+    );
+    in_range(errors, "Glass.targets dark", g.targets.0, 0.0, 1.0);
+    in_range(errors, "Glass.targets light", g.targets.1, 0.0, 1.0);
+    in_range(errors, "Glass.union", g.union, 0.2, 0.8);
+    in_range(errors, "Glass.frost", g.frost, 0.0, 0.3);
+    in_range(errors, "Glass.finders dark", g.finders.0, 0.0, 1.0);
+    in_range(errors, "Glass.finders plate", g.finders.1, 0.0, 1.0);
+    in_range(errors, "Glass.resolution", g.resolution as f32, 8.0, 32.0);
+
+    // What glass doesn't draw, refused rather than ignored.
+    let mut unsupported = |yes: bool, option: &'static str| {
+        if yes {
+            errors.push(RenderError::GlassUnsupported { option });
+        }
+    };
+    unsupported(matches!(style.frame, Frame::Circle { .. }), "Frame::Circle");
+    unsupported(style.modules != ModuleShape::SQUARE, "Style.modules");
+    unsupported(style.finders != FinderStyle::default(), "Style.finders");
+    let square = |r: RingShape, e: EyeShape| r == RingShape::Square && e == EyeShape::Square;
+    unsupported(
+        matches!(style.alignment.shape, AlignmentShape::Own { outer, eye } if !square(outer, eye)),
+        "AlignmentShape::Own",
+    );
+    unsupported(style.timing == TimingStyle::Dashed, "TimingStyle::Dashed");
+    unsupported(
+        scene::data_tokens(style).len() > 1,
+        "data colors (fg.2–fg.4)",
+    );
+    unsupported(style.effect.is_some(), "Style.effect");
+    unsupported(!style.textures.is_empty(), "Style.textures");
+    unsupported(
+        h.clarity != crate::halftone::Clarity::default(),
+        "Halftone.clarity",
+    );
+    #[cfg(feature = "animate")]
+    {
+        unsupported(style.intro.is_some(), "Style.intro");
+        unsupported(!style.idle.is_empty(), "Style.idle");
+        unsupported(style.theme_transition.is_some(), "Style.theme_transition");
+    }
+
+    // Measured limits: errors, or warnings when unscannable codes are
+    // allowed.
+    let mut limits = Vec::new();
+    if g.halo < 1 {
+        limits.push((
+            RenderError::GlassHaloTooNarrow { halo: g.halo },
+            Warning::GlassHaloTooNarrow { halo: g.halo },
+        ));
+    }
+    let (plate, contrast) = (g.finders.1, g.finders.1 - g.finders.0);
+    // A hair of slack, so the measured pair (0.92 − 0.30) counts as 0.62.
+    let below = |v: f32, floor: f32| v < floor - 1e-4;
+    if below(contrast, GLASS_FINDER_FLOOR) || below(plate, GLASS_PLATE_FLOOR) {
+        limits.push((
+            RenderError::GlassFinderContrast {
+                delta_l: contrast,
+                plate,
+            },
+            Warning::GlassFinderContrast {
+                delta_l: contrast,
+                plate,
+            },
+        ));
+    } else if below(contrast, GLASS_FINDER_WARNING) {
+        warnings.push(Warning::LowContrast {
+            token: Token::FinderOuter,
+            delta_l: contrast,
+        });
+    }
+    let (dark, light) = g.targets;
+    let weak = (dark - GLASS_SAFE_TARGETS.0).max(GLASS_SAFE_TARGETS.1 - light);
+    if weak > GLASS_TARGET_MARGIN + 1e-4 {
+        limits.push((
+            RenderError::GlassTargetsTooWeak { dark, light },
+            Warning::GlassTargetsTooWeak { dark, light },
+        ));
+    }
+    for (error, warning) in limits {
+        if style.allow_unscannable {
+            warnings.push(warning);
+            *scannable = false;
+        } else {
+            errors.push(error);
+        }
+    }
+    let version = qr.version().number();
+    if version > GLASS_FULL_BAR_VERSION || g.resolution < GLASS_RESOLUTION {
+        warnings.push(Warning::GlassNeedsZxing { version });
+    }
+    let bytes = crate::glass::estimated_bytes(g, qr.size() as usize, style.quiet_zone as usize);
+    if bytes > LARGE_OUTPUT_BYTES {
+        warnings.push(Warning::LargeOutput { bytes });
+    }
+    Some(contrast)
 }
 
 #[cfg(feature = "animate")]

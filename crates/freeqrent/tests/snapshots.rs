@@ -180,6 +180,60 @@ fn halftone_in_mono_and_color() {
     }
 }
 
+/// Glass ink (SPEC §7.9): the document's shell around its two images, the
+/// photo's file and the baked glass. Each base64 payload is replaced by its
+/// length and an FNV-1a hash, so the snapshot stays readable while any
+/// change to the baked bytes still shows.
+#[cfg(feature = "halftone")]
+#[test]
+fn glass_shell() {
+    use freeqrent::{Glass, Halftone, Ink, RasterFormat, Rgba8Image};
+    let mut picture = Rgba8Image::filled(16, 16, [245, 240, 230, 255]).unwrap();
+    for y in 0..16i32 {
+        for x in 0..16i32 {
+            if (x - 8).pow(2) + (y - 8).pow(2) < 30 {
+                picture.set_pixel(x as u32, y as u32, [30, 40, 90, 255]);
+            }
+        }
+    }
+    let file = freeqrent::png::encode_rgba(&picture);
+    let glass = Halftone::new(picture)
+        .source(file, RasterFormat::Png)
+        .unwrap()
+        .ink(Ink::Glass(Glass::new().resolution(8)));
+    let style = Style::new()
+        .halftone(glass)
+        .frame(Frame::RoundedSquare(2.0))
+        .caption(Caption::new("Scan me"));
+    let qr = QrCode::builder()
+        .ecc(Ecc::M)
+        .version(Version::new(1).unwrap())
+        .encode_text_for("HELLO", &style)
+        .unwrap();
+    let svg = style.minify(false).render(&qr).unwrap();
+    insta::assert_snapshot!(elide_payloads(&svg));
+}
+
+/// Replaces each `base64,…` payload with its length and FNV-1a hash.
+#[cfg(feature = "halftone")]
+fn elide_payloads(svg: &str) -> String {
+    let mut out = String::new();
+    let mut rest = svg;
+    while let Some(at) = rest.find("base64,") {
+        let (head, tail) = rest.split_at(at + "base64,".len());
+        out.push_str(head);
+        let end = tail.find('"').unwrap();
+        let payload = &tail[..end];
+        let hash = payload.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+            (h ^ b as u64).wrapping_mul(0x0100_0000_01b3)
+        });
+        out.push_str(&format!("[{} chars, fnv {hash:016x}]", payload.len()));
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 #[test]
 fn presets() {
     for name in Style::presets() {
