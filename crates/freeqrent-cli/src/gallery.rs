@@ -1262,6 +1262,19 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
             ("finder", "rounded:2/circle"),
         ],
     ),
+    // Glass ink (SPEC §7.9, W20261119133827): the whole photo, the code
+    // as liquid glass over it. Last, so earlier cards keep their places.
+    ("Glass", &[("halftone", "{a}"), ("ink", "glass")]),
+    (
+        "Glass, big lenses",
+        &[
+            ("halftone", "{b}"),
+            ("ink", "glass:lens=1,core=0.7,border=0.12"),
+            ("version", "3"),
+            ("frame", "rounded:2"),
+        ],
+    ),
+    ("Glass, art mode", &[("art", "{a}"), ("ink", "glass")]),
 ];
 
 /// A family's flag value with `{a}` and `{b}` replaced by the pictures:
@@ -1318,6 +1331,14 @@ fn variant(
                 Err(e) => problem = Some(e),
             }
             let _ = write!(command, " --ecc {value}");
+            continue;
+        }
+        if *flag == "version" {
+            match value.parse().ok().and_then(freeqrent::Version::new) {
+                Some(v) => builder = builder.version(v),
+                None => problem = Some(format!("version {value:?} isn't 1-40")),
+            }
+            let _ = write!(command, " --version {value}");
             continue;
         }
         if value.is_empty() && args.set_switch(flag) {

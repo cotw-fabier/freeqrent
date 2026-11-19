@@ -7,17 +7,22 @@ mod common;
 
 use common::{PHOTOS, photo_with_file};
 use freeqrent::{
-    Border, Caption, Ecc, Frame, GLASS_FULL_BAR_VERSION, Glass, Halftone, Ink, Logo, LogoShape,
-    Palette, QrCode, QrMatrix, RasterFormat, RenderError, Style, Version, Warning,
+    Border, Caption, Ecc, Frame, GLASS_FULL_BAR_VERSION, Glass, Halftone, Idle, Ink, Intro, Logo,
+    LogoShape, Palette, Preset, QrCode, QrMatrix, RasterFormat, RenderError, Style, Trigger,
+    Version, Warning,
 };
-use freeqrent_verify::{Bar, verify_style};
+use freeqrent_verify::{Bar, Gray, rasterize, scannable_after, verify_style};
 
 const TEXT: &str = "https://example.com";
 /// The pictures' side: about the baked resolution at v5–v10.
 const SIDE: u32 = 1024;
 
 fn halftone(kind: &str, g: Glass) -> Halftone {
-    let (image, file) = photo_with_file(kind, SIDE);
+    halftone_at(kind, g, SIDE)
+}
+
+fn halftone_at(kind: &str, g: Glass, side: u32) -> Halftone {
+    let (image, file) = photo_with_file(kind, side);
     Halftone::new(image)
         .source(file, RasterFormat::Png)
         .unwrap()
@@ -197,6 +202,109 @@ fn frames_and_art_scan() {
             assert!(report.ok() && report.scannable, "{label}: {report:?}");
             if let Err(e) = verify_style(&style, &qr, TEXT) {
                 panic!("{label} v{version}: {e}");
+            }
+        }
+    }
+}
+
+/// Pixels that differ by more than a rounding step, and the largest
+/// difference.
+fn diff(a: &Gray, b: &Gray) -> (usize, u8) {
+    assert_eq!((a.width, a.height), (b.width, b.height));
+    let mut count = 0;
+    let mut worst = 0;
+    for (&p, &q) in a.pixels.iter().zip(&b.pixels) {
+        let d = p.abs_diff(q);
+        worst = worst.max(d);
+        if d > 2 {
+            count += 1;
+        }
+    }
+    (count, worst)
+}
+
+/// The static-fallback rule (SPEC §8.2) on glass: the animated document
+/// as resvg draws it, with no CSS animation, and the plan's last frame are
+/// the static code, pixel for pixel, and it scans.
+fn assert_same_picture(plain: &Style, animated: &Style, qr: &QrMatrix, label: &str) {
+    let a = rasterize(&plain.render(qr).unwrap(), 6.0).unwrap();
+    let b = rasterize(&animated.render(qr).unwrap(), 6.0).unwrap();
+    assert_eq!(diff(&a, &b), (0, 0), "{label}: static picture");
+    let end = animated.plan(qr).unwrap().total_ms;
+    let c = rasterize(&animated.render_frame(qr, end).unwrap(), 6.0).unwrap();
+    assert_eq!(diff(&b, &c), (0, 0), "{label}: last frame");
+}
+
+#[test]
+fn intros_keep_the_static_state() {
+    let logo =
+        Logo::svg(r##"<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="5" fill="#c33"/></svg>"##)
+            .unwrap()
+            .scale(0.12);
+    let plain = Style::new().halftone(halftone_at("landscape", Glass::new(), 512));
+    let framed = plain
+        .clone()
+        .frame(Frame::RoundedSquare(2.0))
+        .border(Border::Solid { width: 0.5 })
+        .caption(Caption::new("Scan me"));
+    let logoed = plain.clone().logo(logo);
+    for preset in Preset::ALL {
+        for (label, style) in [("plain", &plain), ("framed", &framed), ("logo", &logoed)] {
+            let qr = fitted(style, 5);
+            let animated = style.clone().intro(preset);
+            let label = format!("{preset:?} {label}");
+            assert_same_picture(style, &animated, &qr, &label);
+            if let Err(e) = verify_style(&animated, &qr, TEXT) {
+                panic!("{label}: {e}");
+            }
+        }
+    }
+    // A replay, a palette shift and the idles glass takes: still the code.
+    let qr = fitted(&logoed, 5);
+    for (label, style) in [
+        (
+            "replay",
+            logoed.clone().intro(
+                Intro::new(Preset::Develop)
+                    .duration_ms(1400)
+                    .trigger(Trigger::Every(5000)),
+            ),
+        ),
+        (
+            "palette shift",
+            logoed
+                .clone()
+                .intro(Intro::palette_from(&Palette::new().dark_twin())),
+        ),
+        (
+            "idles",
+            logoed
+                .clone()
+                .idle(Idle::Breathe)
+                .idle(Idle::LogoGlint)
+                .idle(Idle::LogoSpin),
+        ),
+    ] {
+        assert_same_picture(&logoed, &style, &qr, label);
+        if let Err(e) = verify_style(&style, &qr, TEXT) {
+            panic!("{label}: {e}");
+        }
+    }
+}
+
+#[test]
+fn intros_scan_before_they_end() {
+    // Measured, printed for the log: when a glass code is readable for good.
+    for kind in ["face", "landscape"] {
+        for version in [4u8, 10] {
+            let style = Style::new().halftone(halftone_at(kind, Glass::new(), 512));
+            let qr = code(&style, version, Ecc::M);
+            for preset in Preset::ALL {
+                let style = style.clone().intro(preset);
+                let total = style.plan(&qr).unwrap().total_ms;
+                let at = scannable_after(&style, &qr, TEXT, 50).unwrap();
+                println!("glass {kind} {preset:?} v{version}: scannable from {at} ms of {total}");
+                assert!(at <= total, "{kind} {preset:?} v{version}: {at} > {total}");
             }
         }
     }

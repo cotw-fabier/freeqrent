@@ -78,11 +78,15 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 113);
+    assert_eq!(html.matches("<figure>").count(), 116);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 226);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 232);
     // Without pictures the picture cards use the sample.
     assert!(html.contains("--art sample --clarity 0.5"));
+    // The glass cards come last, the photo and its glass in each code.
+    assert!(html.contains("--halftone sample --ink glass</code>"));
+    assert!(html.contains("--ink 'glass:lens=1,core=0.7,border=0.12' --version 3"));
+    assert!(html.contains("--art sample --ink glass</code>"));
     // The presets lead.
     assert!(html.contains(
         "<h2>Ink preset</h2><code>freeqrent https://example.com/menu --preset ink</code>"
@@ -90,7 +94,7 @@ fn gallery_shows_every_family() {
     // Every card has a dark twin, and the twins, the two dark cards, the
     // terminal preset and both codes of each dark design system are read
     // inverted.
-    assert_eq!(html.matches("<div class=\"variant dark\">").count(), 113);
+    assert_eq!(html.matches("<div class=\"variant dark\">").count(), 116);
     assert_eq!(html.matches(", read inverted").count(), 130);
     // The design systems have a section of their own.
     assert!(html.contains("<h2 class=\"section\">Design systems</h2>"));
@@ -108,7 +112,7 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 226);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 232);
     assert!(!html.contains("--art sample --clarity 0.5"));
     assert!(html.contains("brand.png --clarity 0.5"));
     std::fs::remove_dir_all(&dir).unwrap();
@@ -610,5 +614,64 @@ fn shape_files_draw_the_parts_they_name() {
         let out = freeqrent(args);
         assert!(!out.status.success(), "{args:?}");
         assert!(stderr(&out).contains(message), "{args:?}: {}", stderr(&out));
+    }
+}
+
+#[test]
+fn glass_ink_embeds_the_picture_and_its_glass() {
+    let out = freeqrent(&[
+        "https://example.com",
+        "--halftone",
+        "sample",
+        "--ink",
+        "glass",
+        "--verify",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("verified: decodes with ZXing"),
+        "{}",
+        stderr(&out)
+    );
+    let svg = stdout(&out);
+    // The photo (the CLI's own PNG of its sample) and the baked glass.
+    assert_eq!(svg.matches("<image").count(), 2);
+    assert_eq!(svg.matches("href=\"data:image/png;base64,").count(), 2);
+
+    // The measured limits are refused, unless asked for.
+    let refused = freeqrent(&[
+        "https://example.com",
+        "--halftone",
+        "sample",
+        "--ink",
+        "glass:halo=0",
+        "--check",
+    ]);
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(stdout(&refused).contains("error: a glass halo of 0 modules"));
+    let allowed = freeqrent(&[
+        "https://example.com",
+        "--halftone",
+        "sample",
+        "--ink",
+        "glass:halo=0",
+        "--allow-unscannable",
+        "--check",
+    ]);
+    assert_eq!(allowed.status.code(), Some(0), "{}", stderr(&allowed));
+    let report = stdout(&allowed);
+    assert!(report.starts_with("ok: renders, NOT scannable"), "{report}");
+    assert!(
+        report.contains("warning: a glass halo of 0 modules"),
+        "{report}"
+    );
+
+    // Glass needs a picture, and its options are checked.
+    for bad in [
+        &["HELLO", "--ink", "glass"][..],
+        &["HELLO", "--halftone", "sample", "--ink", "glass:halo"],
+        &["HELLO", "--halftone", "sample", "--ink", "glass:rim=maybe"],
+    ] {
+        assert_eq!(freeqrent(bad).status.code(), Some(2), "{bad:?}");
     }
 }

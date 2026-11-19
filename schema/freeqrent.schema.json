@@ -62,6 +62,10 @@
         "allow_inverted": {
           "type": "boolean"
         },
+        "allow_unscannable": {
+          "description": "Render what the measured glass limits refuse, as warnings; the report says scannable: false.",
+          "type": "boolean"
+        },
         "frame": {
           "$ref": "#/$defs/Frame"
         },
@@ -1126,7 +1130,8 @@
             {
               "enum": [
                 "mono",
-                "color"
+                "color",
+                "glass"
               ]
             },
             {
@@ -1157,8 +1162,75 @@
                 "kind"
               ],
               "additionalProperties": false
+            },
+            {
+              "description": "Liquid glass over the whole photo (SPEC §7.9); needs source.",
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "glass"
+                },
+                "border": {
+                  "type": "number"
+                },
+                "halo": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                },
+                "lens": {
+                  "type": "number"
+                },
+                "core": {
+                  "type": "number"
+                },
+                "targets": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "union": {
+                  "type": "number"
+                },
+                "frost": {
+                  "type": "number"
+                },
+                "finders": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "tint": {
+                  "type": "boolean"
+                },
+                "refraction": {
+                  "type": "boolean"
+                },
+                "rim": {
+                  "type": "boolean"
+                },
+                "resolution": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
             }
           ]
+        },
+        "source": {
+          "description": "The picture's own file (PNG, JPEG, GIF or WebP), embedded as it is; glass ink needs it.",
+          "$ref": "#/$defs/Base64"
         },
         "bands": {
           "type": "array",
@@ -1720,6 +1792,10 @@
         "ok": {
           "type": "boolean"
         },
+        "scannable": {
+          "description": "False when allow_unscannable turned an error into a warning: outside the guarantee.",
+          "type": "boolean"
+        },
         "errors": {
           "type": "array",
           "items": {
@@ -1821,6 +1897,7 @@
       },
       "required": [
         "ok",
+        "scannable",
         "errors",
         "warnings",
         "min_contrast",

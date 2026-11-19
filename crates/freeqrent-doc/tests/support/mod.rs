@@ -66,34 +66,54 @@ fn quote(s: &str) -> String {
 }
 
 /// A 16×16 picture: a dark disc on a light page.
-fn disc() -> String {
-    picture(|x, y| {
-        if (x - 8).pow(2) + (y - 8).pow(2) < 30 {
-            [30, 40, 90, 255]
-        } else {
-            [245, 240, 230, 255]
-        }
-    })
+fn disc_pixels(x: i32, y: i32) -> [u8; 4] {
+    if (x - 8).pow(2) + (y - 8).pow(2) < 30 {
+        [30, 40, 90, 255]
+    } else {
+        [245, 240, 230, 255]
+    }
 }
 
 /// A 16×16 picture in four colors: a sunset of bands.
-fn bands() -> String {
-    picture(|_, y| match y / 4 {
+fn bands_pixels(_: i32, y: i32) -> [u8; 4] {
+    match y / 4 {
         0 => [250, 220, 160, 255],
         1 => [240, 150, 90, 255],
         2 => [170, 60, 80, 255],
         _ => [40, 30, 70, 255],
-    })
+    }
 }
 
-fn picture(f: impl Fn(i32, i32) -> [u8; 4]) -> String {
+fn disc() -> String {
+    picture(disc_pixels)
+}
+
+fn bands() -> String {
+    picture(bands_pixels)
+}
+
+fn rgba(f: impl Fn(i32, i32) -> [u8; 4]) -> Vec<u8> {
     let mut rgba = Vec::new();
     for y in 0..16 {
         for x in 0..16 {
             rgba.extend(f(x, y));
         }
     }
-    format!(r#"{{"width":16,"height":16,"rgba":"{}"}}"#, base64(&rgba))
+    rgba
+}
+
+fn picture(f: impl Fn(i32, i32) -> [u8; 4]) -> String {
+    format!(
+        r#"{{"width":16,"height":16,"rgba":"{}"}}"#,
+        base64(&rgba(f))
+    )
+}
+
+/// The same 16×16 picture as its own PNG file, base64: glass ink's
+/// `source` (SPEC §7.9), small so the suite stays small.
+fn picture_file(f: impl Fn(i32, i32) -> [u8; 4]) -> String {
+    let image = freeqrent::Rgba8Image::new(16, 16, rgba(f)).expect("16×16");
+    base64(&freeqrent::png::encode_rgba(&image))
 }
 
 const URL: &str = "https://example.com/conformance";
@@ -118,6 +138,9 @@ pub fn inputs() -> Vec<String> {
     let ring = quote(RING);
     let disc = disc();
     let bands = bands();
+    let disc_file = picture_file(disc_pixels);
+    let bands_file = picture_file(bands_pixels);
+    let glass = format!(r#"{{"image":{disc},"ink":"glass","source":"{disc_file}"}}"#);
     let mut cases = vec![render("default", "{}")];
     for preset in freeqrent::Style::presets() {
         cases.push(render(
@@ -331,6 +354,46 @@ pub fn inputs() -> Vec<String> {
         case("error logo and its colors", "palette_from_css", &format!(r##""text":"a{{color:#123}}","opts":{{"logo":{{"svg":{logo}}},"logo_colors":["#a3302a"]}}"##)),
         case("palette with no colors", "palette_from_css", r#""text":"","opts":{}"#),
         case("presets", "presets", ""),
+        // Glass ink (SPEC §7.9), added in W20261119133827.
+        render("glass", &format!(r#"{{"halftone":{glass}}}"#)),
+        render(
+            "glass with options and a border",
+            &format!(
+                r##"{{"halftone":{{"image":{disc},"source":"{disc_file}","ink":{{"kind":"glass","border":0.12,"halo":3,"lens":0.85,"core":0.55,"targets":[0.22,0.92],"union":0.5,"frost":0.1,"finders":[0.28,0.94],"tint":false,"refraction":true,"rim":false,"resolution":12}},"focal":[0.4,0.6]}},"frame":{{"kind":"rounded","radius":2}},"border":{{"kind":"solid","width":0.5}},"palette":{{"frame":"#3b2f2f"}}}}"##
+            ),
+        ),
+        render(
+            "glass in art mode",
+            &format!(r#"{{"art":{{"image":{bands},"source":"{bands_file}","ink":{{"kind":"glass","border":0.05}}}}}}"#),
+        ),
+        render("glass developing", &format!(r#"{{"halftone":{glass},"intro":"develop"}}"#)),
+        case("plan glass", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{glass},"intro":"settle"}}"#)),
+        case("check glass", "check", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{glass}}}"#)),
+        case(
+            "error glass halo",
+            "render",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{{"image":{disc},"source":"{disc_file}","ink":{{"kind":"glass","halo":0}}}}}}"#),
+        ),
+        case(
+            "check glass halo allowed",
+            "check",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{{"image":{disc},"source":"{disc_file}","ink":{{"kind":"glass","halo":0}}}},"allow_unscannable":true}}"#),
+        ),
+        case(
+            "error glass without a source",
+            "render",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{{"image":{disc},"ink":"glass"}}}}"#),
+        ),
+        case(
+            "error glass source not an image",
+            "render",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{{"image":{disc},"source":"{}","ink":"glass"}}}}"#, base64(b"not a picture")),
+        ),
+        case(
+            "error glass intro idle",
+            "render",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{glass},"idle":["shimmer"]}}"#),
+        ),
     ]);
     cases
 }

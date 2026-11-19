@@ -5,9 +5,10 @@
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner,
     CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
-    FrameRing, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
-    LogoTiming, Mask, ModuleShape, Palette, Preset, QrCode, Rgba8Image, RingShape, StaggerOrder,
-    Style, TargetSize, Texture, TimingStyle, TrackingGrid, Trigger, Version,
+    FrameRing, Glass, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape,
+    LogoSize, LogoTiming, Mask, ModuleShape, Palette, Preset, QrCode, RasterFormat, Rgba8Image,
+    RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, TrackingGrid, Trigger,
+    Version,
 };
 use freeqrent_doc::{Payload, parse};
 
@@ -369,6 +370,115 @@ fn pictures() {
 }
 
 #[test]
+fn glass() {
+    let p = picture();
+    let file = freeqrent::png::encode_rgba(&p);
+    let source = base64(&file);
+    let doc = format!(
+        r#"{{"halftone":{{"image":{img},"source":"{source}","ink":{{"kind":"glass","border":0.1,
+            "halo":3,"lens":0.8,"core":0.5,"targets":[0.2,0.92],"union":0.5,"frost":0.2,
+            "finders":[0.25,0.95],"tint":false,"refraction":false,"rim":false,"resolution":20}}}},
+            "allow_unscannable":true}}"#,
+        img = image_json(&p)
+    );
+    let g = Glass::new()
+        .border(0.1)
+        .halo(3)
+        .lens(0.8)
+        .core(0.5)
+        .targets(0.2, 0.92)
+        .union(0.5)
+        .frost(0.2)
+        .finders(0.25, 0.95)
+        .tint(false)
+        .refraction(false)
+        .rim(false)
+        .resolution(20);
+    let h = Halftone::new(p.clone())
+        .source(file.clone(), RasterFormat::Png)
+        .unwrap()
+        .ink(Ink::Glass(g));
+    let parsed = style(&doc);
+    assert_eq!(parsed, Style::new().halftone(h).allow_unscannable(true));
+    assert!(parsed.unscannable_allowed());
+    // A bare "glass" takes the defaults, under art too.
+    let bare = format!(
+        r#"{{"art":{{"image":{},"source":"{source}","ink":"glass"}}}}"#,
+        image_json(&p)
+    );
+    let h = Halftone::new(p.clone())
+        .source(file.clone(), RasterFormat::Png)
+        .unwrap()
+        .ink(Ink::Glass(Glass::new()));
+    assert_eq!(style(&bare), Style::art(h));
+    // A source that isn't a picture file is refused where it is.
+    let bad = format!(
+        r#"{{"halftone":{{"image":{},"source":"{}"}}}}"#,
+        image_json(&p),
+        base64(b"\x89PN")
+    );
+    let e = parse(&bad).unwrap_err();
+    assert_eq!(e.code, "invalid_image");
+    assert_eq!(
+        e.detail,
+        r#"{"path":"halftone.source","reason":"not_image"}"#
+    );
+    let junk = format!(
+        r#"{{"halftone":{{"image":{},"source":"{}"}}}}"#,
+        image_json(&p),
+        base64(b"junk")
+    );
+    let e = parse(&junk).unwrap_err();
+    assert_eq!(
+        (e.code, e.detail.as_str()),
+        (
+            "invalid_image",
+            r#"{"path":"halftone.source","reason":"not_image"}"#
+        )
+    );
+    // Codes and fields cross the boundary.
+    let text = "https://example.com";
+    let halo0 = format!(
+        r#"{{"halftone":{{"image":{},"source":"{source}","ink":{{"kind":"glass","halo":0}}}}}}"#,
+        image_json(&p)
+    );
+    let e = freeqrent_doc::render(Payload::Text(text), &halo0).unwrap_err();
+    assert_eq!(
+        (e.code, e.detail.as_str()),
+        ("glass_halo_too_narrow", r#"{"halo":0}"#)
+    );
+    let allowed = halo0.replacen('{', r#"{"allow_unscannable":true,"#, 1);
+    let report = freeqrent_doc::check(Payload::Text(text), &allowed).unwrap();
+    assert!(
+        report.starts_with(r#"{"ok":true,"scannable":false,"errors":[],"warnings":[{"code":"glass_halo_too_narrow","#),
+        "{report}"
+    );
+    assert!(report.contains(r#""detail":{"halo":0}"#), "{report}");
+    let unsupported = format!(
+        r#"{{"halftone":{{"image":{},"source":"{source}","ink":"glass"}},"frame":"circle"}}"#,
+        image_json(&p)
+    );
+    let e = freeqrent_doc::render(Payload::Text(text), &unsupported).unwrap_err();
+    assert_eq!(
+        (e.code, e.detail.as_str()),
+        ("glass_unsupported", r#"{"option":"Frame::Circle"}"#)
+    );
+    let no_source = format!(
+        r#"{{"halftone":{{"image":{},"ink":"glass"}}}}"#,
+        image_json(&p)
+    );
+    let e = freeqrent_doc::render(Payload::Text(text), &no_source).unwrap_err();
+    assert_eq!((e.code, e.detail.as_str()), ("glass_needs_source", "{}"));
+    // The plan carries the baked glass as PNG bytes.
+    let plain = format!(
+        r#"{{"halftone":{{"image":{},"source":"{source}","ink":"glass"}},"intro":"develop"}}"#,
+        image_json(&p)
+    );
+    let plan = freeqrent_doc::plan(Payload::Text(text), &plain).unwrap();
+    assert!(plan.contains(r#""role":"photo""#) && plan.contains(r#""png":"iVBORw0KGgo"#));
+}
+
+#[test]
 fn intros() {
     assert_eq!(
         style(r#"{"intro":"ripple"}"#),
@@ -654,7 +764,9 @@ fn boundary_functions_match_the_core() {
 
     let report = freeqrent_doc::check(Payload::Text(text), doc).unwrap();
     assert!(
-        report.starts_with(r#"{"ok":true,"errors":[],"warnings":[{"code":"rounded_finder""#),
+        report.starts_with(
+            r#"{"ok":true,"scannable":true,"errors":[],"warnings":[{"code":"rounded_finder""#
+        ),
         "{report}"
     );
     let code = report
@@ -675,7 +787,7 @@ fn boundary_functions_match_the_core() {
     let refused =
         freeqrent_doc::check(Payload::Text(text), r##"{"palette":{"fg":"#ddd"}}"##).unwrap();
     assert!(
-        refused.starts_with(r#"{"ok":false,"errors":[{"code":"contrast_too_low""#),
+        refused.starts_with(r#"{"ok":false,"scannable":true,"errors":[{"code":"contrast_too_low""#),
         "{refused}"
     );
     let e =

@@ -1246,21 +1246,16 @@ mod tests {
             );
         }
         #[cfg(feature = "animate")]
-        {
-            let intro = g().intro(crate::Intro::new(crate::Preset::Settle));
+        for (idle, option) in [
+            (crate::Idle::FinderPulse, "Idle::FinderPulse"),
+            (crate::Idle::Shimmer, "Idle::Shimmer"),
+        ] {
+            let report = g().idle(idle).check(&qr);
             assert!(
-                intro
-                    .check(&qr)
+                report
                     .errors
-                    .contains(&RenderError::GlassUnsupported {
-                        option: "Style.intro"
-                    })
-            );
-            assert_eq!(
-                g().plan(&qr).unwrap_err(),
-                RenderError::GlassUnsupported {
-                    option: "Style::plan"
-                }
+                    .contains(&RenderError::GlassUnsupported { option }),
+                "{option}: {report:?}"
             );
         }
         // What it supports.
@@ -1277,6 +1272,85 @@ mod tests {
             let report = style.check(&qr);
             assert!(report.ok(), "{report:?}");
             assert!(style.render(&qr).is_ok());
+        }
+    }
+
+    #[cfg(feature = "animate")]
+    #[test]
+    fn intros_move_the_photo_and_glass_whole() {
+        use crate::plan::{Property, Target};
+        use crate::{Intro, LayerRole, Preset};
+        let still = glass(Glass::new().resolution(8));
+        let qr = code(&still, 2);
+        let static_svg = still.render(&qr).unwrap();
+        let payloads = images(&static_svg);
+        for preset in Preset::ALL {
+            let style = still.clone().intro(Intro::new(preset));
+            let report = style.check(&qr);
+            assert!(report.ok(), "{preset:?}: {report:?}");
+            let svg = style.render(&qr).unwrap();
+            // The same two images, the photo first.
+            assert_eq!(images(&svg), payloads, "{preset:?}");
+            let plan = style.plan(&qr).unwrap();
+            let roles: alloc::vec::Vec<LayerRole> = plan.layers.iter().map(|l| l.role).collect();
+            let photo = roles.iter().position(|&r| r == LayerRole::Photo).unwrap();
+            assert_eq!(roles[photo + 1], LayerRole::Glass, "{preset:?}");
+            // The plan carries the glass's bytes, the same as the document's.
+            let layer = plan.layers[photo + 1].image.as_ref().unwrap();
+            let mut b64 = String::new();
+            crate::logo::base64(&mut b64, layer.png.as_ref().unwrap()).unwrap();
+            assert_eq!(b64, payloads[1]);
+            assert!(plan.layers[photo].image.as_ref().unwrap().png.is_none());
+            let moves = |i: usize, p: Property| {
+                plan.tracks
+                    .iter()
+                    .any(|t| t.target == Target::Layer(i) && t.keys.iter().any(|k| k.property == p))
+            };
+            if preset.is_reveal() {
+                // One mask over everything from the photo up.
+                assert_eq!(plan.reveal.unwrap().layers.0, photo, "{preset:?}");
+                assert!(!moves(photo, Property::Opacity) && !moves(photo + 1, Property::Opacity));
+            } else {
+                assert!(moves(photo, Property::Opacity), "{preset:?}");
+                assert!(moves(photo + 1, Property::Opacity), "{preset:?}");
+                // The photo only fades.
+                assert!(!moves(photo, Property::Scale) && !moves(photo, Property::TranslateX));
+            }
+            // From the end on, a frame is the static document's drawing.
+            let end = style.render_frame(&qr, plan.total_ms).unwrap();
+            assert_eq!(images(&end), payloads, "{preset:?}");
+            assert!(!end.contains(" opacity=\"") && !end.contains("mask=\""));
+            // Halfway, the glass is still coming in.
+            let mid = style.render_frame(&qr, plan.total_ms / 2).unwrap();
+            assert!(
+                mid.contains(" opacity=\"") || mid.contains("mask=\""),
+                "{preset:?}"
+            );
+        }
+        // The plan's JSON has the glass as base64 PNG.
+        let json = still.plan(&qr).unwrap().to_json();
+        assert!(json.contains("\"role\":\"glass\"") && json.contains("\"png\":\"iVBORw0KGgo"));
+        assert!(json.contains("\"role\":\"photo\""));
+        // Palette shifts, theme transitions and the other idles are fine.
+        let logo = Logo::svg(r##"<svg viewBox="0 0 1 1"><rect width="1" height="1"/></svg>"##)
+            .unwrap()
+            .scale(0.1);
+        for style in [
+            still
+                .clone()
+                .intro(Intro::palette_from(&crate::Palette::new().dark_twin())),
+            still.clone().theme_transition(300),
+            still.clone().idle(crate::Idle::Breathe),
+            still
+                .clone()
+                .logo(logo.clone())
+                .idle(crate::Idle::LogoGlint)
+                .idle(crate::Idle::LogoSpin),
+        ] {
+            let qr = code(&style, 5);
+            let report = style.check(&qr);
+            assert!(report.ok(), "{report:?}");
+            assert!(style.render(&qr).is_ok() && style.plan(&qr).is_ok());
         }
     }
 

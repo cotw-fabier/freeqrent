@@ -929,11 +929,16 @@ fn check_glass(
         h.clarity != crate::halftone::Clarity::default(),
         "Halftone.clarity",
     );
+    // Intros, palette shifts and the other idles move the photo and glass
+    // whole (SPEC §8.3); these two would need the modules: the eyes to
+    // pulse, and the read colors to check the band against.
     #[cfg(feature = "animate")]
     {
-        unsupported(style.intro.is_some(), "Style.intro");
-        unsupported(!style.idle.is_empty(), "Style.idle");
-        unsupported(style.theme_transition.is_some(), "Style.theme_transition");
+        unsupported(
+            style.idle.contains(&crate::Idle::FinderPulse),
+            "Idle::FinderPulse",
+        );
+        unsupported(style.idle.contains(&crate::Idle::Shimmer), "Idle::Shimmer");
     }
 
     // Measured limits: errors, or warnings when unscannable codes are

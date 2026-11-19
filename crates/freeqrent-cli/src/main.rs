@@ -134,7 +134,15 @@ Style:
                            dotted timing and the standard tracking grid; slow
                            to scan on phones: --tracking-grid sparse scans
                            fast, --clarity 0.5 helps
-  --ink mono|color[:N]     sub-cells in fg, or the picture's colors, N per band (6)
+  --ink mono|color[:N]|glass[:KEY=VALUE,...]
+                           sub-cells in fg, or the picture's colors, N per
+                           band (6); or glass: the whole photo with the code
+                           as liquid glass lenses over it (needs the picture's
+                           own file: --halftone/--art pass it). Keys: border
+                           (0.08), halo (2), lens (0.9), core (0.6), targets
+                           D/L (0.25/0.9), union (0.4), frost (0.12), finders
+                           D/P (0.3/0.92), tint, refraction, rim (on|off),
+                           resolution (16 px per module)
   --bands D,L              darkest light and lightest dark sub-cell (0.28,0.94)
   --clarity C              pull sub-cells toward their module, 0-1 (default 0)
   --clarity-map FILE       ... per area: light parts clear, dark ones pictorial
@@ -144,6 +152,8 @@ Style:
   --no-steer               keep standard padding (no module steering)
   --allow-inverted         permit light modules on a dark background, and let
                            --palette-from-* keep a dark source's polarity
+  --allow-unscannable      render what the measured glass limits refuse, as
+                           warnings; --check then says it is not scannable
   --dark                   the palette's dark twin: luma mirrored, hue kept
                            (implies --allow-inverted); pictures stay upright
   --target-px N            displayed size in device pixels (warns when too small)
@@ -205,6 +215,7 @@ pub struct StyleArgs {
     tokens: Vec<(String, String)>,
     quiet_zone: Option<u8>,
     allow_inverted: bool,
+    allow_unscannable: bool,
     dark: bool,
     pretty: bool,
     title: Option<String>,
@@ -250,6 +261,8 @@ pub struct StyleArgs {
     palette_clusters: Option<u8>,
     palette_contrast: Option<f32>,
     picture: Option<Rgba8Image>,
+    /// The picture's own file and its format, for glass ink's photo.
+    picture_file: Option<PictureFile>,
     art: bool,
     ink: Option<Ink>,
     bands: Option<(f32, f32)>,
@@ -268,6 +281,27 @@ fn load_picture(flag: &str, source: &str) -> Result<Rgba8Image, String> {
     }
     let bytes = fs::read(source).map_err(|e| format!("{source}: {e}"))?;
     freeqrent_image::decode(&bytes).map_err(|e| format!("--{flag} {source}: {e}"))
+}
+
+/// A picture's own file and its format.
+type PictureFile = (Vec<u8>, RasterFormat);
+
+/// Reads a picture for `--halftone` or `--art`: its pixels, and its own
+/// file when that is a PNG, JPEG, GIF or WebP (glass ink embeds it, SPEC
+/// §7.9). `sample` is the built-in picture, its file our own PNG of it.
+fn load_picture_file(
+    flag: &str,
+    source: &str,
+) -> Result<(Rgba8Image, Option<PictureFile>), String> {
+    if source == "sample" {
+        let image = sample::picture();
+        let file = freeqrent::png::encode_rgba(&image);
+        return Ok((image, Some((file, RasterFormat::Png))));
+    }
+    let bytes = fs::read(source).map_err(|e| format!("{source}: {e}"))?;
+    let image = freeqrent_image::decode(&bytes).map_err(|e| format!("--{flag} {source}: {e}"))?;
+    let file = RasterFormat::sniff(&bytes).map(|format| (bytes, format));
+    Ok((image, file))
 }
 
 /// Where `--palette-from-*` takes colors from, read once.
@@ -443,6 +477,7 @@ impl StyleArgs {
         match flag {
             "pretty" => self.pretty = true,
             "allow-inverted" => self.allow_inverted = true,
+            "allow-unscannable" => self.allow_unscannable = true,
             "dark" => self.dark = true,
             "no-logo-backdrop" => self.no_logo_backdrop = true,
             "keep-modules" => self.keep_modules = true,
@@ -594,7 +629,9 @@ impl StyleArgs {
             }
             "palette-contrast" => self.palette_contrast = Some(options::number(flag, value)?),
             "halftone" | "art" => {
-                self.picture = Some(load_picture(flag, value)?);
+                let (picture, file) = load_picture_file(flag, value)?;
+                self.picture = Some(picture);
+                self.picture_file = file;
                 self.art = flag == "art";
             }
             "ink" => self.ink = Some(options::ink(value)?),
@@ -653,6 +690,13 @@ impl StyleArgs {
     /// The picture flags as a `Halftone`, if a picture was given.
     fn halftone(&self) -> Option<Halftone> {
         let mut h = Halftone::new(self.picture.clone()?).steer(!self.no_steer);
+        // The file goes along for glass ink; other inks don't read it.
+        if let Some((file, format)) = &self.picture_file {
+            // Sniffed from these bytes, so the signature matches.
+            if let Ok(with) = h.clone().source(file.clone(), *format) {
+                h = with;
+            }
+        }
         if let Some(ink) = self.ink {
             h = h.ink(ink);
         }
@@ -749,6 +793,7 @@ impl StyleArgs {
             .palette(palette)
             .quiet_zone(self.quiet_zone.unwrap_or(quiet_zone))
             .allow_inverted(self.allow_inverted || self.dark || inverted)
+            .allow_unscannable(self.allow_unscannable)
             .minify(!self.pretty);
         if let Some(frame) = &self.frame {
             let ring = self.frame_ring.unwrap_or_default();
@@ -1072,9 +1117,14 @@ fn print_palette(out: &mut dyn Write, report: &PaletteReport) -> io::Result<()> 
 
 fn print_report(out: &mut dyn Write, report: &ScanReport) -> io::Result<()> {
     if report.ok() {
+        let scannable = if report.scannable {
+            "scannable"
+        } else {
+            "NOT scannable (allowed by --allow-unscannable; outside the guarantee)"
+        };
         writeln!(
             out,
-            "ok: renders; lowest contrast {:.2}",
+            "ok: renders, {scannable}; lowest contrast {:.2}",
             report.min_contrast
         )?;
     }

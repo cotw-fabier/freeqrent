@@ -803,6 +803,24 @@ pub struct PlanLayer {
     /// boxes the shape fits into, and this says where it goes. The plan
     /// doesn't carry the picture; players read it from the style.
     pub glyph: Option<PlanGlyph>,
+    /// For glass ink's [`LayerRole::Photo`] and [`LayerRole::Glass`]
+    /// (SPEC §7.9): the image the layer draws, clipped to its path.
+    pub image: Option<PlanImage>,
+}
+
+/// An image a plan layer draws (SPEC §7.9, §8.5): stretched over its box
+/// (`preserveAspectRatio="none"`) and clipped to the layer's path.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct PlanImage {
+    /// The box's top-left corner, in viewBox units.
+    pub at: (f32, f32),
+    /// The box's width and height, in viewBox units.
+    pub size: (f32, f32),
+    /// The image's PNG bytes: the baked glass. `None` for the photo,
+    /// which players read from the style's `halftone.source`, as they do
+    /// a logo's picture.
+    pub png: Option<Vec<u8>>,
 }
 
 /// A custom shape drawn into a plan layer's boxes.
@@ -1073,7 +1091,7 @@ pub(crate) fn element_count(style: &Style, qr: &QrMatrix) -> usize {
         .collect();
     crate::sort::sort_by_key(&mut seen, |&(l, g, c)| (l, g, c.map(|c| c as u8)));
     seen.dedup();
-    seen.len() + logo
+    seen.len() + logo + svg::glass_elements(style, &canvas).len()
 }
 
 fn corner_of(unit: &Unit) -> Option<Corner> {
@@ -1206,6 +1224,9 @@ const DEVELOP_FAINT: f32 = 0.35;
 const DEVELOP_FAINT_AT: f64 = 0.45;
 /// The logo's reveal, at most.
 const LOGO_MS: f64 = 400.0;
+/// LockOn on glass: the whole glass closes in from this scale, like the
+/// finders it carries (less than their 1.35, as it spans the code).
+const GLASS_LOCK_ON: f32 = 1.12;
 
 fn number(property: Property, offset: f32, value: f32) -> Keyframe {
     Keyframe {
@@ -1342,10 +1363,13 @@ fn tracks(
     }
     if preset == Preset::Develop {
         // The picture: the halftone, or the data modules of a code without
-        // one.
-        let pictured = elements.iter().any(|e| e.role == LayerRole::Halftone);
+        // one. Under glass, the photo plays the picture and the glass
+        // develops over it like the finders.
+        let pictured = elements
+            .iter()
+            .any(|e| matches!(e.role, LayerRole::Halftone | LayerRole::Photo));
         let picture = |role| {
-            role == LayerRole::Halftone
+            matches!(role, LayerRole::Halftone | LayerRole::Photo)
                 || (!pictured && matches!(role, LayerRole::Data | LayerRole::Filler))
         };
         let faint = code_start + window * DEVELOP_FAINT_AT;
@@ -1386,6 +1410,36 @@ fn tracks(
             role if role.is_chrome() => {}
             role if role.is_logo() => tracks.extend(logo_track(i, e)),
             _ if preset.is_reveal() => {}
+            // Glass moves whole (SPEC §8.3): the photo fades in as the
+            // first group would, then the glass plays the preset's motion
+            // as the last group would.
+            LayerRole::Photo => {
+                let (at, length) = stagger(start, span, k, 0.0);
+                tracks.push(track(
+                    target,
+                    at,
+                    length,
+                    alloc::vec![number(Property::Opacity, 0.0, 0.0)],
+                ));
+            }
+            LayerRole::Glass => {
+                let last = k - 1.0;
+                let (at, length) = stagger(start, span, k, last);
+                let keys = match preset {
+                    Preset::Ripple => fade_scale(0.8),
+                    Preset::LockOn => fade_scale(GLASS_LOCK_ON),
+                    Preset::Assemble => {
+                        let (dx, dy) = scatter(seed, last as u8);
+                        alloc::vec![
+                            number(Property::Opacity, 0.0, 0.0),
+                            number(Property::TranslateX, 0.0, dx),
+                            number(Property::TranslateY, 0.0, dy),
+                        ]
+                    }
+                    _ => fade_scale(0.92),
+                };
+                tracks.push(track(target, at, length, keys));
+            }
             LayerRole::FinderOuter | LayerRole::FinderEye if preset == Preset::LockOn => {
                 let corner = scene::CORNERS
                     .iter()
@@ -1603,7 +1657,8 @@ fn palette_tracks(style: &Style, intro: &Intro, elements: &[Element]) -> Vec<Tra
         if matches!(
             e.role,
             LayerRole::Shimmer | LayerRole::Halftone | LayerRole::LogoGlint | LayerRole::LogoArt
-        ) || e.outline.is_some()
+        ) || e.role.is_image()
+            || e.outline.is_some()
             || (e.role == LayerRole::Logo && !backdrop)
         {
             continue;
@@ -2775,9 +2830,11 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
         None => (svg::static_elements(style, qr, &canvas), None),
     };
     let (side, height) = (canvas.side as f32, canvas.height() as f32);
+    let image = |role: LayerRole| image(style, qr, &canvas, role);
     let layers = elements
         .into_iter()
         .map(|e| PlanLayer {
+            image: image(e.role),
             role: e.role,
             token: e.token,
             color: e.color,
@@ -2832,6 +2889,39 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
             }
         }),
     }
+}
+
+/// The image of a glass layer (SPEC §7.9): the photo's box, or the baked
+/// glass with its bytes. `None` for every other layer.
+#[cfg(feature = "halftone")]
+fn image(style: &Style, qr: &QrMatrix, canvas: &Canvas, role: LayerRole) -> Option<PlanImage> {
+    match role {
+        LayerRole::Photo => {
+            let (x, y, w, h) = crate::glass::photo_box(style.halftone.as_ref()?, canvas);
+            // As the SVG writes it: to a thousandth of a module.
+            let k = |v: f64| (math::round(v * 1000.0) / 1000.0) as f32;
+            Some(PlanImage {
+                at: (k(x), k(y)),
+                size: (k(w), k(h)),
+                png: None,
+            })
+        }
+        LayerRole::Glass => {
+            let baked = crate::glass::bake(style, qr, canvas)?;
+            let (at, side) = (baked.at as f32, baked.side as f32);
+            Some(PlanImage {
+                at: (at, at),
+                size: (side, side),
+                png: Some(baked.png),
+            })
+        }
+        _ => None,
+    }
+}
+
+#[cfg(not(feature = "halftone"))]
+fn image(_: &Style, _: &QrMatrix, _: &Canvas, _: LayerRole) -> Option<PlanImage> {
+    None
 }
 
 // ----------------------------------------------------------------- JSON
@@ -2889,6 +2979,8 @@ fn role_name(role: LayerRole) -> &'static str {
         LayerRole::LogoInk => "logo-ink",
         LayerRole::LogoGlint => "logo-glint",
         LayerRole::LogoArt => "logo-art",
+        LayerRole::Photo => "photo",
+        LayerRole::Glass => "glass",
     }
 }
 
@@ -3006,6 +3098,22 @@ impl AnimationPlan {
                     w.write_char(']')?;
                 }
                 w.write_str("]}")?;
+            }
+            if let Some(img) = &l.image {
+                w.write_str(",\"image\":{\"x\":")?;
+                json_num(w, img.at.0)?;
+                w.write_str(",\"y\":")?;
+                json_num(w, img.at.1)?;
+                w.write_str(",\"width\":")?;
+                json_num(w, img.size.0)?;
+                w.write_str(",\"height\":")?;
+                json_num(w, img.size.1)?;
+                if let Some(png) = &img.png {
+                    w.write_str(",\"png\":\"")?;
+                    crate::logo::base64(w, png)?;
+                    w.write_char('"')?;
+                }
+                w.write_char('}')?;
             }
             w.write_str(",\"origin\":[")?;
             json_num(w, l.origin.0)?;

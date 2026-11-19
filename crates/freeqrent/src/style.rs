@@ -835,20 +835,15 @@ impl Style {
     }
 
     /// The animation as data (SPEC §8.5): layers and tracks, for players
-    /// other than CSS. Fails like [`render`](Style::render), and for glass
-    /// ink, whose layers plans don't carry yet
-    /// ([`RenderError::GlassUnsupported`]).
+    /// other than CSS. Fails like [`render`](Style::render). Glass ink's
+    /// baked layer is in the plan as PNG bytes
+    /// ([`PlanImage::png`](crate::plan::PlanImage::png)), so building one
+    /// bakes it.
     #[cfg(feature = "animate")]
     pub fn plan(&self, qr: &QrMatrix) -> Result<crate::AnimationPlan, RenderError> {
         let report = self.check(qr);
         if let Some(error) = report.errors.into_iter().next() {
             return Err(error);
-        }
-        #[cfg(feature = "halftone")]
-        if self.halftone.as_ref().is_some_and(|h| h.glass().is_some()) {
-            return Err(RenderError::GlassUnsupported {
-                option: "Style::plan",
-            });
         }
         Ok(crate::animate::plan(self, qr))
     }

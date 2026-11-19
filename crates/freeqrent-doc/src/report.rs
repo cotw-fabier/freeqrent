@@ -15,13 +15,16 @@ fn entry(out: &mut String, code: &str, message: &str, detail: Detail) {
 }
 
 /// The report for `qr`:
-/// `{"ok","errors","warnings","min_contrast","ecc_budget_used","logo_scale","steering","code"}`.
+/// `{"ok","scannable","errors","warnings","min_contrast","ecc_budget_used","logo_scale","steering","code"}`.
+/// `scannable` is false only when `allow_unscannable` turned an error into
+/// a warning (SPEC §9).
 /// Errors and warnings are `{code, message, detail}` entries; `code` says
 /// what the payload was encoded as.
 pub fn report_json(report: &ScanReport, qr: &QrMatrix) -> String {
     let mut out = String::new();
     let mut o = ObjectWriter::new(&mut out);
     o.bool("ok", report.ok());
+    o.bool("scannable", report.scannable);
     let list = o.key("errors");
     list.push('[');
     for (i, e) in report.errors.iter().enumerate() {

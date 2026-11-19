@@ -262,6 +262,13 @@ fn style() -> Value {
         ),
         ("quiet_zone", int(255)),
         ("allow_inverted", boolean()),
+        (
+            "allow_unscannable",
+            described(
+                boolean(),
+                "Render what the measured glass limits refuse, as warnings; the report says scannable: false.",
+            ),
+        ),
         ("frame", r("Frame")),
         ("border", r("Border")),
         (
@@ -474,12 +481,40 @@ fn image() -> Value {
 }
 
 fn halftone() -> Value {
-    let mut inks = plain(INKS, &["color"]);
+    let mut inks = plain(INKS, &["color", "glass"]);
     inks.push(variant("color", vec![("colors", int(255))], &[]));
+    inks.push(described(
+        variant(
+            "glass",
+            vec![
+                ("border", number()),
+                ("halo", int(255)),
+                ("lens", number()),
+                ("core", number()),
+                ("targets", pair()),
+                ("union", number()),
+                ("frost", number()),
+                ("finders", pair()),
+                ("tint", boolean()),
+                ("refraction", boolean()),
+                ("rim", boolean()),
+                ("resolution", int(255)),
+            ],
+            &[],
+        ),
+        "Liquid glass over the whole photo (SPEC §7.9); needs source.",
+    ));
     props(
         vec![
             ("image", r("Image")),
             ("ink", union(INKS, inks)),
+            (
+                "source",
+                described(
+                    r("Base64"),
+                    "The picture's own file (PNG, JPEG, GIF or WebP), embedded as it is; glass ink needs it.",
+                ),
+            ),
             ("bands", pair()),
             (
                 "clarity",
@@ -676,6 +711,7 @@ fn report() -> Value {
     );
     let keys = [
         "ok",
+        "scannable",
         "errors",
         "warnings",
         "min_contrast",
@@ -687,6 +723,13 @@ fn report() -> Value {
     props(
         vec![
             ("ok", boolean()),
+            (
+                "scannable",
+                described(
+                    boolean(),
+                    "False when allow_unscannable turned an error into a warning: outside the guarantee.",
+                ),
+            ),
             ("errors", array(r("Error"))),
             ("warnings", array(r("Error"))),
             ("min_contrast", nullable("number")),

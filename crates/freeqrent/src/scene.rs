@@ -344,6 +344,17 @@ pub enum LayerRole {
     /// The border at the frame's edge ([`Style::border`](crate::Style::border)):
     /// one or two rings, drawn with the even-odd rule.
     Border,
+    /// Glass ink's photograph (SPEC §7.9): one image from the picture's
+    /// own file ([`Halftone::source`](crate::Halftone::source)), placed by
+    /// [`PlanLayer::image`](crate::plan::PlanLayer::image) and clipped to
+    /// the layer's path (the card). The plan doesn't carry the file;
+    /// players read it from the style, as they do a logo.
+    Photo,
+    /// Glass ink's baked glass (SPEC §7.9): one PNG over the code and its
+    /// quiet zone, transparent between the lenses. The plan carries its
+    /// bytes ([`PlanImage::png`](crate::plan::PlanImage::png)); its path
+    /// is the image's square.
+    Glass,
 }
 
 impl LayerRole {
@@ -374,6 +385,11 @@ impl LayerRole {
                 | LayerRole::LogoInk
                 | LayerRole::LogoGlint
         )
+    }
+
+    /// Glass ink's two images, which carry no paint of their own.
+    pub(crate) fn is_image(self) -> bool {
+        matches!(self, LayerRole::Photo | LayerRole::Glass)
     }
 }
 

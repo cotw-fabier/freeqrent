@@ -215,6 +215,25 @@ pub(crate) fn render_error_parts(e: &RenderError) -> (&'static str, Detail) {
         }
         RenderError::ShadowNeedsBackground => "shadow_needs_background",
         RenderError::GlyphOnPicture => "glyph_on_picture",
+        RenderError::GlassNeedsSource => "glass_needs_source",
+        RenderError::GlassHaloTooNarrow { halo } => {
+            d.int("halo", halo);
+            "glass_halo_too_narrow"
+        }
+        RenderError::GlassFinderContrast { delta_l, plate } => {
+            d.f32("delta_l", *delta_l);
+            d.f32("plate", *plate);
+            "glass_finder_contrast"
+        }
+        RenderError::GlassTargetsTooWeak { dark, light } => {
+            d.f32("dark", *dark);
+            d.f32("light", *light);
+            "glass_targets_too_weak"
+        }
+        RenderError::GlassUnsupported { option } => {
+            d.str("option", option);
+            "glass_unsupported"
+        }
         RenderError::Write => "write",
         _ => "render_error",
     };
@@ -275,6 +294,28 @@ pub(crate) fn warning_parts(w: &Warning) -> (&'static str, Detail) {
             d.int("count", count);
             "many_animated_elements"
         }
+        Warning::GlassHaloTooNarrow { halo } => {
+            d.int("halo", halo);
+            "glass_halo_too_narrow"
+        }
+        Warning::GlassFinderContrast { delta_l, plate } => {
+            d.f32("delta_l", *delta_l);
+            d.f32("plate", *plate);
+            "glass_finder_contrast"
+        }
+        Warning::GlassTargetsTooWeak { dark, light } => {
+            d.f32("dark", *dark);
+            d.f32("light", *light);
+            "glass_targets_too_weak"
+        }
+        Warning::GlassNeedsZxing { version } => {
+            d.int("version", version);
+            "glass_needs_zxing"
+        }
+        Warning::LargeOutput { bytes } => {
+            d.int("bytes", bytes);
+            "large_output"
+        }
         _ => "warning",
     };
     (code, d)
@@ -300,6 +341,8 @@ pub(crate) fn image_error(path: &str, e: ImageError) -> DocError {
             d.int("actual", actual);
         }
         ImageError::Empty | ImageError::TooLarge => {}
+        // Encoded bytes whose signature isn't their format's.
+        ImageError::NotImage(_) => d.str("reason", "not_image"),
         _ => {}
     }
     let message = if path.is_empty() {
@@ -308,6 +351,19 @@ pub(crate) fn image_error(path: &str, e: ImageError) -> DocError {
         format!("{path}: {e}")
     };
     DocError::new("invalid_image", message, d)
+}
+
+/// Encoded picture bytes at `path` (`halftone.source`) that aren't a PNG,
+/// JPEG, GIF or WebP file by their signature.
+pub(crate) fn not_image(path: &str) -> DocError {
+    let mut d = Detail::new();
+    d.str("path", path);
+    d.str("reason", "not_image");
+    DocError::new(
+        "invalid_image",
+        format!("{path}: not a PNG, JPEG, GIF or WebP image"),
+        d,
+    )
 }
 
 /// A logo that can't be read, at `path`.

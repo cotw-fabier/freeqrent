@@ -153,6 +153,7 @@ impl Files {
         json.replace("$SVG", &svg)
             .replace("$PNG", &format!("\"{}\"", base64(&self.png)))
             .replace("$IMAGE", &image)
+            .replace("$SOURCE", &format!("\"{}\"", base64(&self.png)))
     }
 }
 

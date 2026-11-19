@@ -169,11 +169,14 @@ With `--preset`, the CLI's extracted palette replaces the preset's, so the docum
 | `--halftone FILE` | `halftone.image` (`{"width", "height", "rgba"}`; the binding decodes the picture, or takes raw pixels) |
 | `--art FILE` | `art` (the same object; can't go with `preset` or `halftone`) |
 | `--ink mono\|color[:N]` | `halftone.ink`: `mono` or `{"kind": "color", "colors"}` |
+| `--ink glass[:KEY=VALUE,…]` | `halftone.ink`: `glass` or `{"kind": "glass", "border", "halo", "lens", "core", "targets": [dark, light], "union", "frost", "finders": [dark, plate], "tint", "refraction", "rim", "resolution"}` (SPEC §7.9). On the command line pairs are `D/L` and switches `on`/`off` |
+| (the picture's file, with `--halftone FILE` or `--art FILE`) | `halftone.source` (or `art.source`): the file's own bytes, base64, when it is a PNG, JPEG, GIF or WebP; glass ink embeds it as the photo (`sample` passes the CLI's own PNG of its picture). Other inks don't read it |
+| `--allow-unscannable` | `allow_unscannable` (SPEC §9: the glass limits render as warnings, the report says `scannable: false`) |
 | `--bands D,L`, `--clarity C`, `--clarity-map FILE` | `halftone.bands`, `halftone.clarity` (a number or an image) |
 | `--fit cover\|contain`, `--focal X,Y` | `halftone.fit`, `halftone.focal` |
 | `--priority FILE`, `--no-steer` | `halftone.priority`, `halftone.steer` false |
 
-`$IMAGE` stands for a picture: its path on the command line, its pixels in the document.
+`$IMAGE` stands for a picture: its path on the command line, its pixels in the document. `$SOURCE` is the same picture's file as base64 in the document; on the command line `--halftone` and `--art` pass it.
 
 ```equivalences
 --halftone $IMAGE                                   => {"halftone":{"image":$IMAGE}}
@@ -181,6 +184,13 @@ With `--preset`, the CLI's extracted palette replaces the preset's, so the docum
 --halftone $IMAGE --clarity-map $IMAGE --priority $IMAGE => {"halftone":{"image":$IMAGE,"clarity":$IMAGE,"priority":$IMAGE}}
 --art $IMAGE --ink mono                             => {"art":{"image":$IMAGE,"ink":"mono"}}
 --art $IMAGE --tracking-grid sparse                 => {"art":{"image":$IMAGE},"encoding":{"tracking_grid":"sparse"}}
+--halftone $IMAGE --ink glass                       => {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":"glass"}}
+--halftone $IMAGE --ink glass:border=0.12,halo=3,lens=0.85,core=0.55,targets=0.22/0.92,union=0.5,frost=0.1,finders=0.28/0.94,tint=off,refraction=on,rim=off,resolution=12 --frame rounded:2 => {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":{"kind":"glass","border":0.12,"halo":3,"lens":0.85,"core":0.55,"targets":[0.22,0.92],"union":0.5,"frost":0.1,"finders":[0.28,0.94],"tint":false,"refraction":true,"rim":false,"resolution":12}},"frame":{"kind":"rounded","radius":2}}
+--art $IMAGE --ink glass:border=0.05               => {"art":{"image":$IMAGE,"source":$SOURCE,"ink":{"kind":"glass","border":0.05}}}
+--halftone $IMAGE --ink glass:halo=0 --allow-unscannable => {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":{"kind":"glass","halo":0}},"allow_unscannable":true}
+--halftone $IMAGE --ink glass --intro develop       => {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":"glass"},"intro":"develop"}
+--halftone $IMAGE --ink glass --intro settle --frame-at 600 => frame 600 {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":"glass"},"intro":"settle"}
+--halftone $IMAGE --ink glass --intro sweep --plan  => plan {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":"glass"},"intro":"sweep"}
 ```
 
 ## Motion

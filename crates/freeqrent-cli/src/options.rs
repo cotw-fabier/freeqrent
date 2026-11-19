@@ -3,7 +3,7 @@
 
 use freeqrent::{
     AlignmentShape, Axis, Border, CaptionFont, ColorSpread, Corner, CubicBezier, Ease, Ecc, Effect,
-    Emphasis, EyeShape, Fit, Frame, FrameRing, Idle, Ink, LogoFrame, LogoIntro, LogoShape,
+    Emphasis, EyeShape, Fit, Frame, FrameRing, Glass, Idle, Ink, LogoFrame, LogoIntro, LogoShape,
     LogoSize, LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder, Style, Texture,
     TimingStyle, TrackingGrid, Trigger,
 };
@@ -477,7 +477,11 @@ pub fn token(value: &str) -> Result<(String, String), String> {
         .ok_or_else(|| format!("expected NAME=VALUE, got {value:?}"))
 }
 
+/// `mono`, `color[:N]`, or `glass[:KEY=VALUE,…]` (SPEC §7.9).
 pub fn ink(value: &str) -> Result<Ink, String> {
+    if value == "glass" || value.starts_with("glass:") {
+        return glass(value.strip_prefix("glass").unwrap_or_default()).map(Ink::Glass);
+    }
     let (name, param) = named(value)?;
     match name {
         "mono" => no_param(name, param).map(|_| Ink::Mono),
@@ -490,8 +494,75 @@ pub fn ink(value: &str) -> Result<Ink, String> {
                 colors: colors as u8,
             })
         }
-        _ => Err(format!("unknown ink {value:?}: try mono or color[:N]")),
+        _ => Err(format!(
+            "unknown ink {value:?}: try mono, color[:N] or glass[:KEY=VALUE,...]"
+        )),
     }
+}
+
+/// Glass's options after `glass`: `:border=0.1,halo=3,targets=0.22/0.92,
+/// finders=0.28/0.94,tint=off,…`. Every option left out keeps its default.
+fn glass(options: &str) -> Result<Glass, String> {
+    let mut g = Glass::new();
+    let Some(list) = options.strip_prefix(':') else {
+        return Ok(g);
+    };
+    for item in list.split(',') {
+        let (key, value) = item
+            .split_once('=')
+            .ok_or_else(|| format!("glass option {item:?}: expected KEY=VALUE"))?;
+        let num = || {
+            value
+                .parse::<f32>()
+                .map_err(|_| format!("glass {key}: {value:?} isn't a number"))
+        };
+        let whole = || {
+            value
+                .parse::<u8>()
+                .map_err(|_| format!("glass {key}: {value:?} isn't a whole number 0-255"))
+        };
+        let both = || -> Result<(f32, f32), String> {
+            let (a, b) = value
+                .split_once('/')
+                .ok_or_else(|| format!("glass {key}: {value:?} isn't two numbers like 0.25/0.9"))?;
+            let n = |v: &str| {
+                v.parse::<f32>()
+                    .map_err(|_| format!("glass {key}: {v:?} isn't a number"))
+            };
+            Ok((n(a)?, n(b)?))
+        };
+        let switch = || match value {
+            "on" | "true" | "yes" => Ok(true),
+            "off" | "false" | "no" => Ok(false),
+            _ => Err(format!("glass {key}: {value:?}: try on or off")),
+        };
+        g = match key {
+            "border" => g.border(num()?),
+            "halo" => g.halo(whole()?),
+            "lens" => g.lens(num()?),
+            "core" => g.core(num()?),
+            "targets" => {
+                let (dark, light) = both()?;
+                g.targets(dark, light)
+            }
+            "union" => g.union(num()?),
+            "frost" => g.frost(num()?),
+            "finders" => {
+                let (dark, plate) = both()?;
+                g.finders(dark, plate)
+            }
+            "tint" => g.tint(switch()?),
+            "refraction" => g.refraction(switch()?),
+            "rim" => g.rim(switch()?),
+            "resolution" => g.resolution(whole()?),
+            _ => {
+                return Err(format!(
+                    "unknown glass option {key:?}: try border, halo, lens, core, targets, union, frost, finders, tint, refraction, rim or resolution"
+                ));
+            }
+        };
+    }
+    Ok(g)
 }
 
 pub fn fit(value: &str) -> Result<Fit, String> {
@@ -620,6 +691,31 @@ mod tests {
         assert_eq!(trigger("every:5000").unwrap(), Trigger::Every(5000));
         assert!(trigger("every:soon").is_err());
         assert!(trigger("class:").is_err());
+        assert_eq!(ink("glass").unwrap(), Ink::Glass(Glass::new()));
+        assert_eq!(
+            ink("glass:border=0.12,halo=3,lens=0.8,core=0.5,targets=0.22/0.92,union=0.5,frost=0.1,finders=0.28/0.94,tint=off,refraction=no,rim=false,resolution=12").unwrap(),
+            Ink::Glass(
+                Glass::new()
+                    .border(0.12)
+                    .halo(3)
+                    .lens(0.8)
+                    .core(0.5)
+                    .targets(0.22, 0.92)
+                    .union(0.5)
+                    .frost(0.1)
+                    .finders(0.28, 0.94)
+                    .tint(false)
+                    .refraction(false)
+                    .rim(false)
+                    .resolution(12)
+            )
+        );
+        assert!(ink("glass:").is_err());
+        assert!(ink("glass:halo").is_err());
+        assert!(ink("glass:targets=0.2").is_err());
+        assert!(ink("glass:tint=maybe").is_err());
+        assert!(ink("glass:shine=1").is_err());
+        assert!(ink("glassy").is_err());
         assert_eq!(
             token("fg=oklch(32% .08 265)").unwrap(),
             ("fg".to_string(), "oklch(32% .08 265)".to_string())

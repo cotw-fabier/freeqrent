@@ -10,13 +10,13 @@
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner,
     CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
-    FrameRing, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize,
-    LogoTiming, Mask, ModuleShape, Paint, Palette, Preset, QrBuilder, QrCode, RasterFormat,
-    RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, Token, TrackingGrid, Trigger,
-    Version,
+    FrameRing, Glass, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape,
+    LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette, Preset, QrBuilder, QrCode,
+    RasterFormat, RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, Token,
+    TrackingGrid, Trigger, Version,
 };
 
-use crate::error::{DocError, glyph_error, logo_error};
+use crate::error::{DocError, glyph_error, image_error, logo_error, not_image};
 use crate::json::{self, Value};
 use crate::read::{
     Obj, array_of, base64_of, bool_of, f32_of, image_of, name_of, pair_of, str_of, tagged, u8_of,
@@ -47,6 +47,7 @@ pub const STYLE_KEYS: &[&str] = &[
     "dark",
     "quiet_zone",
     "allow_inverted",
+    "allow_unscannable",
     "frame",
     "border",
     "shadow",
@@ -98,7 +99,7 @@ pub const BORDERS: &[&str] = &["solid", "double"];
 /// `logo.shape.kind`.
 pub const LOGO_SHAPES: &[&str] = &["square", "rounded", "circle"];
 /// `halftone.ink.kind`.
-pub const INKS: &[&str] = &["mono", "color"];
+pub const INKS: &[&str] = &["mono", "color", "glass"];
 /// `halftone.fit`.
 pub const FITS: &[&str] = &["cover", "contain"];
 /// `intro.ease.kind`.
@@ -235,6 +236,9 @@ fn document(v: &Value) -> Result<Document, DocError> {
     let inverted = o.opt("allow_inverted", bool_of)?;
     let allow = inverted.unwrap_or(style.inverted_allowed()) || dark;
     style = style.allow_inverted(allow);
+    if let Some(allow) = o.opt("allow_unscannable", bool_of)? {
+        style = style.allow_unscannable(allow);
+    }
     if let Some(f) = o.opt("frame", frame)? {
         style = style.frame(f);
     }
@@ -776,6 +780,49 @@ fn logo(v: &Value, path: &str) -> Result<Logo, DocError> {
     Ok(logo)
 }
 
+/// `halftone.ink` `{"kind":"glass", …}` (SPEC §7.9): each option left out
+/// keeps `Glass::new`'s default.
+fn glass(i: &mut Obj<'_>) -> Result<Glass, DocError> {
+    let mut g = Glass::new();
+    if let Some(v) = i.opt("border", f32_of)? {
+        g = g.border(v);
+    }
+    if let Some(v) = i.opt("halo", u8_of)? {
+        g = g.halo(v);
+    }
+    if let Some(v) = i.opt("lens", f32_of)? {
+        g = g.lens(v);
+    }
+    if let Some(v) = i.opt("core", f32_of)? {
+        g = g.core(v);
+    }
+    if let Some((dark, light)) = i.opt("targets", pair_of)? {
+        g = g.targets(dark, light);
+    }
+    if let Some(v) = i.opt("union", f32_of)? {
+        g = g.union(v);
+    }
+    if let Some(v) = i.opt("frost", f32_of)? {
+        g = g.frost(v);
+    }
+    if let Some((dark, plate)) = i.opt("finders", pair_of)? {
+        g = g.finders(dark, plate);
+    }
+    if let Some(v) = i.opt("tint", bool_of)? {
+        g = g.tint(v);
+    }
+    if let Some(v) = i.opt("refraction", bool_of)? {
+        g = g.refraction(v);
+    }
+    if let Some(v) = i.opt("rim", bool_of)? {
+        g = g.rim(v);
+    }
+    if let Some(v) = i.opt("resolution", u8_of)? {
+        g = g.resolution(v);
+    }
+    Ok(g)
+}
+
 fn halftone(v: &Value, path: &str) -> Result<Halftone, DocError> {
     let mut o = Obj::new(v, path)?;
     let mut h = Halftone::new(o.req("image", image_of)?);
@@ -784,6 +831,7 @@ fn halftone(v: &Value, path: &str) -> Result<Halftone, DocError> {
         let mut i = or_empty(i, &EMPTY);
         let ink = match kind {
             "mono" => Ink::Mono,
+            "glass" => Ink::Glass(glass(&mut i)?),
             _ => Ink::Color {
                 colors: i.opt("colors", u8_of)?.unwrap_or(6),
             },
@@ -792,6 +840,11 @@ fn halftone(v: &Value, path: &str) -> Result<Halftone, DocError> {
         Ok(ink)
     })? {
         h = h.ink(ink);
+    }
+    if let Some((value, p)) = o.get("source") {
+        let bytes = base64_of(value, &p)?;
+        let format = RasterFormat::sniff(&bytes).ok_or_else(|| not_image(&p))?;
+        h = h.source(bytes, format).map_err(|e| image_error(&p, e))?;
     }
     if let Some((dark, light)) = o.opt("bands", pair_of)? {
         h = h.bands(dark, light);

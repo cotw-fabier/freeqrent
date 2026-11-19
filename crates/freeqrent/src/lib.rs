@@ -205,8 +205,8 @@ pub use animate::{
 #[cfg(feature = "animate")]
 pub mod plan {
     pub use crate::animate::{
-        AnimationPlan, Fallback, Keyframe, PlanCaption, PlanGlyph, PlanLayer, PlanOutline,
-        Property, Reveal, RevealShape, Target, Track, Value,
+        AnimationPlan, Fallback, Keyframe, PlanCaption, PlanGlyph, PlanImage, PlanLayer,
+        PlanOutline, Property, Reveal, RevealShape, Target, Track, Value,
     };
 }
 pub use check::{
