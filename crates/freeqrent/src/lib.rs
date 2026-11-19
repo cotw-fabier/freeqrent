@@ -171,6 +171,7 @@ mod matrix;
 mod num;
 mod optimize;
 mod palette;
+pub mod png;
 mod preset;
 mod rng;
 mod sanitize;

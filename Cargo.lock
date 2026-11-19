@@ -257,6 +257,7 @@ name = "freeqrent"
 version = "1.2.0"
 dependencies = [
  "insta",
+ "png",
  "qrcodegen",
  "rqrr",
 ]
