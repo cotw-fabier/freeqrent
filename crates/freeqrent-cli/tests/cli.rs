@@ -78,15 +78,16 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("<figure>").count(), 116);
+    assert_eq!(html.matches("<figure>").count(), 117);
     // Each family gets a code that can afford it, so all of them decode.
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 232);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 234);
     // Without pictures the picture cards use the sample.
     assert!(html.contains("--art sample --clarity 0.5"));
     // The glass cards come last, the photo and its glass in each code.
     assert!(html.contains("--halftone sample --ink glass</code>"));
     assert!(html.contains("--ink 'glass:lens=1,core=0.7,border=0.12' --version 3"));
     assert!(html.contains("--art sample --ink glass</code>"));
+    assert!(html.contains("--halftone sample --ink glass:render=vector</code>"));
     // The presets lead.
     assert!(html.contains(
         "<h2>Ink preset</h2><code>freeqrent https://example.com/menu --preset ink</code>"
@@ -94,7 +95,7 @@ fn gallery_shows_every_family() {
     // Every card has a dark twin, and the twins, the two dark cards, the
     // terminal preset and both codes of each dark design system are read
     // inverted.
-    assert_eq!(html.matches("<div class=\"variant dark\">").count(), 116);
+    assert_eq!(html.matches("<div class=\"variant dark\">").count(), 117);
     assert_eq!(html.matches(", read inverted").count(), 130);
     // The design systems have a section of their own.
     assert!(html.contains("<h2 class=\"section\">Design systems</h2>"));
@@ -112,7 +113,7 @@ fn gallery_shows_every_family() {
     ]);
     assert!(out.status.success(), "{}", stderr(&out));
     let html = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 232);
+    assert_eq!(html.matches("class=\"verdict\">decodes").count(), 234);
     assert!(!html.contains("--art sample --clarity 0.5"));
     assert!(html.contains("brand.png --clarity 0.5"));
     std::fs::remove_dir_all(&dir).unwrap();
@@ -618,13 +619,44 @@ fn shape_files_draw_the_parts_they_name() {
 }
 
 #[test]
+fn vector_glass_embeds_the_picture_once() {
+    let out = freeqrent(&[
+        "https://example.com",
+        "--halftone",
+        "sample",
+        "--ink",
+        "glass:render=vector",
+        "--verify",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stderr(&out).contains("verified: decodes with ZXing"));
+    let svg = stdout(&out);
+    // One raster, the photo; the frost refers to it; the glass is paths.
+    assert_eq!(svg.matches("<image").count(), 1);
+    assert_eq!(svg.matches("base64,").count(), 1);
+    assert!(svg.contains("<feGaussianBlur") && svg.contains("<use xlink:href=\"#"));
+    assert!(svg.contains(" fill-opacity=\""));
+    // Without frost, no filter at all.
+    let out = freeqrent(&[
+        "https://example.com",
+        "--halftone",
+        "sample",
+        "--ink",
+        "glass:render=vector,frost=0",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let svg = stdout(&out);
+    assert!(!svg.contains("<filter") && !svg.contains("<use"), "{svg}");
+}
+
+#[test]
 fn glass_ink_embeds_the_picture_and_its_glass() {
     let out = freeqrent(&[
         "https://example.com",
         "--halftone",
         "sample",
         "--ink",
-        "glass",
+        "glass:render=baked",
         "--verify",
     ]);
     assert!(out.status.success(), "{}", stderr(&out));

@@ -142,7 +142,9 @@ Style:
                            (0.08), halo (2), lens (0.9), core (0.6), targets
                            D/L (0.25/0.9), union (0.4), frost (0.12), finders
                            D/P (0.3/0.92), tint, refraction, rim (on|off),
-                           resolution (16 px per module)
+                           resolution (16 px per module), render (baked: one
+                           PNG over the photo; vector: SVG paths over it, no
+                           refraction, frost=0 for no filter)
   --bands D,L              darkest light and lightest dark sub-cell (0.28,0.94)
   --clarity C              pull sub-cells toward their module, 0-1 (default 0)
   --clarity-map FILE       ... per area: light parts clear, dark ones pictorial

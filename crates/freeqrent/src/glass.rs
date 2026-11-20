@@ -31,6 +31,9 @@ use crate::scanbox::TimingStyle;
 use crate::scene::{self, Canvas};
 use crate::style::Style;
 
+mod vector;
+pub(crate) use vector::{RIM_STROKE, vector};
+
 /// The glass of [`Ink::Glass`](crate::Ink::Glass) (SPEC §7.9). Plain data;
 /// the defaults are the measured ones, and [`Style::check`](crate::Style::check)
 /// holds every option to its range.
@@ -56,7 +59,26 @@ pub struct Glass {
     pub(crate) refraction: bool,
     pub(crate) rim: bool,
     pub(crate) resolution: u8,
+    pub(crate) render: GlassRender,
 }
+
+/// How glass is drawn (SPEC §7.9): [`Glass::render`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum GlassRender {
+    /// Baked per pixel into one PNG over the photo: the full liquid-glass
+    /// look (frost, OKLab shift, smooth union, refraction, rim light),
+    /// identical in every renderer.
+    Baked,
+    /// Drawn as SVG elements over the photo: traced lens outlines filled
+    /// with translucent black and white (or the picture's tints) at a few
+    /// stepped strengths, a blurred reference to the photo for the frost,
+    /// and rim strokes. No second raster; no refraction; stepped strength.
+    Vector,
+}
+
+/// The default [`GlassRender`]: the one constant to change.
+pub const GLASS_RENDER: GlassRender = GlassRender::Baked;
 
 /// PNG bytes per pixel of the glass box: the most any test picture took
 /// was 0.97 (SPEC §7.9), rounded up, for the size estimate behind
@@ -81,6 +103,7 @@ impl Glass {
             refraction: true,
             rim: true,
             resolution: GLASS_RESOLUTION,
+            render: GLASS_RENDER,
         }
     }
 
@@ -99,7 +122,8 @@ impl Glass {
         self
     }
 
-    /// A data module's lens width in modules, 0.5–1.0 (default 0.9).
+    /// A data module's lens width in modules, 0.5–1.0 (default 0.9); vector
+    /// glass takes 0.7–1.0 ([`GLASS_VECTOR_MIN_LENS`](crate::GLASS_VECTOR_MIN_LENS)).
     pub fn lens(mut self, width: f32) -> Glass {
         self.lens = width;
         self
@@ -172,6 +196,24 @@ impl Glass {
         self
     }
 
+    /// How the glass is drawn (default [`GLASS_RENDER`]): baked into a PNG,
+    /// or as SVG elements. Vector glass ignores `core`, `refraction` and
+    /// `resolution` (SPEC §7.9).
+    pub fn render(mut self, render: GlassRender) -> Glass {
+        self.render = render;
+        self
+    }
+
+    /// How the glass is drawn.
+    pub fn rendering(&self) -> GlassRender {
+        self.render
+    }
+
+    /// Whether the glass is drawn as SVG elements.
+    pub(crate) fn is_vector(&self) -> bool {
+        self.render == GlassRender::Vector
+    }
+
     /// The border's share of the canvas width.
     pub fn border_share(&self) -> f32 {
         self.border
@@ -234,7 +276,7 @@ impl Glass {
 
     /// The fields compared by bits, so equality is total and agrees with
     /// the hash.
-    fn key(&self) -> ([u32; 9], [u8; 5]) {
+    fn key(&self) -> ([u32; 9], [u8; 6]) {
         let b = |v: f32| v.to_bits();
         (
             [
@@ -254,6 +296,7 @@ impl Glass {
                 self.refraction as u8,
                 self.rim as u8,
                 self.resolution,
+                self.render as u8,
             ],
         )
     }
@@ -306,8 +349,15 @@ pub(crate) fn span(style: &Style, n: usize) -> Span {
     }
 }
 
-/// The estimated PNG size of the baked layer for a code `n` modules wide.
-pub(crate) fn estimated_bytes(g: &Glass, n: usize, q: usize) -> usize {
+/// The glass's size in the document: the baked layer's PNG, estimated
+/// (baking is too slow for every version fitting checks), or vector glass's
+/// elements, drawn and counted.
+pub(crate) fn estimated_bytes(style: &Style, g: &Glass, qr: &QrMatrix) -> usize {
+    if g.is_vector() {
+        let canvas = scene::canvas(style, qr);
+        return vector(style, qr, &canvas).map_or(0, |v| v.bytes());
+    }
+    let (n, q) = (qr.size() as usize, style.quiet_zone as usize);
     let side = ((n + 2 * q) * g.resolution as usize) as f64;
     (side * side * BYTES_PER_PIXEL) as usize
 }
@@ -488,7 +538,7 @@ impl Lenses {
 /// Bakes `style`'s glass for `qr`, if it has glass.
 pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Baked> {
     let h = style.halftone.as_ref()?;
-    let g = h.glass()?;
+    let g = h.glass().filter(|g| !g.is_vector())?;
     let n = qr.size() as i64;
     let q = style.quiet_zone as i64;
     let res = g.resolution.clamp(8, 32) as i64;
@@ -1003,6 +1053,14 @@ mod tests {
             .unwrap()
     }
 
+    fn baked() -> Glass {
+        Glass::new().render(GlassRender::Baked)
+    }
+
+    fn vector_glass() -> Glass {
+        Glass::new().render(GlassRender::Vector)
+    }
+
     fn glass(g: Glass) -> Style {
         Style::new().halftone(picture().ink(Ink::Glass(g)))
     }
@@ -1166,7 +1224,7 @@ mod tests {
 
     #[test]
     fn larger_codes_warn_about_decoders_and_size() {
-        let style = glass(Glass::new());
+        let style = glass(baked());
         let big = code(&style, 14);
         let report = style.check(&big);
         assert!(report.ok(), "{report:?}");
@@ -1183,15 +1241,57 @@ mod tests {
         let small = style.check(&code(&style, crate::GLASS_FULL_BAR_VERSION));
         assert!(small.warnings.is_empty(), "{small:?}");
         // Below the default resolution the full bar wasn't measured.
-        let coarse = glass(Glass::new().resolution(8));
+        let coarse = glass(baked().resolution(8));
         let report = coarse.check(&code(&coarse, 2));
         assert_eq!(report.warnings, [Warning::GlassNeedsZxing { version: 2 }]);
+        // Vector glass has its own boundary, no resolution, and paths
+        // rather than a PNG to count.
+        let vector = glass(vector_glass().resolution(8));
+        let edge = crate::GLASS_VECTOR_FULL_BAR_VERSION;
+        assert!(vector.check(&code(&vector, edge)).warnings.is_empty());
+        let report = vector.check(&code(&vector, 14));
+        assert_eq!(report.warnings, [Warning::GlassNeedsZxing { version: 14 }]);
+        // Narrower vector lenses: a lower boundary, and none under 0.7.
+        let narrow = glass(vector_glass().lens(0.8));
+        let v = crate::GLASS_VECTOR_NARROW_FULL_BAR_VERSION;
+        assert!(narrow.check(&code(&narrow, v)).warnings.is_empty());
+        assert_eq!(
+            narrow.check(&code(&narrow, v + 1)).warnings,
+            [Warning::GlassNeedsZxing { version: v + 1 }]
+        );
+        let tiny = glass(vector_glass().lens(0.6).core(0.5));
+        assert!(tiny.check(&code(&tiny, 3)).errors.iter().any(|e| matches!(
+            e,
+            RenderError::OptionOutOfRange {
+                option: "Glass.lens",
+                ..
+            }
+        )));
+        assert!(
+            glass(baked().lens(0.6).core(0.5))
+                .check(&code(&tiny, 3))
+                .ok()
+        );
+        let report = vector.check(&code(&vector, 30));
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| matches!(w, Warning::LargeOutput { .. })),
+            "{report:?}"
+        );
     }
 
     #[test]
     fn what_glass_cant_draw_is_refused() {
-        let qr = code(&glass(Glass::new()), 2);
-        let g = || glass(Glass::new());
+        // Vector glass refuses and supports the same things as baked.
+        refuses_and_supports(baked());
+        refuses_and_supports(vector_glass());
+    }
+
+    fn refuses_and_supports(base: Glass) {
+        let qr = code(&glass(base), 2);
+        let g = || glass(base);
         let cases: [(Style, &str); 8] = [
             (
                 g().frame(Frame::Circle {
@@ -1230,7 +1330,7 @@ mod tests {
             (
                 Style::new().halftone(
                     picture()
-                        .ink(Ink::Glass(Glass::new()))
+                        .ink(Ink::Glass(base))
                         .clarity(crate::Clarity::Uniform(0.5)),
                 ),
                 "Halftone.clarity",
@@ -1266,7 +1366,7 @@ mod tests {
             g().caption(crate::Caption::new("Scan me")),
             g().palette(crate::Palette::new().dark_twin()),
             g().timing(TimingStyle::Dotted),
-            Style::art(picture().ink(Ink::Glass(Glass::new()))),
+            Style::art(picture().ink(Ink::Glass(base))),
         ] {
             let qr = code(&style, 2);
             let report = style.check(&qr);
@@ -1280,7 +1380,7 @@ mod tests {
     fn intros_move_the_photo_and_glass_whole() {
         use crate::plan::{Property, Target};
         use crate::{Intro, LayerRole, Preset};
-        let still = glass(Glass::new().resolution(8));
+        let still = glass(baked().resolution(8));
         let qr = code(&still, 2);
         let static_svg = still.render(&qr).unwrap();
         let payloads = images(&static_svg);
@@ -1374,7 +1474,7 @@ mod tests {
         let logo = Logo::svg(r##"<svg viewBox="0 0 1 1"><rect width="1" height="1"/></svg>"##)
             .unwrap()
             .scale(0.1);
-        let style = glass(Glass::new()).logo(logo);
+        let style = glass(baked()).logo(logo);
         let qr = code(&style, 5);
         let svg = style.render(&qr).unwrap();
         assert_eq!(svg, style.render(&qr).unwrap());
@@ -1414,7 +1514,7 @@ mod tests {
                         RasterFormat::Png,
                     )
                     .unwrap()
-                    .ink(Ink::Glass(Glass::new())),
+                    .ink(Ink::Glass(baked())),
             )
             .render(&qr)
             .unwrap();
@@ -1423,7 +1523,7 @@ mod tests {
 
     #[test]
     fn the_layer_is_a_png_of_the_box() {
-        let style = glass(Glass::new().resolution(8));
+        let style = glass(baked().resolution(8));
         let qr = code(&style, 2);
         let canvas = scene::canvas(&style, &qr);
         let baked = bake(&style, &qr, &canvas).unwrap();
@@ -1453,5 +1553,175 @@ mod tests {
         assert_eq!(nan, nan);
         assert_ne!(Glass::new(), Glass::new().tint(false));
         assert_eq!(Glass::default(), Glass::new());
+        assert_ne!(baked(), vector_glass());
+        assert_eq!(Glass::new().rendering(), crate::GLASS_RENDER);
+    }
+
+    /// The document with every base64 payload cut out.
+    fn without_payloads(svg: &str) -> String {
+        let mut out = String::new();
+        let mut rest = svg;
+        while let Some(at) = rest.find("base64,") {
+            out.push_str(&rest[..at + 7]);
+            rest = &rest[at + 7..];
+            rest = &rest[rest.find('"').unwrap()..];
+        }
+        out.push_str(rest);
+        out
+    }
+
+    #[test]
+    fn vector_glass_is_paths_over_one_image() {
+        let style = glass(vector_glass());
+        let qr = code(&style, 4);
+        let report = style.check(&qr);
+        assert!(
+            report.ok() && report.scannable && report.warnings.is_empty(),
+            "{report:?}"
+        );
+        let svg = style.render(&qr).unwrap();
+        assert_eq!(svg, style.render(&qr).unwrap());
+        // One raster, the photo's own file; nothing baked.
+        assert_eq!(svg.matches("<image").count(), 1);
+        assert_eq!(svg.matches("base64,").count(), 1);
+        let mut file = String::new();
+        crate::logo::base64(&mut file, picture().source_file().unwrap().0).unwrap();
+        assert_eq!(images(&svg), [file.as_str()]);
+        assert!(bake(&style, &qr, &scene::canvas(&style, &qr)).is_none());
+        // The frost refers to the photo, blurred, clipped to the glass.
+        let prefix = svg.split("<clipPath id=\"").nth(1).unwrap();
+        let prefix = &prefix[..prefix.find("-photo").unwrap()];
+        assert!(svg.contains(&alloc::format!("<image id=\"{prefix}-pic\"")));
+        assert!(svg.contains(&alloc::format!(
+            "<use xlink:href=\"#{prefix}-pic\" filter=\"url(#{prefix}-blur)\"/>"
+        )));
+        assert!(svg.contains("<feGaussianBlur stdDeviation=\".12\"/>"));
+        // Veils: black-ish and white-ish translucent paths, and rims.
+        let shell = without_payloads(&svg);
+        assert!(shell.matches(" fill-opacity=\"").count() >= 4, "{shell}");
+        assert!(shell.contains("stroke=\"#fff\" stroke-opacity=\".3\" stroke-width=\".04\""));
+        // The photo comes first, the glass over it, in one stretch.
+        let photo = svg.find("<image").unwrap();
+        assert!(photo < svg.find("<feGaussianBlur").unwrap());
+    }
+
+    #[test]
+    fn vector_switches_drop_their_elements() {
+        let qr = code(&glass(vector_glass()), 3);
+        let plain = without_payloads(
+            &glass(vector_glass().frost(0.0).rim(false).tint(false))
+                .render(&qr)
+                .unwrap(),
+        );
+        // frost(0) leaves no filter (and nothing refers to the photo).
+        assert!(
+            !plain.contains("<filter") && !plain.contains("<use"),
+            "{plain}"
+        );
+        assert!(!plain.contains("stroke="));
+        // Untinted veils are black and white only.
+        for fill in plain.split(" fill=\"").skip(1) {
+            let color = &fill[..fill.find('"').unwrap()];
+            assert!(
+                ["#000", "#fff", "#fefcf8"].contains(&color) || color.starts_with("url("),
+                "{color}"
+            );
+        }
+        // Refraction, core and resolution don't change vector glass.
+        let base = glass(vector_glass()).render(&qr).unwrap();
+        for g in [
+            vector_glass().refraction(false),
+            vector_glass().core(0.4),
+            vector_glass().resolution(24),
+        ] {
+            assert_eq!(glass(g).render(&qr).unwrap(), base);
+        }
+    }
+
+    #[test]
+    fn vector_size_is_counted_not_guessed() {
+        let style = glass(vector_glass());
+        for v in [2u8, 7] {
+            let qr = code(&style, v);
+            let svg = style.render(&qr).unwrap();
+            let photo = images(&svg)[0].len();
+            let estimate = estimated_bytes(
+                &style,
+                style.halftone.as_ref().unwrap().glass().unwrap(),
+                &qr,
+            );
+            // Everything but the photo and the document's frame.
+            let glass_bytes = svg.len() - photo;
+            assert!(
+                estimate <= glass_bytes && glass_bytes < estimate + 3000,
+                "v{v}: {estimate} vs {glass_bytes}"
+            );
+        }
+    }
+
+    #[cfg(feature = "animate")]
+    #[test]
+    fn vector_glass_moves_whole_and_plans_as_paths() {
+        use crate::plan::{Property, Target};
+        use crate::{Intro, LayerRole, Preset};
+        let still = glass(vector_glass());
+        let qr = code(&still, 3);
+        let static_svg = still.render(&qr).unwrap();
+        let plan = still.plan(&qr).unwrap();
+        let glass_layers: alloc::vec::Vec<_> = plan
+            .layers
+            .iter()
+            .filter(|l| l.role == LayerRole::Glass)
+            .collect();
+        assert!(glass_layers.len() >= 4);
+        // The frost: the photo's box, blurred, no bytes.
+        let frost = glass_layers[0].image.as_ref().unwrap();
+        assert_eq!((frost.png.as_ref(), frost.blur), (None, Some(0.12)));
+        // Veils and rims: plain paths with a color, no image.
+        for l in &glass_layers[1..] {
+            assert!(l.image.is_none() && l.color.is_some() && !l.path.is_empty());
+        }
+        assert!(glass_layers.iter().any(|l| l.outline.is_some()));
+        let json = plan.to_json();
+        assert!(json.contains("\"blur\":0.12") && !json.contains("\"png\""));
+        for preset in Preset::ALL {
+            let style = still.clone().intro(Intro::new(preset));
+            assert!(style.check(&qr).ok(), "{preset:?}");
+            let plan = style.plan(&qr).unwrap();
+            let glass: alloc::vec::Vec<usize> = (0..plan.layers.len())
+                .filter(|&i| plan.layers[i].role == LayerRole::Glass)
+                .collect();
+            if !preset.is_reveal() {
+                // Every glass layer plays the same keys: the glass moves whole.
+                let keys = |i: usize| {
+                    plan.tracks
+                        .iter()
+                        .filter(|t| t.target == Target::Layer(i))
+                        .map(|t| (t.delay_ms, t.duration_ms, t.keys.clone()))
+                        .collect::<alloc::vec::Vec<_>>()
+                };
+                let first = keys(glass[0]);
+                assert!(!first.is_empty(), "{preset:?}");
+                assert!(glass.iter().all(|&i| keys(i) == first), "{preset:?}");
+                assert!(
+                    plan.tracks
+                        .iter()
+                        .any(|t| t.target == Target::Layer(glass[0])
+                            && t.keys.iter().any(|k| k.property == Property::Opacity))
+                );
+            }
+            // From the end on, a frame is the static document's drawing.
+            let end = style.render_frame(&qr, plan.total_ms).unwrap();
+            assert_eq!(images(&end), images(&static_svg), "{preset:?}");
+            assert!(
+                !end.contains(" opacity=\"") && !end.contains("mask=\""),
+                "{preset:?}"
+            );
+            let mid = style.render_frame(&qr, plan.total_ms / 2).unwrap();
+            assert!(
+                mid.contains(" opacity=\"") || mid.contains("mask=\""),
+                "{preset:?}"
+            );
+        }
     }
 }

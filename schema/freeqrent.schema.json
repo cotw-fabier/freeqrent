@@ -1164,7 +1164,7 @@
               "additionalProperties": false
             },
             {
-              "description": "Liquid glass over the whole photo (SPEC §7.9); needs source.",
+              "description": "Liquid glass over the whole photo (SPEC §7.9); needs source. render: baked (one PNG over the photo) or vector (SVG elements over it); default baked.",
               "type": "object",
               "properties": {
                 "kind": {
@@ -1219,6 +1219,12 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 255
+                },
+                "render": {
+                  "enum": [
+                    "baked",
+                    "vector"
+                  ]
                 }
               },
               "required": [

@@ -10,8 +10,8 @@
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner,
     CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
-    FrameRing, Glass, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape,
-    LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette, Preset, QrBuilder, QrCode,
+    FrameRing, Glass, GlassRender, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro,
+    LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette, Preset, QrBuilder, QrCode,
     RasterFormat, RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, Token,
     TrackingGrid, Trigger, Version,
 };
@@ -102,6 +102,8 @@ pub const LOGO_SHAPES: &[&str] = &["square", "rounded", "circle"];
 pub const INKS: &[&str] = &["mono", "color", "glass"];
 /// `halftone.fit`.
 pub const FITS: &[&str] = &["cover", "contain"];
+/// `halftone.ink` glass's `render`.
+pub const GLASS_RENDERS: &[&str] = &["baked", "vector"];
 /// `intro.ease.kind`.
 pub const EASES: &[&str] = &["quart", "quint", "expo", "custom"];
 /// `intro.stagger.kind`.
@@ -819,6 +821,13 @@ fn glass(i: &mut Obj<'_>) -> Result<Glass, DocError> {
     }
     if let Some(v) = i.opt("resolution", u8_of)? {
         g = g.resolution(v);
+    }
+    if let Some(r) = i.opt("render", |v, p| name_of(v, p, GLASS_RENDERS))? {
+        g = g.render(if r == "vector" {
+            GlassRender::Vector
+        } else {
+            GlassRender::Baked
+        });
     }
     Ok(g)
 }

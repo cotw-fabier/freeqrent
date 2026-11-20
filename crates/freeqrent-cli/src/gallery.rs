@@ -1275,6 +1275,11 @@ pub(crate) const PICTURE_FAMILIES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     ("Glass, art mode", &[("art", "{a}"), ("ink", "glass")]),
+    // Vector glass (W20261119133827-8): the same glass as SVG elements.
+    (
+        "Glass, vector",
+        &[("halftone", "{a}"), ("ink", "glass:render=vector")],
+    ),
 ];
 
 /// A family's flag value with `{a}` and `{b}` replaced by the pictures:

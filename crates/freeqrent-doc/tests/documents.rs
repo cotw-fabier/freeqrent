@@ -5,10 +5,10 @@
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner,
     CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
-    FrameRing, Glass, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape,
-    LogoSize, LogoTiming, Mask, ModuleShape, Palette, Preset, QrCode, RasterFormat, Rgba8Image,
-    RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, TrackingGrid, Trigger,
-    Version,
+    FrameRing, Glass, GlassRender, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro,
+    LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette, Preset, QrCode, RasterFormat,
+    Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, TrackingGrid,
+    Trigger, Version,
 };
 use freeqrent_doc::{Payload, parse};
 
@@ -377,7 +377,8 @@ fn glass() {
     let doc = format!(
         r#"{{"halftone":{{"image":{img},"source":"{source}","ink":{{"kind":"glass","border":0.1,
             "halo":3,"lens":0.8,"core":0.5,"targets":[0.2,0.92],"union":0.5,"frost":0.2,
-            "finders":[0.25,0.95],"tint":false,"refraction":false,"rim":false,"resolution":20}}}},
+            "finders":[0.25,0.95],"tint":false,"refraction":false,"rim":false,"resolution":20,
+            "render":"vector"}}}},
             "allow_unscannable":true}}"#,
         img = image_json(&p)
     );
@@ -393,7 +394,8 @@ fn glass() {
         .tint(false)
         .refraction(false)
         .rim(false)
-        .resolution(20);
+        .resolution(20)
+        .render(GlassRender::Vector);
     let h = Halftone::new(p.clone())
         .source(file.clone(), RasterFormat::Png)
         .unwrap()
@@ -411,6 +413,33 @@ fn glass() {
         .unwrap()
         .ink(Ink::Glass(Glass::new()));
     assert_eq!(style(&bare), Style::art(h));
+    // render: baked or vector, nothing else.
+    let render = |name: &str| {
+        format!(
+            r#"{{"halftone":{{"image":{},"source":"{source}","ink":{{"kind":"glass","render":"{name}"}}}}}}"#,
+            image_json(&p)
+        )
+    };
+    let h = |r: GlassRender| {
+        Halftone::new(p.clone())
+            .source(file.clone(), RasterFormat::Png)
+            .unwrap()
+            .ink(Ink::Glass(Glass::new().render(r)))
+    };
+    assert_eq!(
+        style(&render("baked")),
+        Style::new().halftone(h(GlassRender::Baked))
+    );
+    assert_eq!(
+        style(&render("vector")),
+        Style::new().halftone(h(GlassRender::Vector))
+    );
+    assert!(
+        parse(&render("svg"))
+            .unwrap_err()
+            .detail
+            .contains("halftone.ink.render")
+    );
     // A source that isn't a picture file is refused where it is.
     let bad = format!(
         r#"{{"halftone":{{"image":{},"source":"{}"}}}}"#,

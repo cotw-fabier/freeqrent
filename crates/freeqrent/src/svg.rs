@@ -335,6 +335,9 @@ pub(crate) struct Element {
     pub(crate) fade: f32,
     /// A custom shape drawn into the path's boxes (SPEC §7.1, §7.2).
     pub(crate) glyph: Option<GlyphDraw>,
+    /// Vector glass's frost (SPEC §7.9): the photo, blurred by this much
+    /// (modules), clipped to the path.
+    pub(crate) blur: Option<f64>,
 }
 
 /// Where a custom shape is drawn.
@@ -367,6 +370,7 @@ impl Element {
             joins: false,
             fade: 1.0,
             glyph: None,
+            blur: None,
         }
     }
 }
@@ -436,12 +440,13 @@ fn card_outline(path: &mut Path, style: &Style, canvas: &Canvas, inset: f64, shi
     }
 }
 
-/// Glass ink's two images (SPEC §7.9), if the style has glass: the photo,
+/// Glass ink's elements (SPEC §7.9), if the style has glass: the photo,
 /// whose path is the card it's clipped to (rounded with the frame, square
-/// above a caption's band), and the baked glass, whose path is its square
-/// over the code and its quiet zone. They aren't the frame's: intros move
-/// them whole.
-pub(crate) fn glass_elements(style: &Style, canvas: &Canvas) -> Vec<Element> {
+/// above a caption's band), then the glass. Baked, the glass is one image
+/// whose path is its square over the code and its quiet zone; vector, it is
+/// the frost (if any), the veils and the rims. They aren't the frame's:
+/// intros move them whole.
+pub(crate) fn glass_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
     #[cfg(feature = "halftone")]
     if style.halftone.as_ref().is_some_and(|h| h.glass().is_some()) {
         let card = canvas.card * UNIT;
@@ -454,15 +459,39 @@ pub(crate) fn glass_elements(style: &Style, canvas: &Canvas) -> Vec<Element> {
             }
             _ => clip.rect(0, 0, card, card),
         }
+        let mut out = alloc::vec![Element::new(LayerRole::Photo, Token::Bg, false, clip)];
+        if let Some(v) = crate::glass::vector(style, qr, canvas) {
+            if let Some((path, sigma)) = v.frost {
+                let mut e = Element::new(LayerRole::Glass, Token::Bg, false, path);
+                e.blur = Some(sigma);
+                out.push(e);
+            }
+            for veil in v.veils {
+                let token = if veil.dark { Token::Fg } else { Token::Bg };
+                let mut e = Element::new(LayerRole::Glass, token, false, veil.path);
+                e.color = Some(veil.color);
+                out.push(e);
+            }
+            for (path, color) in v.rims {
+                let mut e = Element::new(LayerRole::Glass, Token::Bg, false, path);
+                e.color = Some(color);
+                e.outline = Some(logo::Outline {
+                    width: crate::glass::RIM_STROKE,
+                    length: 0.0,
+                    dashes: Vec::new(),
+                    offset: 0.0,
+                });
+                out.push(e);
+            }
+            return out;
+        }
         let (at, side) = glass_square(style, canvas);
         let mut square = Path::new();
         square.rect(at * UNIT, at * UNIT, side * UNIT, side * UNIT);
-        return alloc::vec![
-            Element::new(LayerRole::Photo, Token::Bg, false, clip),
-            Element::new(LayerRole::Glass, Token::Bg, false, square),
-        ];
+        out.push(Element::new(LayerRole::Glass, Token::Bg, false, square));
+        return out;
     }
-    let _ = (style, canvas);
+    let _ = (style, qr, canvas);
     Vec::new()
 }
 
@@ -479,7 +508,7 @@ pub(crate) fn glass_square(style: &Style, canvas: &Canvas) -> (i64, i64) {
 /// and the border (SPEC §7.4). They hold still while the code animates.
 /// Glass ink's photo and glass ([`glass_elements`]) go right over the
 /// background, under the border and caption.
-pub(crate) fn chrome_elements(style: &Style, canvas: &Canvas) -> Vec<Element> {
+pub(crate) fn chrome_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
     let mut elements = Vec::new();
     let mid = canvas.card as f64 / 2.0;
     if canvas.shadow > 0.0 {
@@ -495,7 +524,7 @@ pub(crate) fn chrome_elements(style: &Style, canvas: &Canvas) -> Vec<Element> {
             background_path(style, canvas),
         ));
     }
-    elements.extend(glass_elements(style, canvas));
+    elements.extend(glass_elements(style, qr, canvas));
     if style.grain().is_some() {
         let mut path = Path::new();
         card_outline(&mut path, style, canvas, 0.0, 0.0);
@@ -567,7 +596,7 @@ pub(crate) fn scanline_elements(style: &Style, canvas: &Canvas) -> Vec<Element> 
 /// The elements of a code that doesn't animate: one path per (token,
 /// fill rule), between the background and the logo.
 pub(crate) fn static_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Vec<Element> {
-    let mut elements = chrome_elements(style, canvas);
+    let mut elements = chrome_elements(style, qr, canvas);
     let mid = canvas.card as f64 / 2.0;
     let mut code = build_paths(style, qr, canvas);
     for e in &mut code {
@@ -712,12 +741,28 @@ pub(crate) fn write<W: Write + ?Sized>(
         }
     }
 
+    // Glass (SPEC §7.9): baked once, for its element.
+    #[cfg(feature = "halftone")]
+    let baked = elements
+        .iter()
+        .any(|e| e.role == LayerRole::Glass)
+        .then(|| crate::glass::bake(style, qr, &canvas))
+        .flatten();
+    #[cfg(feature = "halftone")]
+    let glass_links = baked.is_some();
+    #[cfg(not(feature = "halftone"))]
+    let glass_links = false;
+
     let mut out = Out {
         w,
         pretty: !style.minify,
     };
     out.w
-        .write_str("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ")?;
+        .write_str("<svg xmlns=\"http://www.w3.org/2000/svg\"")?;
+    if links(style, &elements, glass_links) {
+        out.w.write_str(crate::sanitize::XLINK)?;
+    }
+    out.w.write_str(" viewBox=\"0 0 ")?;
     write!(out.w, "{n} {}\" class=\"qr", canvas.height())?;
     #[cfg(feature = "animate")]
     if motion.as_ref().is_some_and(|m| m.live()) {
@@ -804,13 +849,6 @@ pub(crate) fn write<W: Write + ?Sized>(
             Some((first, last))
         })
         .flatten();
-    // Glass (SPEC §7.9): baked once, for its element.
-    #[cfg(feature = "halftone")]
-    let baked = elements
-        .iter()
-        .any(|e| e.role == LayerRole::Glass)
-        .then(|| crate::glass::bake(style, qr, &canvas))
-        .flatten();
     for (i, e) in elements.iter().enumerate() {
         out.line()?;
         #[cfg(feature = "animate")]
@@ -871,7 +909,7 @@ pub(crate) fn write<W: Write + ?Sized>(
             LayerRole::LogoInk => {
                 write!(
                     out.w,
-                    "<mask id=\"{prefix}-logo-ink\" mask-type=\"alpha\"><use href=\"#{prefix}-logo-art\"/></mask><path mask=\"url(#{prefix}-logo-ink)\""
+                    "<mask id=\"{prefix}-logo-ink\" mask-type=\"alpha\"><use xlink:href=\"#{prefix}-logo-art\"/></mask><path mask=\"url(#{prefix}-logo-ink)\""
                 )?;
                 write_element_paint(out.w, palette, e, &prefix)?;
                 // Its natural state is invisible: the intro only flashes it.
@@ -900,11 +938,10 @@ pub(crate) fn write<W: Write + ?Sized>(
             #[cfg(feature = "halftone")]
             LayerRole::Photo => write_photo(out.w, style, &canvas, &prefix, e)?,
             #[cfg(feature = "halftone")]
-            LayerRole::Glass => {
-                if let Some(baked) = &baked {
-                    write_glass(out.w, &prefix, e, baked)?;
-                }
-            }
+            LayerRole::Glass => match &baked {
+                Some(baked) => write_glass(out.w, &prefix, e, baked)?,
+                None => write_vector_glass(out.w, style, &canvas, &prefix, e)?,
+            },
             LayerRole::Caption => write_caption(out.w, style, &canvas, palette, e, &prefix)?,
             LayerRole::Grain => {
                 write_grain(out.w, style, &prefix, n, scene::seed(style, qr))?;
@@ -975,6 +1012,24 @@ pub(crate) fn write<W: Write + ?Sized>(
     Ok(())
 }
 
+/// Whether the document links anything, an embedded raster or a `use`: it
+/// then declares the `xlink` prefix on its root (SPEC §4.1). `glass` says
+/// whether the glass element writes an image.
+fn links(style: &Style, elements: &[Element], glass: bool) -> bool {
+    elements.iter().any(|e| match e.role {
+        _ if e.glyph.is_some() => true,
+        LayerRole::LogoInk => true,
+        LayerRole::Logo => style.logo.as_ref().is_some_and(|l| match &l.content {
+            Content::Svg(doc) => doc.links(),
+            Content::Raster { .. } => true,
+        }),
+        #[cfg(feature = "halftone")]
+        LayerRole::Photo => style.halftone.as_ref().is_some_and(|h| h.source.is_some()),
+        LayerRole::Glass => glass || e.blur.is_some(),
+        _ => false,
+    })
+}
+
 /// Glass ink's photo (SPEC §7.9): the picture's own file, placed as its
 /// fit and focal point choose and clipped to the element's path, the card.
 #[cfg(feature = "halftone")]
@@ -991,9 +1046,19 @@ fn write_photo<W: Write + ?Sized>(
     let u = |v: f64| math::round(v * UNIT as f64) as i64;
     write!(
         w,
-        "<clipPath id=\"{prefix}-photo\"><path d=\"{}\"/></clipPath><image clip-path=\"url(#{prefix}-photo)\"",
+        "<clipPath id=\"{prefix}-photo\"><path d=\"{}\"/></clipPath>",
         e.path.data()
     )?;
+    // Vector glass's frost refers to the photo, so the clip and motion go
+    // on a group around it and the reference copies the bare image.
+    let vector = h.glass().is_some_and(|g| g.is_vector());
+    if vector {
+        write!(w, "<g clip-path=\"url(#{prefix}-photo)\"")?;
+        write_image_motion(w, prefix, e)?;
+        write!(w, "><image id=\"{prefix}-pic\"")?;
+    } else {
+        write!(w, "<image clip-path=\"url(#{prefix}-photo)\"")?;
+    }
     let (x, y, width, height) = crate::glass::photo_box(h, canvas);
     for (name, v) in [("x", x), ("y", y), ("width", width), ("height", height)] {
         write!(w, " {name}=\"")?;
@@ -1001,13 +1066,79 @@ fn write_photo<W: Write + ?Sized>(
         w.write_char('"')?;
     }
     w.write_str(" preserveAspectRatio=\"none\"")?;
-    write_image_motion(w, prefix, e)?;
+    if !vector {
+        write_image_motion(w, prefix, e)?;
+    }
     if let Some((format, data)) = &h.source {
-        write!(w, " href=\"data:{};base64,", format.mime())?;
+        write!(w, " xlink:href=\"data:{};base64,", format.mime())?;
         logo::base64(w, data)?;
         w.write_char('"')?;
     }
-    w.write_str("/>")
+    w.write_str("/>")?;
+    if vector {
+        w.write_str("</g>")?;
+    }
+    Ok(())
+}
+
+/// One element of vector glass (SPEC §7.9): the frost (the photo's image,
+/// referenced and blurred, clipped to the glass), a veil (a filled path) or
+/// a rim (a stroked one).
+#[cfg(feature = "halftone")]
+fn write_vector_glass<W: Write + ?Sized>(
+    w: &mut W,
+    style: &Style,
+    canvas: &Canvas,
+    prefix: &str,
+    e: &Element,
+) -> fmt::Result {
+    let class = |w: &mut W| -> fmt::Result {
+        if let Some(n) = e.anim {
+            write!(w, " class=\"{prefix}-e{n}\"")?;
+        }
+        Ok(())
+    };
+    if let Some(sigma) = e.blur {
+        // The filter works over the glass's square and a module round it.
+        let (at, side) = glass_square(style, canvas);
+        let k = |v: f64| math::round(v * 1000.0) as i64;
+        write!(
+            w,
+            "<clipPath id=\"{prefix}-frost\"><path d=\"{}\"/></clipPath><filter id=\"{prefix}-blur\" filterUnits=\"userSpaceOnUse\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"><feGaussianBlur stdDeviation=\"",
+            e.path.data(),
+            at - 1,
+            at - 1,
+            side + 2,
+            side + 2
+        )?;
+        write_scaled(w, k(sigma), 3)?;
+        write!(w, "\"/></filter><g clip-path=\"url(#{prefix}-frost)\"")?;
+        class(w)?;
+        write_pose(w, e)?;
+        return write!(
+            w,
+            "><use xlink:href=\"#{prefix}-pic\" filter=\"url(#{prefix}-blur)\"/></g>"
+        );
+    }
+    let color = e.color.unwrap_or(Color::TRANSPARENT);
+    w.write_str("<path")?;
+    class(w)?;
+    if let Some(outline) = &e.outline {
+        w.write_str(" fill=\"none\" stroke=\"")?;
+        write_hex(w, color)?;
+        w.write_char('"')?;
+        write_opacity(w, "stroke-opacity", color)?;
+        w.write_str(" stroke-width=\"")?;
+        write_scaled(w, outline.width, 3)?;
+        w.write_char('"')?;
+    } else {
+        w.write_str(" fill=\"")?;
+        write_hex(w, color)?;
+        w.write_char('"')?;
+        write_opacity(w, "fill-opacity", color)?;
+    }
+    write_pose(w, e)?;
+    write!(w, " d=\"{}\"/>", e.path.data())
 }
 
 /// Glass ink's baked glass (SPEC §7.9) over the code and its quiet zone.
@@ -1024,7 +1155,7 @@ fn write_glass<W: Write + ?Sized>(
         "<image x=\"{at}\" y=\"{at}\" width=\"{side}\" height=\"{side}\" preserveAspectRatio=\"none\""
     )?;
     write_image_motion(w, prefix, e)?;
-    w.write_str(" href=\"data:image/png;base64,")?;
+    w.write_str(" xlink:href=\"data:image/png;base64,")?;
     logo::base64(w, &baked.png)?;
     w.write_str("\"/>")
 }
@@ -1059,7 +1190,7 @@ fn write_glyph_def<W: Write + ?Sized>(
         Content::Raster { format, data } => {
             write!(
                 w,
-                "<image width=\"{side}\" height=\"{side}\" href=\"data:{};base64,",
+                "<image width=\"{side}\" height=\"{side}\" xlink:href=\"data:{};base64,",
                 format.mime()
             )?;
             logo::base64(w, data)?;
@@ -1087,7 +1218,7 @@ fn write_glyph<W: Write + ?Sized>(
         for &(x, y) in &g.at {
             write!(
                 w,
-                "<use href=\"#{prefix}-glyph{}-{}\" x=\"",
+                "<use xlink:href=\"#{prefix}-glyph{}-{}\" x=\"",
                 g.def,
                 g.part.side()
             )?;
@@ -1421,7 +1552,7 @@ fn write_logo<W: Write + ?Sized>(
                 write!(out.w, " id=\"{prefix}-logo-art\"")?;
             }
             box_attrs(out.w)?;
-            write!(out.w, " href=\"data:{};base64,", format.mime())?;
+            write!(out.w, " xlink:href=\"data:{};base64,", format.mime())?;
             logo::base64(out.w, data)?;
             out.w.write_str("\"/>")?;
         }
@@ -2207,6 +2338,44 @@ mod tests {
         assert!(svg.contains("viewBox=\"0 0 29 33\""));
         assert!(svg.contains(">Fish &amp; &lt;chips&gt;</text>"));
         assert!(svg.contains("height=\"33\""));
+    }
+
+    #[test]
+    fn links_are_xlink_and_declared_only_when_present() {
+        use crate::{Logo, RasterFormat, Rgba8Image};
+        const ROOT: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=";
+        let qr = qr();
+        let declared = |style: Style| {
+            let svg = style.render(&qr).unwrap();
+            // One attribute per link, never both.
+            assert!(!svg.contains(" href="), "{svg}");
+            let root = svg.starts_with(ROOT);
+            assert_eq!(root, svg.contains("xlink:href"), "{svg}");
+            assert_eq!(svg.matches("xmlns:xlink").count(), root as usize);
+            (root, svg)
+        };
+        assert!(!declared(Style::new()).0);
+        let png = crate::png::encode_rgba(&Rgba8Image::filled(2, 2, [9, 9, 9, 255]).unwrap());
+        let (root, svg) =
+            declared(Style::new().logo(Logo::raster(png, RasterFormat::Png).unwrap().scale(0.08)));
+        assert!(root);
+        assert_eq!(
+            svg.matches(" xlink:href=\"data:image/png;base64,").count(),
+            1
+        );
+        // An SVG logo declares the prefix only if it links something; its
+        // nested `<svg>` relies on the root's declaration.
+        let shape = r#"<svg viewBox="0 0 1 1"><rect width="1" height="1"/></svg>"#;
+        assert!(!declared(Style::new().logo(Logo::svg(shape).unwrap().scale(0.08))).0);
+        let linked = r##"<svg viewBox="0 0 2 2"><defs><rect id="r" width="1" height="1"/></defs><use href="#r"/><use xlink:href="#r" x="1"/></svg>"##;
+        let (root, svg) = declared(Style::new().logo(Logo::svg(linked).unwrap().scale(0.08)));
+        assert!(root);
+        assert_eq!(svg.matches("<use xlink:href=\"#").count(), 2);
+        let clean = Logo::svg(linked).unwrap().sanitized_svg().unwrap();
+        assert!(
+            clean.contains("xmlns:xlink") && !clean.contains(" href="),
+            "{clean}"
+        );
     }
 
     #[test]

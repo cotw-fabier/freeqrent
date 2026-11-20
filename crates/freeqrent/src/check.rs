@@ -116,11 +116,26 @@ pub const GLASS_FINDER_WARNING: f32 = 0.62;
 /// below [`GLASS_RESOLUTION`], a glass code warns
 /// [`Warning::GlassNeedsZxing`].
 pub const GLASS_FULL_BAR_VERSION: u8 = 4;
+/// The same for vector glass ([`GlassRender::Vector`](crate::GlassRender::Vector)),
+/// which has no resolution: every measured code from v2 to v11 passed the
+/// full bar, and v12 lost rqrr on one of 14.
+pub const GLASS_VECTOR_FULL_BAR_VERSION: u8 = 11;
+/// Vector glass's full bar ([`GLASS_VECTOR_FULL_BAR_VERSION`]) was measured
+/// at lenses this wide or wider; narrower lenses warn
+/// [`Warning::GlassNeedsZxing`] above [`GLASS_VECTOR_NARROW_FULL_BAR_VERSION`]
+/// (lenses of 0.7 and 0.8 lost rqrr at v8, held at v3 and v5).
+pub const GLASS_VECTOR_FULL_BAR_LENS: f32 = 0.9;
+/// See [`GLASS_VECTOR_FULL_BAR_LENS`].
+pub const GLASS_VECTOR_NARROW_FULL_BAR_VERSION: u8 = 5;
+/// The narrowest vector glass lens: at 0.6 ZXing missed a code (the flat
+/// disc at v8) and at 0.5 three, so `Glass.lens` is held to 0.7–1.0 in
+/// vector mode ([`RenderError::OptionOutOfRange`]).
+pub const GLASS_VECTOR_MIN_LENS: f32 = 0.7;
 /// The default baked resolution of glass, in pixels per module
 /// ([`Glass::resolution`](crate::Glass::resolution)).
 pub const GLASS_RESOLUTION: u8 = 16;
-/// The baked glass layer's size above which a code warns
-/// [`Warning::LargeOutput`].
+/// The glass layer's size (a baked PNG, or vector glass's elements) above
+/// which a code warns [`Warning::LargeOutput`].
 pub const LARGE_OUTPUT_BYTES: usize = 1_000_000;
 
 /// A reason a code isn't rendered.
@@ -521,7 +536,7 @@ impl fmt::Display for Warning {
             ),
             Warning::LargeOutput { bytes } => write!(
                 f,
-                "the baked glass layer is about {} KB; a lower glass resolution makes it smaller",
+                "the glass layer is about {} KB; a lower glass resolution (baked) or a smaller code makes it smaller",
                 bytes.div_ceil(1000)
             ),
         }
@@ -884,7 +899,12 @@ fn check_glass(
         0.0,
         style.quiet_zone as f32,
     );
-    in_range(errors, "Glass.lens", g.lens, 0.5, 1.0);
+    let min_lens = if g.is_vector() {
+        GLASS_VECTOR_MIN_LENS
+    } else {
+        0.5
+    };
+    in_range(errors, "Glass.lens", g.lens, min_lens, 1.0);
     in_range(
         errors,
         "Glass.core",
@@ -987,10 +1007,21 @@ fn check_glass(
         }
     }
     let version = qr.version().number();
-    if version > GLASS_FULL_BAR_VERSION || g.resolution < GLASS_RESOLUTION {
+    let zxing = if g.is_vector() {
+        let narrow = g.lens < GLASS_VECTOR_FULL_BAR_LENS - 1e-4;
+        version
+            > if narrow {
+                GLASS_VECTOR_NARROW_FULL_BAR_VERSION
+            } else {
+                GLASS_VECTOR_FULL_BAR_VERSION
+            }
+    } else {
+        version > GLASS_FULL_BAR_VERSION || g.resolution < GLASS_RESOLUTION
+    };
+    if zxing {
         warnings.push(Warning::GlassNeedsZxing { version });
     }
-    let bytes = crate::glass::estimated_bytes(g, qr.size() as usize, style.quiet_zone as usize);
+    let bytes = crate::glass::estimated_bytes(style, g, qr);
     if bytes > LARGE_OUTPUT_BYTES {
         warnings.push(Warning::LargeOutput { bytes });
     }

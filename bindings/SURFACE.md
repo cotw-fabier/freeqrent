@@ -169,7 +169,7 @@ With `--preset`, the CLI's extracted palette replaces the preset's, so the docum
 | `--halftone FILE` | `halftone.image` (`{"width", "height", "rgba"}`; the binding decodes the picture, or takes raw pixels) |
 | `--art FILE` | `art` (the same object; can't go with `preset` or `halftone`) |
 | `--ink mono\|color[:N]` | `halftone.ink`: `mono` or `{"kind": "color", "colors"}` |
-| `--ink glass[:KEY=VALUE,…]` | `halftone.ink`: `glass` or `{"kind": "glass", "border", "halo", "lens", "core", "targets": [dark, light], "union", "frost", "finders": [dark, plate], "tint", "refraction", "rim", "resolution"}` (SPEC §7.9). On the command line pairs are `D/L` and switches `on`/`off` |
+| `--ink glass[:KEY=VALUE,…]` | `halftone.ink`: `glass` or `{"kind": "glass", "border", "halo", "lens", "core", "targets": [dark, light], "union", "frost", "finders": [dark, plate], "tint", "refraction", "rim", "resolution", "render"}` (SPEC §7.9). On the command line pairs are `D/L` and switches `on`/`off`; `render=baked\|vector` is `"render": "baked"\|"vector"` (vector: the glass as SVG elements, no second raster) |
 | (the picture's file, with `--halftone FILE` or `--art FILE`) | `halftone.source` (or `art.source`): the file's own bytes, base64, when it is a PNG, JPEG, GIF or WebP; glass ink embeds it as the photo (`sample` passes the CLI's own PNG of its picture). Other inks don't read it |
 | `--allow-unscannable` | `allow_unscannable` (SPEC §9: the glass limits render as warnings, the report says `scannable: false`) |
 | `--bands D,L`, `--clarity C`, `--clarity-map FILE` | `halftone.bands`, `halftone.clarity` (a number or an image) |
@@ -191,6 +191,8 @@ With `--preset`, the CLI's extracted palette replaces the preset's, so the docum
 --halftone $IMAGE --ink glass --intro develop       => {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":"glass"},"intro":"develop"}
 --halftone $IMAGE --ink glass --intro settle --frame-at 600 => frame 600 {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":"glass"},"intro":"settle"}
 --halftone $IMAGE --ink glass --intro sweep --plan  => plan {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":"glass"},"intro":"sweep"}
+--halftone $IMAGE --ink glass:render=vector         => {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":{"kind":"glass","render":"vector"}}}
+--halftone $IMAGE --ink glass:render=vector,frost=0,rim=off,tint=off --intro settle --plan => plan {"halftone":{"image":$IMAGE,"source":$SOURCE,"ink":{"kind":"glass","render":"vector","frost":0,"rim":false,"tint":false}},"intro":"settle"}
 ```
 
 ## Motion

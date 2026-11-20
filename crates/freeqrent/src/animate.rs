@@ -821,6 +821,10 @@ pub struct PlanImage {
     /// which players read from the style's `halftone.source`, as they do
     /// a logo's picture.
     pub png: Option<Vec<u8>>,
+    /// Vector glass's frost: the photo (its box, no bytes) blurred by this
+    /// Gaussian deviation, in viewBox units. Players without a blur may
+    /// draw it sharp or leave it out.
+    pub blur: Option<f32>,
 }
 
 /// A custom shape drawn into a plan layer's boxes.
@@ -1091,7 +1095,7 @@ pub(crate) fn element_count(style: &Style, qr: &QrMatrix) -> usize {
         .collect();
     crate::sort::sort_by_key(&mut seen, |&(l, g, c)| (l, g, c.map(|c| c as u8)));
     seen.dedup();
-    seen.len() + logo + svg::glass_elements(style, &canvas).len()
+    seen.len() + logo + svg::glass_elements(style, qr, &canvas).len()
 }
 
 fn corner_of(unit: &Unit) -> Option<Corner> {
@@ -1106,7 +1110,7 @@ fn corner_of(unit: &Unit) -> Option<Corner> {
 fn split(style: &Style, qr: &QrMatrix, canvas: &Canvas, intro: &Intro) -> Vec<Element> {
     let layers = scene::layers(style, qr);
     let pieces = pieces(style, qr, canvas, intro, &layers);
-    let mut elements = svg::chrome_elements(style, canvas);
+    let mut elements = svg::chrome_elements(style, qr, canvas);
     let n = qr.size() as usize;
     #[cfg(feature = "halftone")]
     let picture = svg::halftone_cells(style, qr);
@@ -2830,11 +2834,11 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
         None => (svg::static_elements(style, qr, &canvas), None),
     };
     let (side, height) = (canvas.side as f32, canvas.height() as f32);
-    let image = |role: LayerRole| image(style, qr, &canvas, role);
+    let image = |e: &svg::Element| image(style, qr, &canvas, e);
     let layers = elements
         .into_iter()
         .map(|e| PlanLayer {
-            image: image(e.role),
+            image: image(&e),
             role: e.role,
             token: e.token,
             color: e.color,
@@ -2891,21 +2895,26 @@ pub(crate) fn plan(style: &Style, qr: &QrMatrix) -> AnimationPlan {
     }
 }
 
-/// The image of a glass layer (SPEC §7.9): the photo's box, or the baked
-/// glass with its bytes. `None` for every other layer.
+/// The image of a glass layer (SPEC §7.9): the photo's box; the baked
+/// glass with its bytes; or vector glass's frost, the photo's box blurred.
+/// `None` for every other layer, vector glass's veils and rims included.
 #[cfg(feature = "halftone")]
-fn image(style: &Style, qr: &QrMatrix, canvas: &Canvas, role: LayerRole) -> Option<PlanImage> {
-    match role {
-        LayerRole::Photo => {
-            let (x, y, w, h) = crate::glass::photo_box(style.halftone.as_ref()?, canvas);
-            // As the SVG writes it: to a thousandth of a module.
-            let k = |v: f64| (math::round(v * 1000.0) / 1000.0) as f32;
-            Some(PlanImage {
-                at: (k(x), k(y)),
-                size: (k(w), k(h)),
-                png: None,
-            })
-        }
+fn image(style: &Style, qr: &QrMatrix, canvas: &Canvas, e: &svg::Element) -> Option<PlanImage> {
+    let photo = |blur: Option<f64>| {
+        let (x, y, w, h) = crate::glass::photo_box(style.halftone.as_ref()?, canvas);
+        // As the SVG writes it: to a thousandth of a module.
+        let k = |v: f64| (math::round(v * 1000.0) / 1000.0) as f32;
+        Some(PlanImage {
+            at: (k(x), k(y)),
+            size: (k(w), k(h)),
+            png: None,
+            blur: blur.map(k),
+        })
+    };
+    match e.role {
+        LayerRole::Photo => photo(None),
+        LayerRole::Glass if e.blur.is_some() => photo(e.blur),
+        LayerRole::Glass if e.color.is_some() => None,
         LayerRole::Glass => {
             let baked = crate::glass::bake(style, qr, canvas)?;
             let (at, side) = (baked.at as f32, baked.side as f32);
@@ -2913,6 +2922,7 @@ fn image(style: &Style, qr: &QrMatrix, canvas: &Canvas, role: LayerRole) -> Opti
                 at: (at, at),
                 size: (side, side),
                 png: Some(baked.png),
+                blur: None,
             })
         }
         _ => None,
@@ -2920,7 +2930,7 @@ fn image(style: &Style, qr: &QrMatrix, canvas: &Canvas, role: LayerRole) -> Opti
 }
 
 #[cfg(not(feature = "halftone"))]
-fn image(_: &Style, _: &QrMatrix, _: &Canvas, _: LayerRole) -> Option<PlanImage> {
+fn image(_: &Style, _: &QrMatrix, _: &Canvas, _: &svg::Element) -> Option<PlanImage> {
     None
 }
 
@@ -3112,6 +3122,10 @@ impl AnimationPlan {
                     w.write_str(",\"png\":\"")?;
                     crate::logo::base64(w, png)?;
                     w.write_char('"')?;
+                }
+                if let Some(blur) = img.blur {
+                    w.write_str(",\"blur\":")?;
+                    json_num(w, blur)?;
                 }
                 w.write_char('}')?;
             }

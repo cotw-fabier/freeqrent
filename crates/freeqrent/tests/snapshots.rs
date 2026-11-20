@@ -187,7 +187,7 @@ fn halftone_in_mono_and_color() {
 #[cfg(feature = "halftone")]
 #[test]
 fn glass_shell() {
-    use freeqrent::{Glass, Halftone, Ink, RasterFormat, Rgba8Image};
+    use freeqrent::{Glass, GlassRender, Halftone, Ink, RasterFormat, Rgba8Image};
     let mut picture = Rgba8Image::filled(16, 16, [245, 240, 230, 255]).unwrap();
     for y in 0..16i32 {
         for x in 0..16i32 {
@@ -200,7 +200,41 @@ fn glass_shell() {
     let glass = Halftone::new(picture)
         .source(file, RasterFormat::Png)
         .unwrap()
-        .ink(Ink::Glass(Glass::new().resolution(8)));
+        .ink(Ink::Glass(
+            Glass::new().resolution(8).render(GlassRender::Baked),
+        ));
+    let style = Style::new()
+        .halftone(glass)
+        .frame(Frame::RoundedSquare(2.0))
+        .caption(Caption::new("Scan me"));
+    let qr = QrCode::builder()
+        .ecc(Ecc::M)
+        .version(Version::new(1).unwrap())
+        .encode_text_for("HELLO", &style)
+        .unwrap();
+    let svg = style.minify(false).render(&qr).unwrap();
+    insta::assert_snapshot!(elide_payloads(&svg));
+}
+
+/// Vector glass's document (SPEC §7.9): the photo once, its frost as a
+/// blurred reference, the veils and the rims as paths.
+#[cfg(feature = "halftone")]
+#[test]
+fn glass_vector_shell() {
+    use freeqrent::{Glass, GlassRender, Halftone, Ink, RasterFormat, Rgba8Image};
+    let mut picture = Rgba8Image::filled(16, 16, [245, 240, 230, 255]).unwrap();
+    for y in 0..16i32 {
+        for x in 0..16i32 {
+            if (x - 8).pow(2) + (y - 8).pow(2) < 30 {
+                picture.set_pixel(x as u32, y as u32, [30, 40, 90, 255]);
+            }
+        }
+    }
+    let file = freeqrent::png::encode_rgba(&picture);
+    let glass = Halftone::new(picture)
+        .source(file, RasterFormat::Png)
+        .unwrap()
+        .ink(Ink::Glass(Glass::new().render(GlassRender::Vector)));
     let style = Style::new()
         .halftone(glass)
         .frame(Frame::RoundedSquare(2.0))

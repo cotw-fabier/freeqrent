@@ -149,6 +149,10 @@ const ATTRIBUTES: &[&str] = &[
 /// Element names the text of which is kept.
 const TEXT_ELEMENTS: &[&str] = &["text", "tspan"];
 
+/// The `xlink` namespace declaration a document with links carries on its
+/// root (SPEC §4.1): links are written `xlink:href` only.
+pub(crate) const XLINK: &str = " xmlns:xlink=\"http://www.w3.org/1999/xlink\"";
+
 /// How many `use` elements a logo may have.
 const MAX_USES: usize = 256;
 
@@ -731,6 +735,10 @@ impl SvgDoc {
                 Node::Open { tag, attrs } => {
                     write!(w, "<{tag}")?;
                     for (name, value) in attrs {
+                        // Links are written `xlink:href`, which every
+                        // renderer reads (SVG 1.1 viewers read nothing
+                        // else); the document's root declares the prefix.
+                        let name = if *name == "href" { "xlink:href" } else { name };
                         write!(w, " {name}=\"")?;
                         for seg in &value.0 {
                             match seg {
@@ -789,6 +797,14 @@ impl SvgDoc {
         out
     }
 
+    /// Whether the content links anything (a `use` or an `image`): its
+    /// document must then declare the `xlink` prefix.
+    pub(crate) fn links(&self) -> bool {
+        self.nodes.iter().any(|node| {
+            matches!(node, Node::Open { attrs, .. } if attrs.iter().any(|(n, _)| *n == "href"))
+        })
+    }
+
     /// The viewBox attribute value.
     pub(crate) fn write_view_box<W: Write + ?Sized>(&self, w: &mut W) -> fmt::Result {
         for (i, &v) in self.view_box.iter().enumerate() {
@@ -802,7 +818,11 @@ impl SvgDoc {
 
     /// A standalone document of the clean logo.
     pub(crate) fn to_document(&self) -> String {
-        let mut out = String::from("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"");
+        let mut out = String::from("<svg xmlns=\"http://www.w3.org/2000/svg\"");
+        if self.links() {
+            out.push_str(XLINK);
+        }
+        out.push_str(" viewBox=\"");
         let _ = self.write_view_box(&mut out);
         out.push_str("\">");
         let _ = self.write_body(&mut out, None);
@@ -865,7 +885,7 @@ mod tests {
         );
         assert_eq!(
             out,
-            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g1"><stop offset="0" stop-color="red"/></linearGradient></defs><rect fill="url(#g1)" width="5" height="5"/><rect width="1" height="1"/><use href="#g1"/><image/><image href="data:image/png;base64,iVBORw=="/></svg>"##
+            r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10"><defs><linearGradient id="g1"><stop offset="0" stop-color="red"/></linearGradient></defs><rect fill="url(#g1)" width="5" height="5"/><rect width="1" height="1"/><use xlink:href="#g1"/><image/><image xlink:href="data:image/png;base64,iVBORw=="/></svg>"##
         );
     }
 
@@ -907,7 +927,8 @@ mod tests {
             r##"<svg viewBox="0 0 4 4"><defs><g id="a"><rect width="1" height="1"/></g><g id="b"><use href="#a"/><use href="#a"/></g></defs><use href="#b"/><use href="#a"/></svg>"##,
         );
         assert_eq!(out.matches("<use").count(), 3, "{out}");
-        assert!(!out.contains("<use href=\"#b\""), "{out}");
+        assert!(!out.contains("<use xlink:href=\"#b\""), "{out}");
+        assert!(!out.contains(" href="), "{out}");
     }
 
     #[test]

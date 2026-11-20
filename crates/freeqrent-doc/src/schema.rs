@@ -9,9 +9,9 @@ use freeqrent::Style;
 use crate::json::{self, Value};
 use crate::style::{
     BORDERS, CAPTION_FONTS, CORNERS, EASES, ECCS, ECIS, EFFECTS, EMPHASES, EYES, FITS, FRAME_RINGS,
-    FRAMES, GRIDS, INKS, LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS, STAGGERS, STYLE_KEYS, TARGETS,
-    TEXTURES, TIMINGS, TRIGGERS, idles, intro_presets, logo_frames, logo_intros, logo_sizes,
-    logo_timings, tokens,
+    FRAMES, GLASS_RENDERS, GRIDS, INKS, LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS, STAGGERS,
+    STYLE_KEYS, TARGETS, TEXTURES, TIMINGS, TRIGGERS, idles, intro_presets, logo_frames,
+    logo_intros, logo_sizes, logo_timings, tokens,
 };
 
 fn s(text: &str) -> Value {
@@ -499,10 +499,18 @@ fn halftone() -> Value {
                 ("refraction", boolean()),
                 ("rim", boolean()),
                 ("resolution", int(255)),
+                ("render", one_of(GLASS_RENDERS)),
             ],
             &[],
         ),
-        "Liquid glass over the whole photo (SPEC §7.9); needs source.",
+        &format!(
+            "Liquid glass over the whole photo (SPEC §7.9); needs source. render: baked (one PNG over the photo) or vector (SVG elements over it); default {}.",
+            if freeqrent::GLASS_RENDER == freeqrent::GlassRender::Vector {
+                "vector"
+            } else {
+                "baked"
+            }
+        ),
     ));
     props(
         vec![

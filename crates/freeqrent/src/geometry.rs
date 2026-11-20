@@ -318,6 +318,13 @@ const STEP: [(i64, i64); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 /// corner. Edges are at least one module long and `r` at most half of
 /// one, so neighboring corners never overlap.
 fn draw_liquid(grid: &Grid, origin: i64, r: i64, path: &mut Path) {
+    for_contours(grid, |corners| draw_corners(corners, origin, r, path));
+}
+
+/// Calls `f` with the corners (vertex, incoming and outgoing direction) of
+/// each closed boundary of `grid`'s dark regions, as [`draw_liquid`] walks
+/// them: dark on the right, starting at the loop's top-left vertex.
+fn for_contours(grid: &Grid, mut f: impl FnMut(&[((i64, i64), usize, usize)])) {
     let n = grid.size();
     let side = (n + 1) as usize;
     let dark = |x: i64, y: i64| grid.get(x, y);
@@ -379,9 +386,66 @@ fn draw_liquid(grid: &Grid, origin: i64, r: i64, path: &mut Path) {
             }
             // Start at the loop's top-left vertex, where the walk began.
             corners.rotate_right(1);
-            draw_corners(&corners, origin, r, path);
+            f(&corners);
         }
     }
+}
+
+/// Glass lenses (SPEC §7.9): each region of `grid` traced as in Liquid,
+/// its outline moved `inset` units toward the dark side and its corners
+/// rounded, convex ones with reach `convex` and concave ones with reach
+/// `concave` (quadratics through the moved vertex). Same-region
+/// neighbours stay one blob, as a smooth union melts them; regions apart
+/// stay apart by twice the inset. Callers keep `2·convex ≤ UNIT − 2·inset`
+/// and `convex + concave ≤ UNIT`, so neighbouring corners never overlap.
+pub(crate) fn draw_inset(
+    grid: &Grid,
+    origin: i64,
+    inset: i64,
+    (convex, concave): (i64, i64),
+    path: &mut Path,
+) {
+    for_contours(grid, |corners| {
+        // The dark side of a direction: its right, on screen.
+        let right = |d: usize| STEP[(d + 1) % 4];
+        let moved: Vec<((i64, i64), usize, usize, i64)> = corners
+            .iter()
+            .map(|&((x, y), d_in, d_out)| {
+                let (a, b) = (right(d_in), right(d_out));
+                let at = (
+                    origin + x * UNIT + inset * (a.0 + b.0),
+                    origin + y * UNIT + inset * (a.1 + b.1),
+                );
+                let r = if d_out == (d_in + 1) % 4 {
+                    convex
+                } else {
+                    concave
+                };
+                (at, d_in, d_out, r)
+            })
+            .collect();
+        let offset =
+            |(x, y): (i64, i64), d: usize, by: i64| (x + STEP[d].0 * by, y + STEP[d].1 * by);
+        let Some(&(p0, _, out0, r0)) = moved.first() else {
+            return;
+        };
+        let start = offset(p0, out0, r0);
+        path.move_to(start.0, start.1);
+        for (i, &(p, d_in, d_out, r)) in moved.iter().enumerate().skip(1).chain([(0, &moved[0])]) {
+            // With a square first corner, closing draws the last edge.
+            if i == 0 && r == 0 {
+                break;
+            }
+            let before = offset(p, d_in, -r);
+            path.line_to(before.0, before.1);
+            if r > 0 {
+                path.quad_to(p, offset(p, d_out, r));
+            } else {
+                path.line_to(p.0, p.1);
+            }
+        }
+        path.close();
+    });
 }
 
 /// Draws one closed contour through `corners` (vertex, incoming and
@@ -569,5 +633,28 @@ mod tests {
             &["#.", "##"],
         );
         assert_eq!(h, "m0 0h1v1h-1zm0 1h2v1h-2z");
+    }
+
+    #[test]
+    fn inset_outlines_shrink_and_round() {
+        let g = grid(&["##", ".."]);
+        let mut p = Path::new();
+        draw_inset(&g, 0, 50, (171, 200), &mut p);
+        assert_eq!(
+            p.data(),
+            "m.221.05h1.558q.171 0 .171.171v.558q0 .171-.171.171h-1.558q-.171 0-.171-.171v-.558q0-.171.171-.171z"
+        );
+        // An L: the inner corner is filled with the concave reach, moved
+        // out into the light cell.
+        let g = grid(&["##", "#."]);
+        let mut p = Path::new();
+        draw_inset(&g, 0, 50, (171, 200), &mut p);
+        assert!(p.data().contains("h-.629q-.2 0-.2.2v.629"), "{}", p.data());
+        // Square corners and no inset: Liquid's outline at radius 0.
+        let mut a = Path::new();
+        draw_inset(&g, 0, 0, (0, 0), &mut a);
+        let mut b = Path::new();
+        draw_modules(&ModuleShape::Liquid { smoothness: 0.0 }, &g, 0, &mut b);
+        assert_eq!(a.data(), b.data());
     }
 }

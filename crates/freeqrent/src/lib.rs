@@ -213,7 +213,9 @@ pub use check::{
     ANIMATED_ELEMENTS, CONTRAST_FLOOR, CONTRAST_WARNING, DAMAGE_BUDGET, DAMAGE_BUDGET_H,
     FRAME_FLOOR, GLASS_FINDER_FLOOR, GLASS_FINDER_WARNING, GLASS_FULL_BAR_VERSION,
     GLASS_PLATE_FLOOR, GLASS_RESOLUTION, GLASS_SAFE_TARGETS, GLASS_TARGET_MARGIN,
-    HALFTONE_DAMAGE_BUDGET, LARGE_OUTPUT_BYTES, LONG_INTRO_MS, RenderError, ScanReport, Warning,
+    GLASS_VECTOR_FULL_BAR_LENS, GLASS_VECTOR_FULL_BAR_VERSION, GLASS_VECTOR_MIN_LENS,
+    GLASS_VECTOR_NARROW_FULL_BAR_VERSION, HALFTONE_DAMAGE_BUDGET, LARGE_OUTPUT_BYTES,
+    LONG_INTRO_MS, RenderError, ScanReport, Warning,
 };
 pub use code::{QrBuilder, QrCode};
 pub use color::{Color, ColorError};
@@ -224,7 +226,7 @@ pub use extract::{
     Swatch,
 };
 #[cfg(feature = "halftone")]
-pub use glass::Glass;
+pub use glass::{GLASS_RENDER, Glass, GlassRender};
 pub use glyph::{Glyph, GlyphError, GlyphPart, MAX_GLYPH_RASTER, MAX_GLYPH_SVG};
 #[cfg(feature = "halftone")]
 pub use halftone::{Clarity, DEFAULT_BANDS, DEFAULT_CLARITY, Fit, Halftone, Ink, Steering};

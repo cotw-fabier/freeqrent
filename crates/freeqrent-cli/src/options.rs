@@ -3,8 +3,8 @@
 
 use freeqrent::{
     AlignmentShape, Axis, Border, CaptionFont, ColorSpread, Corner, CubicBezier, Ease, Ecc, Effect,
-    Emphasis, EyeShape, Fit, Frame, FrameRing, Glass, Idle, Ink, LogoFrame, LogoIntro, LogoShape,
-    LogoSize, LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder, Style, Texture,
+    Emphasis, EyeShape, Fit, Frame, FrameRing, Glass, GlassRender, Idle, Ink, LogoFrame, LogoIntro,
+    LogoShape, LogoSize, LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder, Style, Texture,
     TimingStyle, TrackingGrid, Trigger,
 };
 
@@ -555,9 +555,14 @@ fn glass(options: &str) -> Result<Glass, String> {
             "refraction" => g.refraction(switch()?),
             "rim" => g.rim(switch()?),
             "resolution" => g.resolution(whole()?),
+            "render" => g.render(match value {
+                "baked" => GlassRender::Baked,
+                "vector" => GlassRender::Vector,
+                _ => return Err(format!("glass render: {value:?}: try baked or vector")),
+            }),
             _ => {
                 return Err(format!(
-                    "unknown glass option {key:?}: try border, halo, lens, core, targets, union, frost, finders, tint, refraction, rim or resolution"
+                    "unknown glass option {key:?}: try border, halo, lens, core, targets, union, frost, finders, tint, refraction, rim, resolution or render"
                 ));
             }
         };
@@ -714,6 +719,15 @@ mod tests {
         assert!(ink("glass:halo").is_err());
         assert!(ink("glass:targets=0.2").is_err());
         assert!(ink("glass:tint=maybe").is_err());
+        assert_eq!(
+            ink("glass:render=vector,frost=0").unwrap(),
+            Ink::Glass(Glass::new().render(GlassRender::Vector).frost(0.0))
+        );
+        assert_eq!(
+            ink("glass:render=baked").unwrap(),
+            Ink::Glass(Glass::new().render(GlassRender::Baked))
+        );
+        assert!(ink("glass:render=svg").is_err());
         assert!(ink("glass:shine=1").is_err());
         assert!(ink("glassy").is_err());
         assert_eq!(

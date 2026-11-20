@@ -141,6 +141,9 @@ pub fn inputs() -> Vec<String> {
     let disc_file = picture_file(disc_pixels);
     let bands_file = picture_file(bands_pixels);
     let glass = format!(r#"{{"image":{disc},"ink":"glass","source":"{disc_file}"}}"#);
+    let vector = format!(
+        r#"{{"image":{disc},"ink":{{"kind":"glass","render":"vector"}},"source":"{disc_file}"}}"#
+    );
     let mut cases = vec![render("default", "{}")];
     for preset in freeqrent::Style::presets() {
         cases.push(render(
@@ -394,6 +397,17 @@ pub fn inputs() -> Vec<String> {
             "render",
             &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{glass},"idle":["shimmer"]}}"#),
         ),
+        // Vector glass (W20261119133827-8): the glass as SVG elements.
+        render("glass vector", &format!(r#"{{"halftone":{vector}}}"#)),
+        render(
+            "glass vector with options",
+            &format!(
+                r##"{{"halftone":{{"image":{bands},"source":"{bands_file}","ink":{{"kind":"glass","render":"vector","border":0.12,"halo":3,"lens":0.8,"targets":[0.22,0.92],"union":0.6,"frost":0,"finders":[0.28,0.94],"tint":false,"rim":false}}}},"frame":{{"kind":"rounded","radius":2}}}}"##
+            ),
+        ),
+        render("glass vector settling", &format!(r#"{{"halftone":{vector},"intro":"settle"}}"#)),
+        case("plan glass vector", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{vector},"intro":"develop"}}"#)),
+        case("check glass vector", "check", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{vector}}}"#)),
     ]);
     cases
 }
