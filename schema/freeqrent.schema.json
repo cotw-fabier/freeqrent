@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/cotw-fabier/freeqrent/main/schema/freeqrent.schema.json",
   "title": "freeQRent Style document",
-  "x-freeqrent-version": "1.2.0",
+  "x-freeqrent-version": "1.3.0",
   "$ref": "#/$defs/Style",
   "$defs": {
     "Style": {
@@ -1216,6 +1216,34 @@
                 },
                 "tint": {
                   "type": "boolean"
+                },
+                "colors": {
+                  "description": "Where the glass's hue comes from (lightness is always the targets'): photo (default), palette (each module's token, bg for light glass) or neutral. Not with tint.",
+                  "enum": [
+                    "photo",
+                    "palette",
+                    "neutral"
+                  ]
+                },
+                "texture": {
+                  "description": "How much photo detail shows through the plate and finder glass, 0-1 (default 0, flat).",
+                  "type": "number"
+                },
+                "bevel": {
+                  "description": "The lens bevel's depth in modules, 0.05-0.45 (default 0.12). Baked.",
+                  "type": "number"
+                },
+                "ior": {
+                  "description": "The refractive index, 1-2 (default 1.5). Baked.",
+                  "type": "number"
+                },
+                "dome": {
+                  "description": "A magnifying dome across each lens, 0-1 (default 0). Baked.",
+                  "type": "number"
+                },
+                "opacity": {
+                  "description": "The glass's opacity over the photo, 0.1-1 (default 1). Below about 0.95 the code warns glass_low_readability.",
+                  "type": "number"
                 },
                 "refraction": {
                   "type": "boolean"

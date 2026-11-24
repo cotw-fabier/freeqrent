@@ -2,6 +2,32 @@
 
 All four Phase 1 crates (`freeqrent`, `freeqrent-image`, `freeqrent-verify`, `freeqrent-cli`) share one version. From 1.0 on, the core follows semver: enums and reports that may grow are `#[non_exhaustive]`, so new shapes, presets, tokens or warnings arrive in minor releases. Output changes (the SVG for a given input) are called out here, even when the API doesn't change.
 
+## 1.3.0 (unreleased)
+
+### Migrating from 1.2: lenient by default
+
+**Styles that 1.2 refused now render, with warnings.** Every check error is now either a *readability* error (a measured risk, such as low contrast, a narrow quiet zone, a logo past its budget, or glass under its limits) or a *hard* one (the code can't be drawn as asked, or certainly won't decode). `Style::checks(Checks)` picks what is refused:
+
+- `Checks::Lenient` (**the new default**): readability errors render as warnings of the same name (`Warning::Unchecked(error)`; in documents the error's own code under `warnings`), hard errors are refused.
+- `Checks::Strict`: refuses both, **1.2's behaviour**. To keep it, pass `.checks(Checks::Strict)`, `"checks": "strict"` or `--checks strict`.
+- `Checks::Off`: refuses nothing; out-of-range options are clamped and conflicting ones left out.
+
+Whenever an error renders anyway, `ScanReport.scannable` is false. `Style::allow_unscannable` is deprecated (`true` is `Lenient`, `false` `Strict`). Defaults and presets still check clean and scan at the full bar, and `freeqrent_verify::verify_style` always checks as `Strict` (SPEC §9).
+
+### Core: glass
+
+- **Any shape:** baked glass is cut from the code's own geometry (an in-core path rasterizer and an exact distance transform), so module shapes, finder and alignment shapes, dashed timing and data colors work on glass. Vector glass draws the same shapes. No longer `GlassUnsupported`.
+- **Your colours:** `Glass::colors(GlassColors::Palette)` tints each lens with its module's token (lightness stays at the targets); `GlassColors::Photo` (default) and `Neutral`.
+- **Texture, refraction, opacity:** `Glass::texture` (photo detail on the plate and finder glass), `Glass::bevel`, `Glass::ior`, `Glass::dome`, `Glass::opacity`.
+- **Readability estimate:** `RenderError::GlassLowReadability { share, margin, finder }`, measured: opacity under about 0.95 warns. `GLASS_READABILITY`, `GLASS_DOTS_MIN`.
+- Output: every 1.2 glass style renders byte for byte as before (snapshots and conformance hashes unchanged).
+
+### Boundary, CLI and bindings
+
+- Documents: `"checks"`; glass `"colors"`, `"texture"`, `"bevel"`, `"ior"`, `"dome"`, `"opacity"`; error code `glass_low_readability`. Schema and conformance regenerated (120 cases; no existing hash changed).
+- CLI and npm bin: `--checks strict|lenient|off`; `--ink glass:colors=…,texture=…,bevel=…,ior=…,dome=…,opacity=…`.
+- Python's `Report` and Dart's `ScanReport` gain `scannable`.
+
 ## 1.2.0 (unreleased)
 
 ### Core

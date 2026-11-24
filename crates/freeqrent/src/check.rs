@@ -131,6 +131,18 @@ pub const GLASS_VECTOR_NARROW_FULL_BAR_VERSION: u8 = 5;
 /// disc at v8) and at 0.5 three, so `Glass.lens` is held to 0.7–1.0 in
 /// vector mode ([`RenderError::OptionOutOfRange`]).
 pub const GLASS_VECTOR_MIN_LENS: f32 = 0.7;
+/// The smallest dots baked glass was measured to scan with
+/// (W20261124091813): 0.9 read every picture at its bar; at 0.85 the disc
+/// lost the degraded render once, at 0.75–0.8 once or twice.
+pub const GLASS_DOTS_MIN: f32 = 0.9;
+/// The least margin (OKLab L) the weakest tenth of data modules may land
+/// from the dark/light midpoint once the glass is composited
+/// ([`RenderError::GlassLowReadability`]): the safe targets' half-gap less
+/// [`GLASS_TARGET_MARGIN`], what the targets were measured to hold (SPEC
+/// §7.9). Measured (W20261124091813, 7 pictures × v3/5/8 at M, baked and
+/// vector): every default code is at 0.325; at opacity 0.9 ZXing missed 1
+/// of 42 on the degraded render, at 0.7 9, at 0.5 30, at 0.3 all.
+pub const GLASS_READABILITY: f32 = 0.305;
 /// The default baked resolution of glass, in pixels per module
 /// ([`Glass::resolution`](crate::Glass::resolution)).
 pub const GLASS_RESOLUTION: u8 = 16;
@@ -179,6 +191,7 @@ const MEASURED: &[(&str, f32, f32)] = &[
     ("Texture::Ink fade", 0.05, 1.0),
     ("Texture::Scanlines opacity + Texture::Ink fade", 0.0, 2.0),
     ("Glass.lens", 0.1, 1.0),
+    ("Dots.size on baked glass", 0.05, 1.0),
 ];
 
 /// Errors as they are found, each marked hard or not (readability).
@@ -365,6 +378,21 @@ pub enum RenderError {
         /// The light target.
         light: f32,
     },
+    /// The composited glass leaves too little of the code (SPEC §7.9,
+    /// W20261124091813): the weakest tenth of the data modules land nearer
+    /// the dark/light midpoint than [`GLASS_READABILITY`], or the finders'
+    /// composited contrast is under [`GLASS_FINDER_FLOOR`]. Opacity below
+    /// about 0.95 and weak targets cause it. A readability error: rendered
+    /// with a warning unless [`Checks::Strict`].
+    GlassLowReadability {
+        /// The share of data modules clearly readable (at least 0.10 from
+        /// the midpoint), 0–1.
+        share: f32,
+        /// The weakest tenth's margin from the midpoint, OKLab L.
+        margin: f32,
+        /// The finders' composited contrast, OKLab L.
+        finder: f32,
+    },
     /// An option glass ink can't be combined with (SPEC §7.9 lists them),
     /// e.g. `"Frame::Circle"` or `"Style.intro"`.
     GlassUnsupported {
@@ -447,6 +475,15 @@ impl fmt::Display for RenderError {
             RenderError::GlassUnsupported { option } => {
                 write!(f, "{option} can't be combined with glass ink")
             }
+            RenderError::GlassLowReadability {
+                share,
+                margin,
+                finder,
+            } => write!(
+                f,
+                "the glass leaves {:.0}% of the modules clearly readable (the weakest tenth {margin:.2} from the midpoint; {GLASS_READABILITY} measured to scan) and finder contrast {finder:.2} ({GLASS_FINDER_FLOOR})",
+                share * 100.0
+            ),
             RenderError::Write => f.write_str("the output sink failed"),
         }
     }
@@ -1039,6 +1076,11 @@ fn check_glass(
     found.range("Glass.finders dark", &mut g.finders.0, 0.0, 1.0);
     found.range("Glass.finders plate", &mut g.finders.1, 0.0, 1.0);
     found.range_int("Glass.resolution", &mut g.resolution, 8, 32);
+    found.range("Glass.texture", &mut g.texture, 0.0, 1.0);
+    found.range("Glass.bevel", &mut g.bevel, 0.05, 0.45);
+    found.range("Glass.ior", &mut g.ior, 1.0, 2.0);
+    found.range("Glass.dome", &mut g.dome, 0.0, 1.0);
+    found.range("Glass.opacity", &mut g.opacity, 0.1, 1.0);
     let g = *g;
 
     // What glass doesn't draw: hard errors, left out under `Checks::Off`.
@@ -1053,11 +1095,7 @@ fn check_glass(
     }
     // Module, finder, alignment and timing shapes are cut from the code's
     // own geometry (W20261124091813).
-    if unsupported(scene::data_tokens(s).len() > 1, "data colors (fg.2–fg.4)") {
-        for t in [Token::Fg2, Token::Fg3, Token::Fg4] {
-            s.palette.unset(t);
-        }
-    }
+    // Data colors tint the glass with `GlassColors::Palette` (W20261124091813).
     if unsupported(!s.textures.is_empty(), "Style.textures") {
         s.textures.clear();
     }
@@ -1097,6 +1135,15 @@ fn check_glass(
         }
     }
 
+    // Dots on baked glass held the bar at 0.9 and lost the degraded disc
+    // at 0.85 and below (SPEC §7.9).
+    if let ModuleShape::Dots { size } = s.modules
+        && !g.is_vector()
+    {
+        let mut size = size;
+        found.range("Dots.size on baked glass", &mut size, GLASS_DOTS_MIN, 1.0);
+    }
+
     // Measured limits: readability errors.
     if g.halo < 1 {
         found.soft(RenderError::GlassHaloTooNarrow { halo: g.halo });
@@ -1104,7 +1151,10 @@ fn check_glass(
     let (plate, contrast) = (g.finders.1, g.finders.1 - g.finders.0);
     // A hair of slack, so the measured pair (0.92 − 0.30) counts as 0.62.
     let below = |v: f32, floor: f32| v < floor - 1e-4;
+    // Whether an option's own limit already explains a weak code.
+    let mut explained = false;
     if below(contrast, GLASS_FINDER_FLOOR) || below(plate, GLASS_PLATE_FLOOR) {
+        explained = true;
         found.soft(RenderError::GlassFinderContrast {
             delta_l: contrast,
             plate,
@@ -1118,7 +1168,19 @@ fn check_glass(
     let (dark, light) = g.targets;
     let weak = (dark - GLASS_SAFE_TARGETS.0).max(GLASS_SAFE_TARGETS.1 - light);
     if weak > GLASS_TARGET_MARGIN + 1e-4 {
+        explained = true;
         found.soft(RenderError::GlassTargetsTooWeak { dark, light });
+    }
+    // What the composited glass leaves: opacity, mostly.
+    if !explained
+        && let Some(read) = crate::glass::readability(s, qr)
+        && (read.margin < GLASS_READABILITY - 1e-3 || read.finder < GLASS_FINDER_FLOOR - 1e-3)
+    {
+        found.soft(RenderError::GlassLowReadability {
+            share: read.share,
+            margin: read.margin,
+            finder: read.finder,
+        });
     }
     let version = qr.version().number();
     let zxing = if g.is_vector() {

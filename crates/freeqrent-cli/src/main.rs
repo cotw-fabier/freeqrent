@@ -142,9 +142,13 @@ Style:
                            (0.08), halo (2), lens (0.9), core (0.6), targets
                            D/L (0.25/0.9), union (0.4), frost (0.12), finders
                            D/P (0.3/0.92), tint, refraction, rim (on|off),
-                           resolution (16 px per module), render (baked: one
-                           PNG over the photo; vector: SVG paths over it, no
-                           refraction, frost=0 for no filter)
+                           colors (photo|palette|neutral: palette tints the
+                           glass with --fg and the finder tokens), texture
+                           (0: photo detail on the plate, 0-1), bevel (0.12),
+                           ior (1.5), dome (0), opacity (1; below about 0.95
+                           it warns), resolution (16 px per module), render
+                           (baked: one PNG over the photo; vector: SVG paths
+                           over it, no refraction, frost=0 for no filter)
   --bands D,L              darkest light and lightest dark sub-cell (0.28,0.94)
   --clarity C              pull sub-cells toward their module, 0-1 (default 0)
   --clarity-map FILE       ... per area: light parts clear, dark ones pictorial

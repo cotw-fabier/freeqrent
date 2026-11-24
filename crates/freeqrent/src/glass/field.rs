@@ -170,12 +170,13 @@ pub(super) fn fields(
         &mut eyes,
     );
     fill(&mut func, &eyes, false);
-    // Nothing under a clearing logo or on plate cells (Outline's ring).
-    for j in -q..n + q {
-        for i in -q..n + q {
-            let c = cell(i, j);
-            let keep_dark = c.kind == 1 && c.func > 0.5;
-            if !keep_dark {
+    // Nothing under a clearing logo or on Outline's cleared ring. Shapes
+    // may reach into their light neighbours otherwise (a rounded ring's
+    // inner corners into the gap), as a plain render draws them.
+    let (removed, cleared) = (scene::removed(style, qr), scene::cleared(style, qr));
+    for j in 0..n {
+        for i in 0..n {
+            if removed.get(i, j) || cleared.get(i, j) {
                 clear_cell(&mut func, i + q, j + q, res, side);
             }
         }
@@ -206,8 +207,13 @@ pub(super) fn fields(
         }
     }
 
-    // A data lens is its shape narrowed by the gap the lens width leaves.
-    let erode = ((1.0 - lens) / 2.0).max(0.0) as f32;
+    // A square lens is narrowed by the gap the lens width leaves; other
+    // shapes keep the size they were given (a dot's diameter, a bar's
+    // width), as a plain render draws them.
+    let erode = match style.modules {
+        ModuleShape::Square { .. } => ((1.0 - lens) / 2.0).max(0.0) as f32,
+        _ => 0.0,
+    };
     let dark = nearer(
         &signed(&dark_data_cov, r),
         &signed(&dark_func_cov, r),

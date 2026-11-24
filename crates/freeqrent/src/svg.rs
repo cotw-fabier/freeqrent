@@ -464,6 +464,11 @@ pub(crate) fn glass_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> V
             if let Some((path, sigma)) = v.frost {
                 let mut e = Element::new(LayerRole::Glass, Token::Bg, false, path);
                 e.blur = Some(sigma);
+                e.fade = style
+                    .halftone
+                    .as_ref()
+                    .and_then(|h| h.glass())
+                    .map_or(1.0, |g| g.opacity);
                 out.push(e);
             }
             for veil in v.veils {
@@ -1113,6 +1118,11 @@ fn write_vector_glass<W: Write + ?Sized>(
         )?;
         write_scaled(w, k(sigma), 3)?;
         write!(w, "\"/></filter><g clip-path=\"url(#{prefix}-frost)\"")?;
+        if e.fade < 1.0 {
+            w.write_str(" opacity=\"")?;
+            write_scaled(w, math::round(e.fade as f64 * 1000.0) as i64, 3)?;
+            w.write_char('"')?;
+        }
         class(w)?;
         write_pose(w, e)?;
         return write!(

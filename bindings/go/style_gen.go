@@ -10,7 +10,7 @@ import (
 )
 
 // SchemaVersion is the x-freeqrent-version of the schema these types were generated from.
-const SchemaVersion = "1.2.0"
+const SchemaVersion = "1.3.0"
 
 // Style: a Style document (SPEC §10.1). Every key is optional.
 type Style struct {
@@ -405,15 +405,31 @@ func (v *InkColor) UnmarshalJSON(data []byte) error {
 // (SPEC §7.9); needs source. render: baked (one PNG over the photo) or
 // vector (SVG elements over it); default baked.
 type InkGlass struct {
-	Border     *float64    `json:"border,omitzero"`
-	Halo       *uint8      `json:"halo,omitzero"`
-	Lens       *float64    `json:"lens,omitzero"`
-	Core       *float64    `json:"core,omitzero"`
-	Targets    *[2]float64 `json:"targets,omitzero"`
-	Union      *float64    `json:"union,omitzero"`
-	Frost      *float64    `json:"frost,omitzero"`
-	Finders    *[2]float64 `json:"finders,omitzero"`
-	Tint       *bool       `json:"tint,omitzero"`
+	Border  *float64    `json:"border,omitzero"`
+	Halo    *uint8      `json:"halo,omitzero"`
+	Lens    *float64    `json:"lens,omitzero"`
+	Core    *float64    `json:"core,omitzero"`
+	Targets *[2]float64 `json:"targets,omitzero"`
+	Union   *float64    `json:"union,omitzero"`
+	Frost   *float64    `json:"frost,omitzero"`
+	Finders *[2]float64 `json:"finders,omitzero"`
+	Tint    *bool       `json:"tint,omitzero"`
+	// Where the glass's hue comes from (lightness is always the targets'): photo
+	// (default), palette (each module's token, bg for light glass) or neutral.
+	// Not with tint.
+	Colors Colors `json:"colors,omitzero"`
+	// How much photo detail shows through the plate and finder glass, 0-1
+	// (default 0, flat).
+	Texture *float64 `json:"texture,omitzero"`
+	// The lens bevel's depth in modules, 0.05-0.45 (default 0.12). Baked.
+	Bevel *float64 `json:"bevel,omitzero"`
+	// The refractive index, 1-2 (default 1.5). Baked.
+	Ior *float64 `json:"ior,omitzero"`
+	// A magnifying dome across each lens, 0-1 (default 0). Baked.
+	Dome *float64 `json:"dome,omitzero"`
+	// The glass's opacity over the photo, 0.1-1 (default 1). Below about 0.95
+	// the code warns glass_low_readability.
+	Opacity    *float64    `json:"opacity,omitzero"`
 	Refraction *bool       `json:"refraction,omitzero"`
 	Rim        *bool       `json:"rim,omitzero"`
 	Resolution *uint8      `json:"resolution,omitzero"`
@@ -465,6 +481,18 @@ func (v *InkGlass) UnmarshalJSON(data []byte) error {
 			err = json.Unmarshal(raw, &v.Finders)
 		case "tint":
 			err = json.Unmarshal(raw, &v.Tint)
+		case "colors":
+			err = json.Unmarshal(raw, &v.Colors)
+		case "texture":
+			err = json.Unmarshal(raw, &v.Texture)
+		case "bevel":
+			err = json.Unmarshal(raw, &v.Bevel)
+		case "ior":
+			err = json.Unmarshal(raw, &v.Ior)
+		case "dome":
+			err = json.Unmarshal(raw, &v.Dome)
+		case "opacity":
+			err = json.Unmarshal(raw, &v.Opacity)
 		case "refraction":
 			err = json.Unmarshal(raw, &v.Refraction)
 		case "rim":
@@ -482,6 +510,18 @@ func (v *InkGlass) UnmarshalJSON(data []byte) error {
 	}
 	return nil
 }
+
+// Where the glass's hue comes from (lightness is always the targets'): photo
+// (default), palette (each module's token, bg for light glass) or neutral.
+// Not with tint. Colors is one of "photo", "palette" or "neutral".
+type Colors string
+
+// The values of Colors.
+const (
+	ColorsPhoto   Colors = "photo"
+	ColorsPalette Colors = "palette"
+	ColorsNeutral Colors = "neutral"
+)
 
 // GlassRender is one of "baked" or "vector".
 type GlassRender string

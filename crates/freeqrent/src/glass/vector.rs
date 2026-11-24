@@ -26,12 +26,13 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::{CORNER, DOT_HALF, FINDER_CHROMA, from_oklab, oklab};
+use super::{CORNER, DOT_HALF, FINDER_CHROMA, GlassColors, from_oklab, oklab};
 use crate::color::{Color, srgb_to_linear};
 use crate::geometry::{self, Grid, Path, UNIT};
 use crate::halftone::{self, Sampler, Span};
 use crate::math;
 use crate::matrix::{ModuleRole, QrMatrix};
+use crate::palette::Token;
 use crate::scanbox::TimingStyle;
 use crate::scene::{self, Canvas, Part};
 use crate::style::{ModuleShape, Style};
@@ -169,19 +170,27 @@ pub(crate) fn vector(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Ve
         from_oklab([l, ab[0] * k, ab[1] * k])
             .map(|c| math::round(super::encode(c) * 255.0).clamp(0.0, 255.0) as u8)
     };
-    // Untinted, dark glass is black and light glass white.
-    let (data_dark, data_light, func_dark) = if g.tint {
-        (
-            tint(TINT_DARK.min(dark_t - 0.08).max(0.0), dark_ab, 1.0),
-            tint(TINT_LIGHT.max(light_t + 0.04).min(1.0), light_ab, 1.0),
-            tint(
-                TINT_DARK.min(finder_t - FINDER_MARGIN - 0.04).max(0.0),
-                dark_ab,
-                FINDER_CHROMA,
-            ),
-        )
-    } else {
-        ([0; 3], [255; 3], [0; 3])
+    // Untinted, dark glass is black and light glass white. With the
+    // palette's colours, dark data glass takes `fg`'s hue, finder glass the
+    // finder's, and light glass `bg`'s (W20261124091813).
+    let dark_l = TINT_DARK.min(dark_t - 0.08).max(0.0);
+    let light_l = TINT_LIGHT.max(light_t + 0.04).min(1.0);
+    let finder_l = TINT_DARK.min(finder_t - FINDER_MARGIN - 0.04).max(0.0);
+    let (data_dark, data_light, func_dark) = match g.colors {
+        GlassColors::Photo => (
+            tint(dark_l, dark_ab, 1.0),
+            tint(light_l, light_ab, 1.0),
+            tint(finder_l, dark_ab, FINDER_CHROMA),
+        ),
+        GlassColors::Palette => {
+            let ab = |t: Token| super::paint_ab(&style.palette.resolve(t));
+            (
+                tint(dark_l, ab(Token::Fg), 1.0),
+                tint(light_l, ab(Token::Bg), 1.0),
+                tint(finder_l, ab(Token::FinderOuter), 1.0),
+            )
+        }
+        _ => ([0; 3], [255; 3], [0; 3]),
     };
     let plate = [255u8; 3];
 
@@ -407,7 +416,7 @@ pub(crate) fn vector(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Ve
         }
     }
 
-    Some(Vector { frost, veils, rims })
+    Some(faded(Vector { frost, veils, rims }, g.opacity))
 }
 
 /// The code modules of a box-wide `grid` (the quiet zone is `q` wide).
@@ -547,6 +556,21 @@ fn unit(c: [u8; 3]) -> [f64; 3] {
 
 fn color(c: [u8; 3], alpha: f64) -> Color {
     Color::srgb(c[0], c[1], c[2]).with_alpha(alpha as f32)
+}
+
+/// `veil`'s and every rim's alpha scaled by the glass's opacity
+/// (W20261124091813); the frost fades with it as the document writes it.
+fn faded(mut v: Vector, opacity: f32) -> Vector {
+    if opacity >= 1.0 {
+        return v;
+    }
+    for veil in &mut v.veils {
+        veil.color = veil.color.with_alpha(veil.color.alpha() * opacity);
+    }
+    for (_, c) in &mut v.rims {
+        *c = c.with_alpha(c.alpha() * opacity);
+    }
+    v
 }
 
 /// Up to the next thousandth (what an attribute carries), at least one.

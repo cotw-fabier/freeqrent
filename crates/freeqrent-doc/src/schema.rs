@@ -9,9 +9,9 @@ use freeqrent::Style;
 use crate::json::{self, Value};
 use crate::style::{
     BORDERS, CAPTION_FONTS, CHECKS, CORNERS, EASES, ECCS, ECIS, EFFECTS, EMPHASES, EYES, FITS,
-    FRAME_RINGS, FRAMES, GLASS_RENDERS, GRIDS, INKS, LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS,
-    STAGGERS, STYLE_KEYS, TARGETS, TEXTURES, TIMINGS, TRIGGERS, idles, intro_presets, logo_frames,
-    logo_intros, logo_sizes, logo_timings, tokens,
+    FRAME_RINGS, FRAMES, GLASS_COLORS, GLASS_RENDERS, GRIDS, INKS, LOGO_SHAPES, MODULE_SHAPES,
+    RINGS, SPREADS, STAGGERS, STYLE_KEYS, TARGETS, TEXTURES, TIMINGS, TRIGGERS, idles,
+    intro_presets, logo_frames, logo_intros, logo_sizes, logo_timings, tokens,
 };
 
 fn s(text: &str) -> Value {
@@ -503,6 +503,39 @@ fn halftone() -> Value {
                 ("frost", number()),
                 ("finders", pair()),
                 ("tint", boolean()),
+                (
+                    "colors",
+                    described(
+                        one_of(GLASS_COLORS),
+                        "Where the glass's hue comes from (lightness is always the targets'): photo (default), palette (each module's token, bg for light glass) or neutral. Not with tint.",
+                    ),
+                ),
+                (
+                    "texture",
+                    described(
+                        number(),
+                        "How much photo detail shows through the plate and finder glass, 0-1 (default 0, flat).",
+                    ),
+                ),
+                (
+                    "bevel",
+                    described(number(), "The lens bevel's depth in modules, 0.05-0.45 (default 0.12). Baked."),
+                ),
+                (
+                    "ior",
+                    described(number(), "The refractive index, 1-2 (default 1.5). Baked."),
+                ),
+                (
+                    "dome",
+                    described(number(), "A magnifying dome across each lens, 0-1 (default 0). Baked."),
+                ),
+                (
+                    "opacity",
+                    described(
+                        number(),
+                        "The glass's opacity over the photo, 0.1-1 (default 1). Below about 0.95 the code warns glass_low_readability.",
+                    ),
+                ),
                 ("refraction", boolean()),
                 ("rim", boolean()),
                 ("resolution", int(255)),

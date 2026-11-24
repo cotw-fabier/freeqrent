@@ -27,6 +27,7 @@ use crate::halftone::{self, Halftone, Sampler, Span};
 use crate::image::Rgba8Image;
 use crate::math;
 use crate::matrix::{ModuleRole, QrMatrix};
+use crate::palette::{Paint, Token};
 use crate::scanbox::TimingStyle;
 use crate::scene::{self, Canvas};
 use crate::style::Style;
@@ -56,11 +57,32 @@ pub struct Glass {
     pub(crate) union: f32,
     pub(crate) frost: f32,
     pub(crate) finders: (f32, f32),
-    pub(crate) tint: bool,
+    pub(crate) colors: GlassColors,
     pub(crate) refraction: bool,
     pub(crate) rim: bool,
     pub(crate) resolution: u8,
     pub(crate) render: GlassRender,
+    pub(crate) texture: f32,
+    pub(crate) bevel: f32,
+    pub(crate) ior: f32,
+    pub(crate) dome: f32,
+    pub(crate) opacity: f32,
+}
+
+/// Where glass takes its colour from (SPEC §7.9, [`Glass::colors`]). The
+/// lightness is always the targets'; this sets the hue and chroma.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum GlassColors {
+    /// The picture's own dominant dark and light colours (the default).
+    Photo,
+    /// The style's palette (W20261124091813): dark glass in each module's
+    /// token (`fg`, `fg.2`–`fg.4`, the finder, alignment and timing
+    /// tokens), light glass and the plate in `bg`'s hue.
+    Palette,
+    /// No tint: the photo's own hue under the lightness shift (baked),
+    /// black and white veils (vector).
+    Neutral,
 }
 
 /// How glass is drawn (SPEC §7.9): [`Glass::render`].
@@ -100,11 +122,16 @@ impl Glass {
             union: 0.4,
             frost: 0.12,
             finders: (0.30, 0.92),
-            tint: true,
+            colors: GlassColors::Photo,
             refraction: true,
             rim: true,
             resolution: GLASS_RESOLUTION,
             render: GLASS_RENDER,
+            texture: 0.0,
+            bevel: 0.12,
+            ior: ETA as f32,
+            dome: 0.0,
+            opacity: 1.0,
         }
     }
 
@@ -170,9 +197,61 @@ impl Glass {
     }
 
     /// Tints the glass toward the picture's dominant dark and light colours
-    /// (default on).
+    /// (default on): `true` is [`GlassColors::Photo`], `false`
+    /// [`GlassColors::Neutral`].
     pub fn tint(mut self, tint: bool) -> Glass {
-        self.tint = tint;
+        self.colors = if tint {
+            GlassColors::Photo
+        } else {
+            GlassColors::Neutral
+        };
+        self
+    }
+
+    /// Where the glass takes its colour (default [`GlassColors::Photo`]);
+    /// [`GlassColors::Palette`] uses the style's colors (W20261124091813).
+    pub fn colors(mut self, colors: GlassColors) -> Glass {
+        self.colors = colors;
+        self
+    }
+
+    /// How much of the photo's own detail shows through the plate and the
+    /// finder, alignment and timing glass, 0–1 (default 0: flat, as
+    /// measured). Their lightness rides on the photo around the finder and
+    /// plate targets, held past the floors (W20261124091813).
+    pub fn texture(mut self, texture: f32) -> Glass {
+        self.texture = texture;
+        self
+    }
+
+    /// The depth of each lens's bevel, where refraction bends the photo, in
+    /// modules, 0.05–0.45 (default 0.12). Baked only.
+    pub fn bevel(mut self, depth: f32) -> Glass {
+        self.bevel = depth;
+        self
+    }
+
+    /// The refractive index, 1.0–2.0 (default 1.5): 1 bends nothing, higher
+    /// bends more. Baked only.
+    pub fn ior(mut self, ior: f32) -> Glass {
+        self.ior = ior;
+        self
+    }
+
+    /// A dome across each lens, 0–1 (default 0): the photo magnified
+    /// toward the lens's center, as a drop of water does, on top of the
+    /// bevel's bend at the edge. Baked only.
+    pub fn dome(mut self, dome: f32) -> Glass {
+        self.dome = dome;
+        self
+    }
+
+    /// The glass's opacity over the photo, 0.1–1 (default 1). Below 1 the
+    /// photo shows through unshifted, which takes contrast: below the
+    /// measured threshold the code warns
+    /// [`GlassLowReadability`](crate::Warning::Unchecked) (W20261124091813).
+    pub fn opacity(mut self, opacity: f32) -> Glass {
+        self.opacity = opacity;
         self
     }
 
@@ -255,9 +334,40 @@ impl Glass {
         self.finders
     }
 
-    /// Whether the glass is tinted.
+    /// Whether the glass is tinted (any colours but
+    /// [`GlassColors::Neutral`]).
     pub fn tints(&self) -> bool {
-        self.tint
+        self.colors != GlassColors::Neutral
+    }
+
+    /// Where the glass takes its colour.
+    pub fn color_source(&self) -> GlassColors {
+        self.colors
+    }
+
+    /// How much photo detail shows through the function glass.
+    pub fn texture_share(&self) -> f32 {
+        self.texture
+    }
+
+    /// The bevel's depth, in modules.
+    pub fn bevel_depth(&self) -> f32 {
+        self.bevel
+    }
+
+    /// The refractive index.
+    pub fn refractive_index(&self) -> f32 {
+        self.ior
+    }
+
+    /// The dome's strength.
+    pub fn dome_strength(&self) -> f32 {
+        self.dome
+    }
+
+    /// The glass's opacity.
+    pub fn glass_opacity(&self) -> f32 {
+        self.opacity
     }
 
     /// Whether the lens edges refract.
@@ -277,7 +387,7 @@ impl Glass {
 
     /// The fields compared by bits, so equality is total and agrees with
     /// the hash.
-    fn key(&self) -> ([u32; 9], [u8; 6]) {
+    fn key(&self) -> ([u32; 14], [u8; 6]) {
         let b = |v: f32| v.to_bits();
         (
             [
@@ -290,10 +400,15 @@ impl Glass {
                 b(self.frost),
                 b(self.finders.0),
                 b(self.finders.1),
+                b(self.texture),
+                b(self.bevel),
+                b(self.ior),
+                b(self.dome),
+                b(self.opacity),
             ],
             [
                 self.halo,
-                self.tint as u8,
+                self.colors as u8,
                 self.refraction as u8,
                 self.rim as u8,
                 self.resolution,
@@ -391,6 +506,9 @@ const BLEND_SIGMA: f64 = 0.35;
 /// Tint strength for data lenses and for finder glass, and the chroma boost
 /// finder glass gets.
 const TINT_DATA: f64 = 0.35;
+/// How far glass moves toward its token's hue with the palette's colours:
+/// most of the way, so the colour reads, with a hint of the photo's own.
+const PALETTE_TINT: f64 = 0.85;
 const TINT_FINDER: f64 = 0.8;
 const FINDER_CHROMA: f64 = 1.6;
 /// The halo's target sits this far under the plate.
@@ -416,6 +534,10 @@ const ETA: f64 = 1.5;
 const MAX_SLOPE: f64 = 12.0;
 /// Normals are taken this far in from an edge.
 const NORMAL_BAND: f64 = 0.2;
+/// A dome's reach inside a lens edge (half the default lens), and how much
+/// of the distance to there it pulls the photo at full strength.
+const DOME_RADIUS: f64 = 0.45;
+const DOME_SCALE: f64 = 0.8;
 /// The rim light and the inner shade: falloff and strength.
 const RIM_WIDTH: f64 = 0.03;
 const RIM_LIGHT: f64 = 0.6;
@@ -443,6 +565,11 @@ struct Lens {
     /// 1 for function and halo glass, drawn flat at the finder or plate
     /// lightness.
     func: f64,
+    /// The OKLab a, b the tint pulls toward, with the palette's colours.
+    ab: [f64; 2],
+    /// The photo's read lightness under the module (what its shift was
+    /// worked out from), for function glass's texture.
+    read: f64,
 }
 
 /// The cells of the box (the code and its quiet zone), by code module.
@@ -505,9 +632,9 @@ impl Lenses {
         kind: u8,
         wx: &[f64; 3],
         wy: &[f64; 3],
-    ) -> Option<(f64, [f64; 4])> {
+    ) -> Option<(f64, [f64; 7])> {
         let mut d = f64::INFINITY;
-        let mut sum = [0.0; 4];
+        let mut sum = [0.0; 7];
         let mut weight = 0.0;
         for dj in -1..=1i64 {
             for di in -1..=1i64 {
@@ -529,11 +656,140 @@ impl Lenses {
                 sum[1] += k * c.feather;
                 sum[2] += k * c.tint;
                 sum[3] += k * c.func;
+                sum[4] += k * c.ab[0];
+                sum[5] += k * c.ab[1];
+                sum[6] += k * c.read;
                 weight += k;
             }
         }
         (weight > 0.0).then(|| (d, sum.map(|s| s / weight)))
     }
+}
+
+/// Photo pixels per module the readability estimate samples.
+const READ_SAMPLE: i64 = 4;
+/// A data module counts as clearly readable when it lands at least this
+/// far from the dark/light midpoint (OKLab L), for [`Readability::share`].
+const READ_CLEAR: f64 = 0.10;
+
+/// What the composited glass leaves of the code (SPEC §7.9,
+/// W20261124091813), estimated per module without baking: each data
+/// module's centre is its glass's target over the photo's own lightness at
+/// the glass's opacity (or the photo bare where no glass is needed),
+/// blended in sRGB as renderers do, and its margin is how far that lands
+/// from the midpoint of the safe targets ([`GLASS_SAFE_TARGETS`]), on its
+/// own side. The finder contrast is the worst corner's mean light finder
+/// glass minus its mean dark glass, composited the same way.
+pub(crate) struct Readability {
+    /// The share of data modules at least [`READ_CLEAR`] from the
+    /// midpoint, 0–1: for people.
+    pub(crate) share: f32,
+    /// The weakest tenth's margin (the 10th percentile), OKLab L: what the
+    /// check holds to [`GLASS_READABILITY`](crate::GLASS_READABILITY).
+    pub(crate) margin: f32,
+    /// The composited finder contrast, OKLab L.
+    pub(crate) finder: f32,
+}
+
+pub(crate) fn readability(style: &Style, qr: &QrMatrix) -> Option<Readability> {
+    let h = style.halftone.as_ref()?;
+    let g = h.glass()?;
+    let canvas = scene::canvas(style, qr);
+    let n = qr.size() as i64;
+    let s = READ_SAMPLE;
+    let side = (n * s) as usize;
+    let backdrop = halftone::linear(style.palette.background());
+    let sampler = Sampler::new(
+        &h.image,
+        h.fit,
+        h.focal,
+        Span::WHOLE,
+        (canvas.card * s) as usize,
+    );
+    let first = canvas.origin * s;
+    let mut photo = Vec::with_capacity(side * side);
+    for y in 0..side as i64 {
+        for x in 0..side as i64 {
+            photo.push(sampler.cell(first + x, first + y).over_linear(backdrop));
+        }
+    }
+    let read = |i: i64, j: i64| -> f64 {
+        let (mut sum, mut count) = ([0.0; 3], 0.0);
+        // The central half of the module.
+        for y in j * s + s / 4..j * s + s - s / 4 {
+            for x in i * s + s / 4..i * s + s - s / 4 {
+                let p = photo[y as usize * side + x as usize];
+                for k in 0..3 {
+                    sum[k] += p[k];
+                }
+                count += 1.0;
+            }
+        }
+        oklab(sum.map(|v| v / f64::max(count, 1.0)))[0]
+    };
+    let opacity = (g.opacity as f64).clamp(0.0, 1.0);
+    // Lightness `glass` over `under` at the opacity, blended in sRGB.
+    let over = |glass: f64, under: f64| {
+        let enc = |l: f64| encode((l * l * l).clamp(0.0, 1.0));
+        let v = opacity * enc(glass) + (1.0 - opacity) * enc(under);
+        cbrt(crate::color::srgb_to_linear(v))
+    };
+    let (dark_t, light_t) = (g.targets.0 as f64, g.targets.1 as f64);
+    let (safe_dark, safe_light) = (GLASS_SAFE_TARGETS.0 as f64, GLASS_SAFE_TARGETS.1 as f64);
+    let (finder, plate) = (g.finders.0 as f64, g.finders.1 as f64);
+    let removed = scene::removed(style, qr);
+    let mid = (safe_dark + safe_light) / 2.0;
+    let mut margins: Vec<f64> = Vec::new();
+    // Per corner: light and dark finder glass sums and counts.
+    let mut corners = [([0.0f64; 2], [0usize; 2]); 3];
+    for (x, y, dark, role) in qr.modules() {
+        let (i, j) = (x as i64, y as i64);
+        if removed.get(i, j) {
+            continue;
+        }
+        let l = read(i, j);
+        match role {
+            ModuleRole::Data | ModuleRole::Ecc | ModuleRole::Remainder => {
+                let at = if dark {
+                    if l > dark_t { over(dark_t, l) } else { l }
+                } else if l < light_t {
+                    over(light_t, l)
+                } else {
+                    l
+                };
+                margins.push(if dark { mid - at } else { at - mid });
+            }
+            ModuleRole::Finder { corner, .. } => {
+                let c = scene::CORNERS
+                    .iter()
+                    .position(|&k| k == corner)
+                    .unwrap_or(0);
+                let (glass, slot) = if dark { (finder, 1) } else { (plate, 0) };
+                corners[c].0[slot] += over(glass, l);
+                corners[c].1[slot] += 1;
+            }
+            _ => {}
+        }
+    }
+    let finder_contrast = corners
+        .iter()
+        .map(|(sum, count)| {
+            sum[0] / f64::max(count[0] as f64, 1.0) - sum[1] / f64::max(count[1] as f64, 1.0)
+        })
+        .fold(f64::INFINITY, f64::min);
+    let clear = margins.iter().filter(|&&m| m >= READ_CLEAR).count();
+    let share = if margins.is_empty() {
+        1.0
+    } else {
+        clear as f32 / margins.len() as f32
+    };
+    crate::sort::sort_by(&mut margins, |a, b| a.total_cmp(b));
+    let margin = margins.get(margins.len() / 10).copied().unwrap_or(mid);
+    Some(Readability {
+        share,
+        margin: margin as f32,
+        finder: finder_contrast as f32,
+    })
 }
 
 /// Bakes `style`'s glass for `qr`, if it has glass.
@@ -641,6 +897,8 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                         feather: HALO_FEATHER,
                         tint: 0.0,
                         func: 1.0,
+                        ab: [0.0; 2],
+                        read: l,
                     };
                 }
                 continue;
@@ -658,6 +916,8 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                     feather: FUNC_FEATHER,
                     tint: 0.0,
                     func: 1.0,
+                    ab: [0.0; 2],
+                    read: l,
                 };
                 continue;
             }
@@ -683,6 +943,8 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                         feather: FUNC_FEATHER,
                         tint: TINT_FINDER,
                         func: 1.0,
+                        ab: [0.0; 2],
+                        read: l,
                     }
                 } else {
                     let (half, radius) = plain(0.5);
@@ -694,6 +956,8 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                         feather: FUNC_FEATHER,
                         tint: 0.0,
                         func: 1.0,
+                        ab: [0.0; 2],
+                        read: l,
                     }
                 }
             } else {
@@ -707,6 +971,8 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                     feather,
                     tint: TINT_DATA,
                     func: 0.0,
+                    ab: [0.0; 2],
+                    read: l,
                 };
                 if dark && l > dark_t {
                     lens(1, dark_t - l)
@@ -716,6 +982,27 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                     Lens::default()
                 }
             };
+        }
+    }
+    // With the palette's colours, each lens pulls toward its module's own
+    // token, light glass and the plate toward bg's hue (W20261124091813).
+    if g.colors == GlassColors::Palette {
+        let tokens = module_tokens(style, qr);
+        let bg = paint_ab(&style.palette.resolve(Token::Bg));
+        for j in -q..n + q {
+            for i in -q..n + q {
+                let c = &mut cells[((j + q) * w + i + q) as usize];
+                let inside = i >= 0 && j >= 0 && i < n && j < n;
+                match c.kind {
+                    0 => continue,
+                    1 if inside => {
+                        let token = tokens[(j * n + i) as usize];
+                        c.ab = paint_ab(&style.palette.resolve(token));
+                    }
+                    _ => c.ab = bg,
+                }
+                c.tint = PALETTE_TINT;
+            }
         }
     }
     let lenses = Lenses {
@@ -758,6 +1045,19 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
         })
     };
     let aa = 1.0 / r;
+    let texture = g.texture as f64;
+    let opacity = g.opacity as f64;
+    // The default bevel is exactly the measured one (0.12 as f32, scaled).
+    let bevel = BEVEL_DEPTH * (g.bevel as f64 / 0.12f32 as f64);
+    let eta = g.ior as f64;
+    let dome = g.dome as f64;
+    let normal_band = if dome > 0.0 {
+        DOME_RADIUS + 0.05
+    } else if bevel <= BEVEL_DEPTH {
+        NORMAL_BAND
+    } else {
+        bevel + 0.08
+    };
     let light_dir = [-core::f64::consts::FRAC_1_SQRT_2; 2];
     let mut rgba = vec![0u8; wpx * wpx * 4];
     for y in 0..wpx {
@@ -774,13 +1074,13 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
             let (px, py) = (x as i64, y as i64);
             // The raster field's distance, where there is one, with the
             // cells' blended shift, feather, tint and flatness.
-            let cut = |f: Option<(f64, [f64; 4])>, kind: u8| match (&raster, f) {
+            let cut = |f: Option<(f64, [f64; 7])>, kind: u8| match (&raster, f) {
                 (Some(fields), Some((_, p))) => Some((fields.dist(kind, px, py), p)),
                 (_, f) => f,
             };
             let dark = cut(lenses.field((u, v), (ci, cj), 1, wx, wy), 1);
             let light = cut(lenses.field((u, v), (ci, cj), 2, wx, wy), 2);
-            let (kind, d, [delta, feather, tint, func]) = match (dark, light) {
+            let (kind, d, [delta, feather, tint, func, ab_a, ab_b, read]) = match (dark, light) {
                 (Some(a), Some(b)) if a.0 <= b.0 => (1u8, a.0, a.1),
                 (Some(a), None) => (1, a.0, a.1),
                 (_, Some(b)) => (2, b.0, b.1),
@@ -795,7 +1095,7 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                     smoothstep(0.0, feather, -d)
                 };
                 // The outward normal, from the field's gradient.
-                let normal = if (g.refraction || g.rim) && -d < NORMAL_BAND {
+                let normal = if (g.refraction || g.rim) && -d < normal_band {
                     if let Some(fields) = &raster {
                         fields.normal(kind, px, py)
                     } else {
@@ -809,13 +1109,17 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                 };
                 let (mut sx, mut sy) = (x as f64 + 0.5, y as f64 + 0.5);
                 if g.refraction {
-                    let off = refraction(-d) * r;
+                    let off = (refraction(-d, bevel, eta) + dome_pull(-d, dome)) * r;
                     sx -= normal[0] * off;
                     sy -= normal[1] * off;
                 }
                 let mut lab = oklab(sample(sx, sy));
+                let photo_l = lab[0];
                 lab[0] = (lab[0] + delta).clamp(0.0, 1.0);
-                if g.tint && tint > 0.0 {
+                if g.colors == GlassColors::Palette && tint > 0.0 {
+                    lab[1] += (ab_a - lab[1]) * tint;
+                    lab[2] += (ab_b - lab[2]) * tint;
+                } else if g.tints() && tint > 0.0 {
                     let target = if kind == 1 {
                         let boost = if tint > 0.5 { FINDER_CHROMA } else { 1.0 };
                         [dark_ab[0] * boost, dark_ab[1] * boost]
@@ -826,8 +1130,10 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                     lab[2] += (target[1] - lab[2]) * tint;
                 }
                 if func > 0.5 {
-                    // Function glass is flat: its lightness, not the photo's.
-                    lab[0] = if kind == 1 { finder } else { plate };
+                    // Function glass is flat at its lightness, with as much
+                    // of the photo's detail around it as `texture` asks.
+                    let flat = if kind == 1 { finder } else { plate };
+                    lab[0] = (flat + texture * (photo_l - read)).clamp(0.0, 1.0);
                 }
                 let mut c = from_oklab(lab).map(encode);
                 if g.rim {
@@ -846,7 +1152,8 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                     alpha = SHADOW_ALPHA * smoothstep(0.0, SHADOW_SOFT, -ds);
                 }
             }
-            let a8 = math::round(alpha * 255.0).clamp(0.0, 255.0);
+            // Below full opacity the photo shows through, unshifted.
+            let a8 = math::round(alpha * opacity * 255.0).clamp(0.0, 255.0);
             if a8 > 0.0 {
                 let i = (y * wpx + x) * 4;
                 for k in 0..3 {
@@ -864,12 +1171,70 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
     })
 }
 
+/// A paint's OKLab a, b: a colour's own, a gradient's stops' mean.
+pub(crate) fn paint_ab(paint: &Paint) -> [f64; 2] {
+    let ab = |c: &crate::Color| {
+        let [_, a, b] = c.to_oklab();
+        [a as f64, b as f64]
+    };
+    match paint {
+        Paint::Solid(c) => ab(c),
+        Paint::Gradient(g) => {
+            let stops = g.stops();
+            let sum = stops.iter().fold([0.0; 2], |acc, s| {
+                let v = ab(&s.color);
+                [acc[0] + v[0], acc[1] + v[1]]
+            });
+            let k = f64::max(stops.len() as f64, 1.0);
+            [sum[0] / k, sum[1] / k]
+        }
+    }
+}
+
+/// Each code module's token as a plain render paints it: the data colors
+/// as spread (SPEC §6.1), timing, alignment, and each finder's ring and eye
+/// (a corner's own token, else the shared one, else `fg`, by
+/// [`Palette::resolve`](crate::Palette::resolve)'s fallbacks).
+fn module_tokens(style: &Style, qr: &QrMatrix) -> Vec<Token> {
+    let n = qr.size() as usize;
+    let mut out = vec![Token::Fg; n * n];
+    let mut plain = style.clone();
+    plain.halftone = None;
+    for layer in scene::layers(&plain, qr) {
+        if let scene::Part::Modules(grid) | scene::Part::Timing(grid) = &layer.part {
+            for y in 0..n {
+                for x in 0..n {
+                    if grid.get(x as i64, y as i64) {
+                        out[y * n + x] = layer.token;
+                    }
+                }
+            }
+        }
+    }
+    for (x, y, _, role) in qr.modules() {
+        let at = y as usize * n + x as usize;
+        out[at] = match role {
+            ModuleRole::Finder {
+                corner,
+                ring: crate::matrix::FinderRing::Eye,
+            } => Token::CornerEye(corner),
+            ModuleRole::Finder { corner, .. } => Token::CornerOuter(corner),
+            ModuleRole::Alignment { .. } => match style.alignment.emphasis {
+                crate::scanbox::Emphasis::None => Token::Fg,
+                _ => Token::Alignment,
+            },
+            _ => out[at],
+        };
+    }
+    out
+}
+
 /// How far the photo is pulled in at `depth` modules inside a lens edge:
 /// the quartic bevel `h(t) = (1 − (1 − t)⁴)^¼`, its slope's angle θ, and
 /// Snell's law at [`ETA`]: `tan(θ − asin(sin θ / η))`, without
 /// trigonometry.
-fn refraction(depth: f64) -> f64 {
-    let t = (depth / BEVEL_DEPTH).clamp(0.0, 1.0);
+fn refraction(depth: f64, bevel: f64, eta: f64) -> f64 {
+    let t = (depth / bevel).clamp(0.0, 1.0);
     if t >= 1.0 {
         return 0.0;
     }
@@ -878,11 +1243,23 @@ fn refraction(depth: f64) -> f64 {
     // h'(t) = one^(−3/4) · (1 − t)³.
     let root = sqrt(one.max(1e-6));
     let dh = s * s * s / (root * sqrt(root));
+    // The bevel keeps its profile at any depth; a deeper one is thicker
+    // glass, so it moves the photo further.
     let slope = (BEVEL_HEIGHT * dh / BEVEL_DEPTH).min(MAX_SLOPE);
     let sin_t = slope / sqrt(1.0 + slope * slope);
-    let sin_r = sin_t / ETA;
+    let sin_r = sin_t / eta;
     let tan_r = sin_r / sqrt(1.0 - sin_r * sin_r);
-    REFRACT_SCALE * (slope - tan_r) / (1.0 + slope * tan_r)
+    REFRACT_SCALE * (bevel / BEVEL_DEPTH) * (slope - tan_r) / (1.0 + slope * tan_r)
+}
+
+/// How far a dome of strength `dome` pulls the photo toward a lens's
+/// middle at `depth` modules inside its edge: a magnifier's pull, largest
+/// at the edge and none past [`DOME_RADIUS`] (W20261124091813).
+fn dome_pull(depth: f64, dome: f64) -> f64 {
+    if dome <= 0.0 {
+        return 0.0;
+    }
+    dome * DOME_SCALE * (DOME_RADIUS - depth).max(0.0)
 }
 
 /// IQ's quadratic smooth minimum.
@@ -1033,10 +1410,10 @@ mod tests {
 
     #[test]
     fn refraction_pulls_only_inside_the_bevel() {
-        assert_eq!(refraction(BEVEL_DEPTH), 0.0);
-        assert_eq!(refraction(0.5), 0.0);
-        let edge = refraction(0.001);
-        let mid = refraction(BEVEL_DEPTH / 2.0);
+        assert_eq!(refraction(BEVEL_DEPTH, BEVEL_DEPTH, ETA), 0.0);
+        assert_eq!(refraction(0.5, BEVEL_DEPTH, ETA), 0.0);
+        let edge = refraction(0.001, BEVEL_DEPTH, ETA);
+        let mid = refraction(BEVEL_DEPTH / 2.0, BEVEL_DEPTH, ETA);
         assert!(edge > mid && mid > 0.0, "{edge} {mid}");
         // At most about 0.14 modules, as the spike measured.
         assert!(edge < 0.15, "{edge}");
@@ -1368,10 +1745,6 @@ mod tests {
                 "Frame::Circle",
             ),
             (
-                g().palette(crate::Palette::from_tokens([("fg.2", "#700")]).unwrap()),
-                "data colors (fg.2–fg.4)",
-            ),
-            (
                 g().texture(crate::Texture::Grain { amount: 0.05 }),
                 "Style.textures",
             ),
@@ -1425,7 +1798,7 @@ mod tests {
             g().palette(crate::Palette::new().dark_twin()),
             g().timing(TimingStyle::Dotted),
             // Cut from the code's own geometry (W20261124091813).
-            g().modules(ModuleShape::Dots { size: 0.8 }),
+            g().modules(ModuleShape::Dots { size: 0.9 }),
             g().modules(ModuleShape::Liquid { smoothness: 0.8 }),
             g().modules(ModuleShape::Rounded { radius: 0.4 }),
             g().modules(ModuleShape::Bars {
@@ -1441,6 +1814,7 @@ mod tests {
                 crate::EyeShape::Squircle,
             )),
             g().timing(TimingStyle::Dashed),
+            g().palette(crate::Palette::from_tokens([("fg.2", "#700")]).unwrap()),
             Style::art(picture().ink(Ink::Glass(base))),
             g().effect(crate::Effect::Sketch { roughness: 0.1 }),
         ]

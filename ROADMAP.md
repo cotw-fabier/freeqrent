@@ -78,3 +78,12 @@ Each item says where it came from, so we remember why it's here.
 
 - **Native Node build via `napi-rs`**, if WASM performance isn't enough (SPEC §10.2).
 - **Swift, Kotlin, and C# packages** over the C ABI.
+
+## Glass, after W20261124091813
+
+- **Vector refraction:** bevel, index and dome are baked only. `feDisplacementMap` from a generated normal map could bend the referenced photo in vector glass; unmeasured in browsers and AndroidSVG.
+- **Custom shapes (glyphs) on glass:** still `GlyphOnPicture`. PNG glyphs could give coverage from their alpha and SVG glyphs from the sanitized file's paths (the rasterizer reads absolute and smooth path forms already).
+- **Vector data colors per token:** vector glass tints dark data veils with `fg` only; `fg.2`–`fg.4` would need a veil per token and level.
+- **The readability estimate in the report:** `GlassLowReadability` carries `share`, `margin` and `finder` only when it fires; a `ScanReport` field would let a UI show a meter for every glass code (an output change for every glass report).
+- **Texture and the estimate:** the estimate reads data modules and finders; texture's effect on the plate isn't in it (texture 1 held the bar on every picture measured).
+

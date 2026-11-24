@@ -2,6 +2,15 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261124091813 · 1.2 · Check levels; glass from any shape, in your colours, with texture, refraction and opacity
+
+- Landed (-P): `Style::checks(Checks::Strict | Lenient | Off)`, **lenient by default** (owner, 2026-11-24): every error is readability or hard where it is found; Lenient renders readability errors as `Warning::Unchecked(error)` (the glass limits keep their own warnings) and refuses hard ones, Strict refuses both (1.2's behaviour), Off refuses nothing, clamping ranges and leaving conflicts out. `scannable` false whenever an error renders; `allow_unscannable` deprecated. Measured ranges list hard bounds (`MEASURED`). `verify_style` and the verify suite check as Strict (`Guarantee::strict`). Document `checks`, CLI `--checks`; Python and Dart reports gain `scannable`.
+- Landed (-1–-8): `raster.rs` fills the core's own path data into exact-area coverage; `glass/field.rs` turns it into signed distance (exact EDT). Baked glass for any non-square shape is cut from that geometry, vector glass from the same shapes; modules, finder and alignment shapes, dashed timing and data colors are no longer `GlassUnsupported`. `GlassColors::Palette` (hue from each module's token), `texture`, `bevel`, `ior`, `dome`, `opacity`. `RenderError::GlassLowReadability`, a composited estimate without baking.
+- Measured: 7 pictures × v3/5/8 at M at each style's bar: every shape, finder shape and palette colours 21/21 on both renders, texture 1, bevel 0.45/ior 2 and dome 1 21/21; baked dots 0.85 and under lose the degraded disc, hence `GLASS_DOTS_MIN` 0.9 (a measured range). Opacity 0.9/0.7/0.5/0.3: 20/15/6/0 of 21 baked, 21/18/6/0 vector; the finder contrast crosses 0.58 near 0.95, and `GLASS_READABILITY` 0.305 (the safe targets' half-gap less the measured margin) sits under every default code's 0.325.
+- Bugs the sweep caught: clipping finder shapes to their cells squared a rounded ring's hole (leaf 0/21 before); lens erosion shrank shapes that carry their own size; float-accumulated coverage of 0.99999 read as edge everywhere (the plate went translucent); vector veils lost their fill rule.
+- Checks: fmt, clippy, workspace tests, no_std, core deps, ffi smoke, deny, bindings generate and test. Conformance 108 → 120 cases, **no existing hash changed** (every 1.2 glass output byte-identical). Version 1.3.0.
+- Follow-up: ROADMAP (vector refraction, SVG glyphs on glass, vector data colors per token, a report field for the readability estimate).
+
 ## 20261123231733 · 1.2 · Effects on glass
 
 - Landed: §7.5's effect on glass ink filters the glass, not the photo (`LayerRole::Photo` stays out of the `{prefix}-fx` group). Sketch on both renders; glow and emboss on vector glass. Over baked glass glow and emboss stay `GlassUnsupported`, with the options `"Effect::Glow on baked glass"` and `"Effect::Emboss on baked glass"`.

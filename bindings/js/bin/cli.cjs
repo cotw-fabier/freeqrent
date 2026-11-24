@@ -396,7 +396,18 @@ function glass(flag, options) {
       case 'core':
       case 'union':
       case 'frost':
+      case 'texture':
+      case 'bevel':
+      case 'ior':
+      case 'dome':
+      case 'opacity':
         g[key] = num(value);
+        break;
+      case 'colors':
+        if (!['photo', 'palette', 'neutral'].includes(value)) {
+          throw new Usage(`--${flag}: glass colors: ${JSON.stringify(value)}: try photo, palette or neutral`);
+        }
+        g.colors = value;
         break;
       case 'halo':
       case 'resolution':
@@ -419,7 +430,7 @@ function glass(flag, options) {
         break;
       default:
         throw new Usage(
-          `--${flag}: unknown glass option ${JSON.stringify(key)}: try border, halo, lens, core, targets, union, frost, finders, tint, refraction, rim, resolution or render`,
+          `--${flag}: unknown glass option ${JSON.stringify(key)}: try border, halo, lens, core, targets, union, frost, finders, tint, colors, texture, bevel, ior, dome, opacity, refraction, rim, resolution or render`,
         );
     }
   }

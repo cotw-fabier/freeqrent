@@ -3,9 +3,9 @@
 
 use freeqrent::{
     AlignmentShape, Axis, Border, CaptionFont, Checks, ColorSpread, Corner, CubicBezier, Ease, Ecc,
-    Effect, Emphasis, EyeShape, Fit, Frame, FrameRing, Glass, GlassRender, Idle, Ink, LogoFrame,
-    LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder,
-    Style, Texture, TimingStyle, TrackingGrid, Trigger,
+    Effect, Emphasis, EyeShape, Fit, Frame, FrameRing, Glass, GlassColors, GlassRender, Idle, Ink,
+    LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape, Preset, RingShape,
+    StaggerOrder, Style, Texture, TimingStyle, TrackingGrid, Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -564,6 +564,21 @@ fn glass(options: &str) -> Result<Glass, String> {
                 g.finders(dark, plate)
             }
             "tint" => g.tint(switch()?),
+            "colors" => g.colors(match value {
+                "photo" => GlassColors::Photo,
+                "palette" => GlassColors::Palette,
+                "neutral" => GlassColors::Neutral,
+                _ => {
+                    return Err(format!(
+                        "glass colors: {value:?}: try photo, palette or neutral"
+                    ));
+                }
+            }),
+            "texture" => g.texture(num()?),
+            "bevel" => g.bevel(num()?),
+            "ior" => g.ior(num()?),
+            "dome" => g.dome(num()?),
+            "opacity" => g.opacity(num()?),
             "refraction" => g.refraction(switch()?),
             "rim" => g.rim(switch()?),
             "resolution" => g.resolution(whole()?),
@@ -574,7 +589,7 @@ fn glass(options: &str) -> Result<Glass, String> {
             }),
             _ => {
                 return Err(format!(
-                    "unknown glass option {key:?}: try border, halo, lens, core, targets, union, frost, finders, tint, refraction, rim, resolution or render"
+                    "unknown glass option {key:?}: try border, halo, lens, core, targets, union, frost, finders, tint, colors, texture, bevel, ior, dome, opacity, refraction, rim, resolution or render"
                 ));
             }
         };

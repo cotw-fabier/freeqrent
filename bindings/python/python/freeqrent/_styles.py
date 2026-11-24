@@ -13,7 +13,7 @@ from typing import Any, ClassVar, Literal, Mapping, Optional, Sequence, Tuple, U
 from ._base import Doc
 from ._pixels import rgba_of
 
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = "1.3.0"
 
 Preset = Literal[
     "classic",
@@ -26,6 +26,7 @@ Preset = Literal[
     "leaf",
 ]
 HalftoneInkName = Literal["mono", "color", "glass"]
+Colors = Literal["photo", "palette", "neutral"]
 Render = Literal["baked", "vector"]
 Fit = Literal["cover", "contain"]
 ModuleShapeName = Literal["square", "rounded", "dots", "liquid", "bars"]
@@ -209,6 +210,14 @@ class Glass(Doc):
     """``{"kind": "glass"}``, one of ``HalftoneInk``.
 
     Liquid glass over the whole photo (SPEC §7.9); needs source. render: baked (one PNG over the photo) or vector (SVG elements over it); default baked.
+
+    Attributes:
+        colors: Where the glass's hue comes from (lightness is always the targets'): photo (default), palette (each module's token, bg for light glass) or neutral. Not with tint.
+        texture: How much photo detail shows through the plate and finder glass, 0-1 (default 0, flat).
+        bevel: The lens bevel's depth in modules, 0.05-0.45 (default 0.12). Baked.
+        ior: The refractive index, 1-2 (default 1.5). Baked.
+        dome: A magnifying dome across each lens, 0-1 (default 0). Baked.
+        opacity: The glass's opacity over the photo, 0.1-1 (default 1). Below about 0.95 the code warns glass_low_readability.
     """
 
     kind: ClassVar[Literal["glass"]] = "glass"
@@ -222,6 +231,12 @@ class Glass(Doc):
     frost: Optional[float] = None
     finders: Optional[Tuple[float, float]] = None
     tint: Optional[bool] = None
+    colors: Optional[Colors] = None
+    texture: Optional[float] = None
+    bevel: Optional[float] = None
+    ior: Optional[float] = None
+    dome: Optional[float] = None
+    opacity: Optional[float] = None
     refraction: Optional[bool] = None
     rim: Optional[bool] = None
     resolution: Optional[int] = None
@@ -1013,6 +1028,7 @@ __all__ = [
     "ClassTrigger",
     "Color",
     "ColorSpread",
+    "Colors",
     "Corners",
     "Custom",
     "Diagonal",

@@ -5,10 +5,10 @@
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, Checks, ColorSpread,
     Corner, CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
-    FrameRing, Glass, GlassRender, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro,
-    LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette, Preset, QrCode, RasterFormat,
-    Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, TrackingGrid,
-    Trigger, Version,
+    FrameRing, Glass, GlassColors, GlassRender, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame,
+    LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette, Preset, QrCode,
+    RasterFormat, Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle,
+    TrackingGrid, Trigger, Version,
 };
 use freeqrent_doc::{Payload, parse};
 
@@ -403,6 +403,43 @@ fn glass() {
     let parsed = style(&doc);
     assert_eq!(parsed, Style::new().halftone(h).checks(Checks::Lenient));
     assert!(parsed.unscannable_allowed());
+    // The W20261124091813 options cross the boundary too.
+    let doc = format!(
+        r#"{{"halftone":{{"image":{img},"source":"{source}","ink":{{"kind":"glass",
+            "colors":"palette","texture":0.5,"bevel":0.3,"ior":1.8,"dome":0.6,"opacity":0.7}}}}}}"#,
+        img = image_json(&p)
+    );
+    let g = Glass::new()
+        .colors(GlassColors::Palette)
+        .texture(0.5)
+        .bevel(0.3)
+        .ior(1.8)
+        .dome(0.6)
+        .opacity(0.7);
+    let h = Halftone::new(p.clone())
+        .source(file.clone(), RasterFormat::Png)
+        .unwrap()
+        .ink(Ink::Glass(g));
+    assert_eq!(style(&doc), Style::new().halftone(h));
+    let both = format!(
+        r#"{{"halftone":{{"image":{img},"source":"{source}","ink":{{"kind":"glass","tint":true,"colors":"photo"}}}}}}"#,
+        img = image_json(&p)
+    );
+    assert_eq!(parse(&both).unwrap_err().code, "invalid_style");
+    // Low opacity renders with its warning by default, and Strict refuses it.
+    let text = "https://example.com";
+    let report = freeqrent_doc::check(Payload::Text(text), &doc).unwrap();
+    assert!(
+        report.contains(r#""code":"glass_low_readability""#) && report.contains(r#""ok":true"#),
+        "{report}"
+    );
+    let strict = doc.replacen('{', r#"{"checks":"strict","#, 1);
+    assert_eq!(
+        freeqrent_doc::render(Payload::Text(text), &strict)
+            .unwrap_err()
+            .code,
+        "glass_low_readability"
+    );
     // A bare "glass" takes the defaults, under art too.
     let bare = format!(
         r#"{{"art":{{"image":{},"source":"{source}","ink":"glass"}}}}"#,

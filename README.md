@@ -168,7 +168,7 @@ freeQRent is this web developer's way of giving back. It isn't a business. There
 - **Brand palettes:** palettes that pass the contrast rules, pulled from a logo's pixels, a style sheet or a web page's HTML.
 - **Pictures and art mode:** draw a photo into the code itself, with the code's spare data bits chosen to follow the picture.
 - **Motion:** intros that play *into* the finished code, idle loops, and replays on load, on hover or every few seconds. It's all plain CSS, so renderers that ignore animation, and viewers who prefer reduced motion, see the finished static code.
-- **Scannability first:** every style is checked against an error-correction and contrast budget, and the library refuses what it can't stand behind. The limits come from measurements with ZXing and rqrr and from real scans on iOS Camera and Google Lens. Every style option in this repository has a test that renders it and decodes it.
+- **Scannability first:** every style is checked against an error-correction and contrast budget. By default (1.3) what is merely risky renders with a warning and what can't work is refused; `Checks::Strict` refuses anything the library can't stand behind. The limits come from measurements with ZXing and rqrr and from real scans on iOS Camera and Google Lens. Every style option in this repository has a test that renders it and decodes it.
 - **Embeddable:** the core has zero dependencies and no `unsafe`, runs on `no_std` and WebAssembly, and its output is deterministic: the same input gives byte-identical SVG in every language.
 
 
@@ -309,7 +309,7 @@ let svg = Style::preset("ink").unwrap()
 
 ### Checking and verifying
 
-`style.check(&qr)` returns a `ScanReport`. Its errors (contrast below the floor, a logo past the budget, no quiet zone) make `render` refuse, and its warnings name soft risks such as inverted colors or rounded finder rings. The `freeqrent-verify` crate rasterizes a render with resvg and decodes it with ZXing and rqrr, held to the bar the report implies. That is how every style option in this repository is tested.
+`style.check(&qr)` returns a `ScanReport`. Its errors are readability risks (contrast below the floor, a logo past the budget, no quiet zone) or hard problems; by default (`Checks::Lenient`, since 1.3) the risks render as warnings and `scannable` turns false, while `Style::checks(Checks::Strict)` makes `render` refuse every error, as 1.2 did, and `Checks::Off` refuses nothing. Its warnings also name soft risks such as inverted colors or rounded finder rings. The `freeqrent-verify` crate rasterizes a render with resvg and decodes it with ZXing and rqrr, held to the bar the report implies. That is how every style option in this repository is tested.
 
 
 ### Features

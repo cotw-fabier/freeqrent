@@ -234,6 +234,16 @@ pub(crate) fn render_error_parts(e: &RenderError) -> (&'static str, Detail) {
             d.str("option", option);
             "glass_unsupported"
         }
+        RenderError::GlassLowReadability {
+            share,
+            margin,
+            finder,
+        } => {
+            d.f32("share", *share);
+            d.f32("margin", *margin);
+            d.f32("finder", *finder);
+            "glass_low_readability"
+        }
         RenderError::Write => "write",
         _ => "render_error",
     };

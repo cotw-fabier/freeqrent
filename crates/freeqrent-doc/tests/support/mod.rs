@@ -423,6 +423,38 @@ pub fn inputs() -> Vec<String> {
             "render",
             &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{glass},"effect":{{"kind":"glow","radius":0.3,"strength":0.2}}}}"#),
         ),
+        // Glass cut from the code's own shapes, in its colors, with texture,
+        // refraction and opacity (W20261124091813).
+        render(
+            "glass shapes",
+            &format!(r#"{{"halftone":{glass},"modules":{{"kind":"liquid","smoothness":0.8}},"finders":{{"ring":{{"kind":"rounded","radius":2.5}},"eye":"circle"}}}}"#),
+        ),
+        render("glass dots vector", &format!(r#"{{"halftone":{vector},"modules":{{"kind":"dots","size":0.9}},"finders":{{"ring":"leaf","eye":"leaf"}}}}"#)),
+        render(
+            "glass palette",
+            &format!(
+                r##"{{"halftone":{{"image":{disc},"source":"{disc_file}","ink":{{"kind":"glass","colors":"palette"}}}},"palette":{{"fg":"#c2185b","fg.2":"#1565c0","finder.outer":"#6a1b9a"}}}}"##
+            ),
+        ),
+        render(
+            "glass palette vector",
+            &format!(
+                r##"{{"halftone":{{"image":{disc},"source":"{disc_file}","ink":{{"kind":"glass","colors":"palette","render":"vector"}}}},"palette":{{"fg":"#c2185b"}}}}"##
+            ),
+        ),
+        render(
+            "glass texture and refraction",
+            &format!(r#"{{"halftone":{{"image":{disc},"source":"{disc_file}","ink":{{"kind":"glass","texture":0.6,"bevel":0.4,"ior":1.9,"dome":0.8}}}}}}"#),
+        ),
+        case(
+            "check glass opacity",
+            "check",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{{"image":{disc},"source":"{disc_file}","ink":{{"kind":"glass","opacity":0.6}}}}}}"#),
+        ),
+        render(
+            "glass opacity vector",
+            &format!(r#"{{"halftone":{{"image":{disc},"source":"{disc_file}","ink":{{"kind":"glass","render":"vector","opacity":0.6}}}}}}"#),
+        ),
     ]);
     cases
 }

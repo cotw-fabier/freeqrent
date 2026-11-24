@@ -10,10 +10,10 @@
 use freeqrent::{
     AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, Checks, ColorSpread,
     Corner, CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
-    FrameRing, Glass, GlassRender, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro,
-    LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette, Preset, QrBuilder, QrCode,
-    RasterFormat, RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, Token,
-    TrackingGrid, Trigger, Version,
+    FrameRing, Glass, GlassColors, GlassRender, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame,
+    LogoIntro, LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette, Preset,
+    QrBuilder, QrCode, RasterFormat, RingShape, StaggerOrder, Style, TargetSize, Texture,
+    TimingStyle, Token, TrackingGrid, Trigger, Version,
 };
 
 use crate::error::{DocError, glyph_error, image_error, logo_error, not_image};
@@ -107,6 +107,8 @@ pub const INKS: &[&str] = &["mono", "color", "glass"];
 pub const FITS: &[&str] = &["cover", "contain"];
 /// `halftone.ink` glass's `render`.
 pub const GLASS_RENDERS: &[&str] = &["baked", "vector"];
+/// `halftone.ink` glass's `colors` (W20261124091813).
+pub const GLASS_COLORS: &[&str] = &["photo", "palette", "neutral"];
 /// `intro.ease.kind`.
 pub const EASES: &[&str] = &["quart", "quint", "expo", "custom"];
 /// `intro.stagger.kind`.
@@ -832,8 +834,36 @@ fn glass(i: &mut Obj<'_>) -> Result<Glass, DocError> {
     if let Some((dark, plate)) = i.opt("finders", pair_of)? {
         g = g.finders(dark, plate);
     }
+    if i.has("tint") && i.has("colors") {
+        return Err(DocError::invalid(
+            "halftone.ink.colors",
+            "give colors or tint (its on/off form), not both",
+        ));
+    }
     if let Some(v) = i.opt("tint", bool_of)? {
         g = g.tint(v);
+    }
+    if let Some(c) = i.opt("colors", |v, p| name_of(v, p, GLASS_COLORS))? {
+        g = g.colors(match c {
+            "palette" => GlassColors::Palette,
+            "neutral" => GlassColors::Neutral,
+            _ => GlassColors::Photo,
+        });
+    }
+    if let Some(v) = i.opt("texture", f32_of)? {
+        g = g.texture(v);
+    }
+    if let Some(v) = i.opt("bevel", f32_of)? {
+        g = g.bevel(v);
+    }
+    if let Some(v) = i.opt("ior", f32_of)? {
+        g = g.ior(v);
+    }
+    if let Some(v) = i.opt("dome", f32_of)? {
+        g = g.dome(v);
+    }
+    if let Some(v) = i.opt("opacity", f32_of)? {
+        g = g.opacity(v);
     }
     if let Some(v) = i.opt("refraction", bool_of)? {
         g = g.refraction(v);

@@ -506,3 +506,315 @@ fn measured_limits_are_refused_and_allowed_on_request() {
         }
     }
 }
+
+/// Glass cut from the code's own shapes, in the palette's colours, with
+/// texture, refraction and dome (W20261124091813): each at its own bar
+/// (rounded and custom-looking finders take the rounded-finder bar) on four
+/// pictures at v3 and v8. `options_sweep` measured all seven at v3/5/8.
+#[test]
+fn shapes_colors_and_refraction_scan() {
+    use freeqrent::{Axis, EyeShape, FinderStyle, GlassColors, ModuleShape, RingShape};
+    let pink = Palette::from_tokens([
+        ("fg", "#c2185b"),
+        ("fg.2", "#1565c0"),
+        ("finder.outer", "#6a1b9a"),
+    ])
+    .unwrap();
+    let shapes: Vec<(&str, Style)> = vec![
+        (
+            "dots 0.9",
+            Style::new().modules(ModuleShape::Dots { size: 0.9 }),
+        ),
+        (
+            "liquid 0.8",
+            Style::new().modules(ModuleShape::Liquid { smoothness: 0.8 }),
+        ),
+        (
+            "rounded 0.5",
+            Style::new().modules(ModuleShape::Rounded { radius: 0.5 }),
+        ),
+        (
+            "bars",
+            Style::new().modules(ModuleShape::Bars {
+                axis: Axis::Vertical,
+                radius: 0.5,
+            }),
+        ),
+        (
+            "rounded finders",
+            Style::new().finders(FinderStyle::new(
+                RingShape::Rounded(2.5),
+                EyeShape::Rounded(1.5),
+            )),
+        ),
+        (
+            "leaf finders",
+            Style::new().finders(FinderStyle::new(RingShape::Leaf, EyeShape::Leaf)),
+        ),
+        ("palette", Style::new().palette(pink)),
+    ];
+    for kind in ["disc", "face", "rings", "dusk"] {
+        for render in [BAKED, VECTOR] {
+            let mut cases: Vec<(String, Style)> = Vec::new();
+            for (label, base) in &shapes {
+                for (colors, c) in [
+                    ("", GlassColors::Photo),
+                    (" in colours", GlassColors::Palette),
+                ] {
+                    let g = glass(render).colors(c);
+                    cases.push((
+                        format!("{label}{colors}"),
+                        base.clone().halftone(halftone(kind, g)),
+                    ));
+                }
+            }
+            if render == BAKED {
+                for (label, g) in [
+                    ("texture 1", glass(render).texture(1.0)),
+                    ("bevel 0.45 ior 2", glass(render).bevel(0.45).ior(2.0)),
+                    ("dome 1", glass(render).dome(1.0)),
+                ] {
+                    cases.push((label.into(), Style::new().halftone(halftone(kind, g))));
+                }
+            }
+            for (label, style) in cases {
+                for version in [3u8, 8] {
+                    let qr = code(&style, version, Ecc::M);
+                    let label = format!("{kind} {render:?} {label} v{version}");
+                    let report = style.strict().check(&qr);
+                    assert!(report.ok() && report.scannable, "{label}: {report:?}");
+                    if let Err(e) = verify_style(&style, &qr, TEXT) {
+                        panic!("{label}: {e}");
+                    }
+                }
+            }
+        }
+    }
+    // Smaller dots on baked glass: drawn by default with their measured
+    // limit as a warning, refused under strict checks.
+    let small = Style::new()
+        .modules(ModuleShape::Dots { size: 0.8 })
+        .halftone(halftone("disc", glass(BAKED)));
+    let qr = code(&small, 5, Ecc::M);
+    assert!(!small.strict().check(&qr).ok());
+    let report = small.check(&qr);
+    assert!(report.ok() && !report.scannable, "{report:?}");
+}
+
+/// Opacity under about 0.95 warns `GlassLowReadability` by default and is
+/// refused under strict checks; full opacity never warns (W20261124091813).
+#[test]
+fn low_opacity_warns() {
+    for render in [BAKED, VECTOR] {
+        for kind in ["disc", "face"] {
+            let full = Style::new().halftone(halftone(kind, glass(render)));
+            let qr = code(&full, 5, Ecc::M);
+            assert!(full.strict().check(&qr).ok());
+            for opacity in [0.9, 0.6, 0.3] {
+                let style = Style::new().halftone(halftone(kind, glass(render).opacity(opacity)));
+                let label = format!("{kind} {render:?} opacity {opacity}");
+                let strict = style.strict().check(&qr);
+                assert!(
+                    strict
+                        .errors
+                        .iter()
+                        .any(|e| matches!(e, RenderError::GlassLowReadability { .. })),
+                    "{label}: {strict:?}"
+                );
+                let report = style.check(&qr);
+                assert!(report.ok() && !report.scannable, "{label}: {report:?}");
+                assert!(style.render(&qr).is_ok(), "{label}");
+            }
+        }
+    }
+}
+
+/// The readability estimate against real decodes (W20261124091813): sweeps
+/// opacity and weaker targets over every picture, prints each case's
+/// estimated share and finder contrast and whether ZXing read every render
+/// (the degraded one included). Run by hand to set `GLASS_READABILITY`:
+/// `cargo test -p freeqrent-verify --release --test glass readability_sweep -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn readability_sweep() {
+    let zxing = Bar {
+        degraded: true,
+        rqrr: false,
+        inverted: false,
+    };
+    for render in [BAKED, VECTOR] {
+        for (label, g) in [
+            ("op1.0", glass(render)),
+            ("op0.9", glass(render).opacity(0.9)),
+            ("op0.8", glass(render).opacity(0.8)),
+            ("op0.7", glass(render).opacity(0.7)),
+            ("op0.6", glass(render).opacity(0.6)),
+            ("op0.5", glass(render).opacity(0.5)),
+            ("op0.4", glass(render).opacity(0.4)),
+            ("op0.3", glass(render).opacity(0.3)),
+            ("t.35/.80", glass(render).targets(0.35, 0.80)),
+            ("t.45/.70", glass(render).targets(0.45, 0.70)),
+            ("t.55/.60", glass(render).targets(0.55, 0.60)),
+        ] {
+            for kind in PHOTOS {
+                for version in [3, 5, 8] {
+                    let style = Style::new().halftone(halftone(kind, g));
+                    let qr = code(&style, version, Ecc::M);
+                    let report = style.check(&qr);
+                    let (share, finder) = report
+                        .warnings
+                        .iter()
+                        .find_map(|w| match w {
+                            Warning::Unchecked(RenderError::GlassLowReadability {
+                                margin,
+                                finder,
+                                ..
+                            }) => Some((*margin, *finder)),
+                            _ => None,
+                        })
+                        .unwrap_or((f32::NAN, f32::NAN));
+                    let svg = style.render(&qr).unwrap();
+                    let ok = freeqrent_verify::verify_with(&svg, TEXT, zxing).is_ok();
+                    println!(
+                        "SWEEP {render:?} {label} {kind} v{version} margin={share:.3} finder={finder:.3} ok={ok}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Builds a style around a picture, for the sweeps.
+type MakeStyle = Box<dyn Fn(Halftone) -> Style>;
+
+/// Every W20261124091813 option over every picture, at its own bar: prints
+/// pass counts per option value. Run by hand when measuring:
+/// `cargo test -p freeqrent-verify --release --test glass options_sweep -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn options_sweep() {
+    use freeqrent::{Axis, EyeShape, FinderStyle, GlassColors, ModuleShape, RingShape};
+    let pink = Palette::from_tokens([("fg", "#c2185b"), ("finder.outer", "#6a1b9a")]).unwrap();
+    for render in [BAKED, VECTOR] {
+        let pink = pink.clone();
+        let cases: Vec<(&str, MakeStyle)> = vec![
+            ("square", Box::new(|h| Style::new().halftone(h))),
+            (
+                "dots0.9",
+                Box::new(|h| {
+                    Style::new()
+                        .halftone(h)
+                        .modules(ModuleShape::Dots { size: 0.9 })
+                }),
+            ),
+            (
+                "dots0.75",
+                Box::new(|h| {
+                    Style::new()
+                        .halftone(h)
+                        .modules(ModuleShape::Dots { size: 0.75 })
+                }),
+            ),
+            (
+                "dots0.8",
+                Box::new(|h| {
+                    Style::new()
+                        .halftone(h)
+                        .modules(ModuleShape::Dots { size: 0.8 })
+                }),
+            ),
+            (
+                "dots0.85",
+                Box::new(|h| {
+                    Style::new()
+                        .halftone(h)
+                        .modules(ModuleShape::Dots { size: 0.85 })
+                }),
+            ),
+            (
+                "liquid0.8",
+                Box::new(|h| {
+                    Style::new()
+                        .halftone(h)
+                        .modules(ModuleShape::Liquid { smoothness: 0.8 })
+                }),
+            ),
+            (
+                "rounded0.5",
+                Box::new(|h| {
+                    Style::new()
+                        .halftone(h)
+                        .modules(ModuleShape::Rounded { radius: 0.5 })
+                }),
+            ),
+            (
+                "bars",
+                Box::new(|h| {
+                    Style::new().halftone(h).modules(ModuleShape::Bars {
+                        axis: Axis::Vertical,
+                        radius: 0.5,
+                    })
+                }),
+            ),
+            (
+                "ring2.5",
+                Box::new(|h| {
+                    Style::new().halftone(h).finders(FinderStyle::new(
+                        RingShape::Rounded(2.5),
+                        EyeShape::Rounded(1.5),
+                    ))
+                }),
+            ),
+            (
+                "leaf",
+                Box::new(|h| {
+                    Style::new()
+                        .halftone(h)
+                        .finders(FinderStyle::new(RingShape::Leaf, EyeShape::Leaf))
+                }),
+            ),
+            (
+                "circle",
+                Box::new(|h| {
+                    Style::new()
+                        .halftone(h)
+                        .finders(FinderStyle::new(RingShape::Squircle, EyeShape::Circle))
+                }),
+            ),
+            (
+                "palette",
+                Box::new(move |h| Style::new().halftone(h).palette(pink.clone())),
+            ),
+        ];
+        for (label, make) in &cases {
+            for (glabel, g) in [
+                ("", glass(render)),
+                ("+pal", glass(render).colors(GlassColors::Palette)),
+                ("+tex0.5", glass(render).texture(0.5)),
+                ("+tex1", glass(render).texture(1.0)),
+                ("+bevel", glass(render).bevel(0.45).ior(2.0)),
+                ("+dome", glass(render).dome(1.0)),
+            ] {
+                if render == VECTOR && !glabel.is_empty() && glabel != "+pal" {
+                    continue;
+                }
+                if *label != "square" && !glabel.is_empty() && glabel != "+pal" {
+                    continue;
+                }
+                let mut pass = 0;
+                let mut misses = Vec::new();
+                for kind in PHOTOS {
+                    for version in [3, 5, 8] {
+                        let style = make(halftone(kind, g));
+                        let qr = code(&style, version, Ecc::M);
+                        match verify_style(&style, &qr, TEXT) {
+                            Ok(()) => pass += 1,
+                            Err(e) => misses.push(format!("{kind} v{version}: {e:?}")),
+                        }
+                    }
+                }
+                println!("OPT {render:?} {label}{glabel} {pass}/21 {misses:?}");
+            }
+        }
+    }
+}
