@@ -453,7 +453,7 @@ Halftone and art mode build the code *from* the picture. Glass keeps the photogr
   | `finders` | 0.30 on **0.92** | 0–1 | the finder, alignment and timing glass's lightness, and the plate's |
   | `tint`, `refraction`, `rim` | on | | tint toward the picture's colours; Snell refraction at index 1.5; rim light, inner shade and drop shadow |
   | `resolution` | 16 | 8–32 | baked pixels per module (`GLASS_RESOLUTION`) |
-  | `render` | `Baked` | `Baked`, `Vector` | baked into one PNG, or drawn as SVG elements (below); the default is the one constant `GLASS_RENDER` *(W20261119133827-8)* |
+  | `render` | `Baked` | `Baked`, `Vector` | baked into one PNG, or drawn as SVG elements (below); the default is the one constant `GLASS_RENDER`: `Baked`, the better-looking of the two (owner, 2026-11-23) *(W20261119133827-8)* |
 
 - **The photo comes from its own file:** `Halftone::source(bytes, RasterFormat)` (PNG, JPEG, GIF, WebP), checked by signature like `Logo::raster` (`ImageError::NotImage`) and embedded as it is, never decoded or re-encoded. The pixels given to `Halftone::new` must be the same picture (any resolution, same aspect ratio): the glass is computed from them and laid over the file. Glass without a source is `RenderError::GlassNeedsSource`.
 - **Layout:** the canvas is the code, its quiet zone and the photo's margin, `round(border · (n + 2q) / (1 − 2·border))` whole modules a side (plus a frame border's margin, §7.4). The picture's square (as fit and focal choose it) fills the card, clipped to it (rounded with `Frame::RoundedSquare`; square above a caption's band). The steering samples the part of the photo under the code, so the modules follow what the code covers.
