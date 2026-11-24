@@ -31,6 +31,7 @@ use crate::scanbox::TimingStyle;
 use crate::scene::{self, Canvas};
 use crate::style::Style;
 
+mod field;
 mod vector;
 pub(crate) use vector::{RIM_STROKE, vector};
 
@@ -723,6 +724,13 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
         w,
         union: (g.union as f64).max(1e-3),
     };
+    // Any shape but plain squares: glass cut from the code's own geometry.
+    let raster = (!field::analytic(style))
+        .then(|| field::fields(style, qr, canvas, &lenses.cells, q, w, res, lens));
+    let shadow_px = (
+        math::round(SHADOW_OFFSET.0 * r) as i64,
+        math::round(SHADOW_OFFSET.1 * r) as i64,
+    );
 
     // The frost, and the Gaussian blend's weights per pixel offset.
     let frost = blur(&photo, side, g.frost as f64 * r);
@@ -763,8 +771,15 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
             }
             let wx = &gauss[x % mpx];
             let u = ci as f64 + (((x % mpx) as f64) + 0.5) / r;
-            let dark = lenses.field((u, v), (ci, cj), 1, wx, wy);
-            let light = lenses.field((u, v), (ci, cj), 2, wx, wy);
+            let (px, py) = (x as i64, y as i64);
+            // The raster field's distance, where there is one, with the
+            // cells' blended shift, feather, tint and flatness.
+            let cut = |f: Option<(f64, [f64; 4])>, kind: u8| match (&raster, f) {
+                (Some(fields), Some((_, p))) => Some((fields.dist(kind, px, py), p)),
+                (_, f) => f,
+            };
+            let dark = cut(lenses.field((u, v), (ci, cj), 1, wx, wy), 1);
+            let light = cut(lenses.field((u, v), (ci, cj), 2, wx, wy), 2);
             let (kind, d, [delta, feather, tint, func]) = match (dark, light) {
                 (Some(a), Some(b)) if a.0 <= b.0 => (1u8, a.0, a.1),
                 (Some(a), None) => (1, a.0, a.1),
@@ -781,10 +796,14 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                 };
                 // The outward normal, from the field's gradient.
                 let normal = if (g.refraction || g.rim) && -d < NORMAL_BAND {
-                    let gx = lenses.dist(u + NORMAL_STEP, v, kind) - d;
-                    let gy = lenses.dist(u, v + NORMAL_STEP, kind) - d;
-                    let len = sqrt(gx * gx + gy * gy).max(1e-9);
-                    [gx / len, gy / len]
+                    if let Some(fields) = &raster {
+                        fields.normal(kind, px, py)
+                    } else {
+                        let gx = lenses.dist(u + NORMAL_STEP, v, kind) - d;
+                        let gy = lenses.dist(u, v + NORMAL_STEP, kind) - d;
+                        let len = sqrt(gx * gx + gy * gy).max(1e-9);
+                        [gx / len, gy / len]
+                    }
                 } else {
                     [0.0, 0.0]
                 };
@@ -819,7 +838,10 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
                 }
                 out = c;
             } else if g.rim && d < SHADOW_REACH {
-                let ds = lenses.dist(u - SHADOW_OFFSET.0, v - SHADOW_OFFSET.1, kind);
+                let ds = match &raster {
+                    Some(fields) => fields.dist(kind, px - shadow_px.0, py - shadow_px.1),
+                    None => lenses.dist(u - SHADOW_OFFSET.0, v - SHADOW_OFFSET.1, kind),
+                };
                 if ds < 0.0 {
                     alpha = SHADOW_ALPHA * smoothstep(0.0, SHADOW_SOFT, -ds);
                 }
@@ -1346,18 +1368,6 @@ mod tests {
                 "Frame::Circle",
             ),
             (
-                g().modules(ModuleShape::Dots { size: 0.8 }),
-                "Style.modules",
-            ),
-            (
-                g().finders(crate::FinderStyle::new(
-                    crate::RingShape::Rounded(1.0),
-                    crate::EyeShape::Square,
-                )),
-                "Style.finders",
-            ),
-            (g().timing(TimingStyle::Dashed), "TimingStyle::Dashed"),
-            (
                 g().palette(crate::Palette::from_tokens([("fg.2", "#700")]).unwrap()),
                 "data colors (fg.2–fg.4)",
             ),
@@ -1414,6 +1424,23 @@ mod tests {
             g().caption(crate::Caption::new("Scan me")),
             g().palette(crate::Palette::new().dark_twin()),
             g().timing(TimingStyle::Dotted),
+            // Cut from the code's own geometry (W20261124091813).
+            g().modules(ModuleShape::Dots { size: 0.8 }),
+            g().modules(ModuleShape::Liquid { smoothness: 0.8 }),
+            g().modules(ModuleShape::Rounded { radius: 0.4 }),
+            g().modules(ModuleShape::Bars {
+                axis: crate::Axis::Vertical,
+                radius: 0.3,
+            }),
+            g().finders(crate::FinderStyle::new(
+                crate::RingShape::Rounded(2.5),
+                crate::EyeShape::Circle,
+            )),
+            g().finders(crate::FinderStyle::new(
+                crate::RingShape::Leaf,
+                crate::EyeShape::Squircle,
+            )),
+            g().timing(TimingStyle::Dashed),
             Style::art(picture().ink(Ink::Glass(base))),
             g().effect(crate::Effect::Sketch { roughness: 0.1 }),
         ]
@@ -1426,7 +1453,7 @@ mod tests {
         ) {
             let qr = code(&style, 2);
             let report = style.check(&qr);
-            assert!(report.ok(), "{report:?}");
+            assert!(report.ok() && report.scannable, "{report:?}");
             assert!(style.render(&qr).is_ok());
         }
     }

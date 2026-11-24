@@ -179,6 +179,8 @@ mod optimize;
 mod palette;
 pub mod png;
 mod preset;
+#[cfg(feature = "halftone")]
+mod raster;
 mod rng;
 mod sanitize;
 mod scanbox;

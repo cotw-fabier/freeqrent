@@ -1014,7 +1014,6 @@ fn check_glass(
     found: &mut Found,
     warnings: &mut Vec<Warning>,
 ) -> Option<f32> {
-    use crate::scanbox::{FinderStyle, TimingStyle};
     let quiet = s.quiet_zone;
     let h = s.halftone.as_mut()?;
     let has_source = h.source.is_some();
@@ -1052,22 +1051,8 @@ fn check_glass(
     if unsupported(matches!(s.frame, Frame::Circle { .. }), "Frame::Circle") {
         s.frame = Frame::Square;
     }
-    if unsupported(s.modules != ModuleShape::SQUARE, "Style.modules") {
-        s.modules = ModuleShape::SQUARE;
-    }
-    if unsupported(s.finders != FinderStyle::default(), "Style.finders") {
-        s.finders = FinderStyle::default();
-    }
-    let square = |r: RingShape, e: EyeShape| r == RingShape::Square && e == EyeShape::Square;
-    if unsupported(
-        matches!(s.alignment.shape, AlignmentShape::Own { outer, eye } if !square(outer, eye)),
-        "AlignmentShape::Own",
-    ) {
-        s.alignment.shape = AlignmentShape::Match;
-    }
-    if unsupported(s.timing == TimingStyle::Dashed, "TimingStyle::Dashed") {
-        s.timing = TimingStyle::Plain;
-    }
+    // Module, finder, alignment and timing shapes are cut from the code's
+    // own geometry (W20261124091813).
     if unsupported(scene::data_tokens(s).len() > 1, "data colors (fg.2–fg.4)") {
         for t in [Token::Fg2, Token::Fg3, Token::Fg4] {
             s.palette.unset(t);
@@ -1539,9 +1524,10 @@ mod tests {
             ),
             (
                 "glass unsupported",
-                Style::new()
-                    .halftone(photo())
-                    .modules(ModuleShape::Dots { size: 0.9 }),
+                Style::new().halftone(photo()).frame(Frame::Circle {
+                    filler_density: 0.5,
+                    ring: crate::FrameRing::None,
+                }),
             ),
         ];
         let glass_halo = |s: Style| match s.halftone.as_ref().and_then(|h| h.glass()) {

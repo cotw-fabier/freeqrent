@@ -468,7 +468,7 @@ pub(crate) fn glass_elements(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> V
             }
             for veil in v.veils {
                 let token = if veil.dark { Token::Fg } else { Token::Bg };
-                let mut e = Element::new(LayerRole::Glass, token, false, veil.path);
+                let mut e = Element::new(LayerRole::Glass, token, veil.evenodd, veil.path);
                 e.color = Some(veil.color);
                 out.push(e);
             }
@@ -1136,6 +1136,9 @@ fn write_vector_glass<W: Write + ?Sized>(
         write_hex(w, color)?;
         w.write_char('"')?;
         write_opacity(w, "fill-opacity", color)?;
+        if e.evenodd {
+            w.write_str(" fill-rule=\"evenodd\"")?;
+        }
     }
     write_pose(w, e)?;
     write!(w, " d=\"{}\"/>", e.path.data())

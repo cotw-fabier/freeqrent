@@ -33,8 +33,9 @@ use crate::halftone::{self, Sampler, Span};
 use crate::math;
 use crate::matrix::{ModuleRole, QrMatrix};
 use crate::scanbox::TimingStyle;
-use crate::scene::{self, Canvas};
-use crate::style::Style;
+use crate::scene::{self, Canvas, Part};
+use crate::style::{ModuleShape, Style};
+use crate::svg;
 
 /// The stepped strengths of data veils, per polarity (SPEC §7.9).
 pub(crate) const VECTOR_LEVELS: usize = 4;
@@ -67,6 +68,8 @@ pub(crate) struct Veil {
     pub(crate) color: Color,
     /// Dark glass (it darkens) or light.
     pub(crate) dark: bool,
+    /// The path needs the even-odd rule (rings, the plate around them).
+    pub(crate) evenodd: bool,
 }
 
 /// Vector glass, in paint order.
@@ -237,6 +240,10 @@ pub(crate) fn vector(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Ve
     }
 
     let origin = (canvas.origin - q) * UNIT;
+    let code_origin = canvas.origin * UNIT;
+    // Any shape but plain squares: lenses cut from the code's own geometry
+    // (W20261124091813), not the Liquid tracer.
+    let shaped = !super::field::analytic(style);
     let gap = geometry::units((1.0 - g.lens.clamp(0.5, 1.0)) / 2.0);
     let lens_corner = math::round(CORNER * (UNIT - 2 * gap) as f64 / 2.0) as i64;
     let func_corner = math::round(CORNER * UNIT as f64 / 2.0) as i64;
@@ -297,6 +304,22 @@ pub(crate) fn vector(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Ve
             }
             strengths.push(step_up(need));
         }
+        if shaped {
+            // Cut from the geometry: one strength, every region's largest,
+            // so each region still meets its lightness.
+            let a = strengths.iter().copied().fold(0.0, f64::max);
+            if a > 0.0 {
+                for (path, evenodd) in function_paths(style, qr, canvas, &kinds, q, w, dark) {
+                    veils.push(Veil {
+                        path,
+                        color: color(tint, a),
+                        dark,
+                        evenodd,
+                    });
+                }
+            }
+            continue;
+        }
         let mut levels: Vec<f64> = strengths.clone();
         crate::sort::sort_by(&mut levels, |a, b| a.total_cmp(b));
         levels.dedup();
@@ -321,6 +344,7 @@ pub(crate) fn vector(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Ve
                 path,
                 color: color(tint, a),
                 dark,
+                evenodd: false,
             });
         }
     }
@@ -358,7 +382,16 @@ pub(crate) fn vector(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Ve
             let a = thousandths_up(1.0 - (1.0 - total) / through);
             through *= 1.0 - a;
             let mut path = Path::new();
-            geometry::draw_inset(&grid, origin, gap, (lens_corner, concave), &mut path);
+            if shaped {
+                geometry::draw_modules(
+                    &style.modules,
+                    &code_grid(&grid, q, n),
+                    code_origin,
+                    &mut path,
+                );
+            } else {
+                geometry::draw_inset(&grid, origin, gap, (lens_corner, concave), &mut path);
+            }
             if k == 1 && g.rim {
                 rims.push((
                     path.clone(),
@@ -369,11 +402,107 @@ pub(crate) fn vector(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Ve
                 path,
                 color: color(tint, a),
                 dark,
+                evenodd: false,
             });
         }
     }
 
     Some(Vector { frost, veils, rims })
+}
+
+/// The code modules of a box-wide `grid` (the quiet zone is `q` wide).
+fn code_grid(grid: &Grid, q: i64, n: i64) -> Grid {
+    let mut out = Grid::new(n as usize);
+    for j in 0..n {
+        for i in 0..n {
+            if grid.get(i + q, j + q) {
+                out.set(i as usize, j as usize);
+            }
+        }
+    }
+    out
+}
+
+/// Function glass cut from the geometry (W20261124091813), as paths and
+/// their fill rule. Dark: the finder rings and alignment patterns (even-odd),
+/// then the eyes, timing and the other dark function modules in their
+/// shapes. Light, the plate: every function, cleared and halo cell, with
+/// the dark shapes cut out by the even-odd rule.
+fn function_paths(
+    style: &Style,
+    qr: &QrMatrix,
+    canvas: &Canvas,
+    kinds: &[Kind],
+    q: i64,
+    w: i64,
+    dark: bool,
+) -> Vec<(Path, bool)> {
+    let n = qr.size() as i64;
+    let origin = canvas.origin * UNIT;
+    let mut timing = Grid::new(n as usize);
+    let mut other = Grid::new(n as usize);
+    let mut cells = Grid::new(w as usize);
+    for (k, &kind) in kinds.iter().enumerate() {
+        let Kind::Func { dark: d, .. } = kind else {
+            continue;
+        };
+        let (ci, cj) = ((k as i64) % w, (k as i64) / w);
+        cells.set(ci as usize, cj as usize);
+        let (i, j) = (ci - q, cj - q);
+        if !d || i < 0 || j < 0 || i >= n || j >= n {
+            continue;
+        }
+        match qr.role(i as u16, j as u16) {
+            ModuleRole::Timing => timing.set(i as usize, j as usize),
+            ModuleRole::Finder { .. } | ModuleRole::Alignment { .. } => {}
+            _ => other.set(i as usize, j as usize),
+        }
+    }
+    let rings = |path: &mut Path| {
+        svg::draw_part(
+            style,
+            qr,
+            canvas,
+            &Part::FinderOuter(scene::CORNERS.to_vec()),
+            path,
+        );
+        let centers = scene::alignment_centers_drawn(style, qr);
+        if !centers.is_empty() {
+            svg::draw_part(style, qr, canvas, &Part::Alignment(centers), path);
+        }
+    };
+    let solids = |path: &mut Path| {
+        svg::draw_part(
+            style,
+            qr,
+            canvas,
+            &Part::FinderEye(scene::CORNERS.to_vec()),
+            path,
+        );
+        geometry::draw_modules(&style.modules, &other, origin, path);
+        if style.timing == TimingStyle::Plain {
+            geometry::draw_modules(&style.modules, &timing, origin, path);
+        } else {
+            svg::draw_part(style, qr, canvas, &Part::Timing(timing.clone()), path);
+        }
+    };
+    if dark {
+        let (mut ring_path, mut solid_path) = (Path::new(), Path::new());
+        rings(&mut ring_path);
+        solids(&mut solid_path);
+        return vec![(ring_path, true), (solid_path, false)];
+    }
+    // Even-odd: the cells, less every dark shape inside them.
+    let mut plate = Path::new();
+    geometry::draw_modules(
+        &ModuleShape::SQUARE,
+        &cells,
+        (canvas.origin - q) * UNIT,
+        &mut plate,
+    );
+    rings(&mut plate);
+    solids(&mut plate);
+    vec![(plate, true)]
 }
 
 /// The opacity a veil of `tint` (sRGB, 0–1) needs over `photo` (sRGB) to
