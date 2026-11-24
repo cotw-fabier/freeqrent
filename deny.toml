@@ -8,6 +8,13 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+# chrono is unmaintained (no fix exists). It reaches us only through rxing
+# (ZXing, in freeqrent-verify: the CLI's --verify and the scan tests), not
+# the core or any binding, and rxing 0.9.4 still needs it. Drop this when
+# rxing moves off chrono.
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; only via rxing in freeqrent-verify, no alternative yet" },
+]
 
 [licenses]
 version = 2

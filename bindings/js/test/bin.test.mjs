@@ -97,6 +97,8 @@ function documentOf(json) {
   return json
     .replaceAll('$SVG', JSON.stringify(MARK))
     .replaceAll('$PNG', JSON.stringify(png.toString('base64')))
+    // The picture's own file, which glass ink embeds: $IMAGE's PNG.
+    .replaceAll('$SOURCE', JSON.stringify(png.toString('base64')))
     .replaceAll('$IMAGE', image);
 }
 

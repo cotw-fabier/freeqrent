@@ -30,6 +30,8 @@ export interface Style {
   dark?: boolean;
   quiet_zone?: number;
   allow_inverted?: boolean;
+  /** Render what the measured glass limits refuse, as warnings; the report says scannable: false. */
+  allow_unscannable?: boolean;
   frame?: Frame;
   border?: Border;
   /** A hard shadow's offset down and right, in modules (0.25–3). */
@@ -391,7 +393,7 @@ export interface ImagePixels {
 /** A picture: raw pixels, as the document has them or as an ImageData. */
 export type Image = RawImage | ImagePixels;
 
-export type InkName = "mono" | "color";
+export type InkName = "mono" | "color" | "glass";
 
 export interface InkMono {
   kind: "mono";
@@ -402,7 +404,27 @@ export interface InkColor {
   colors?: number;
 }
 
-export type Ink = InkName | InkMono | InkColor;
+export type InkGlassRender = "baked" | "vector";
+
+/** Liquid glass over the whole photo (SPEC §7.9); needs source. render: baked (one PNG over the photo) or vector (SVG elements over it); default baked. */
+export interface InkGlass {
+  kind: "glass";
+  border?: number;
+  halo?: number;
+  lens?: number;
+  core?: number;
+  targets?: [number, number];
+  union?: number;
+  frost?: number;
+  finders?: [number, number];
+  tint?: boolean;
+  refraction?: boolean;
+  rim?: boolean;
+  resolution?: number;
+  render?: InkGlassRender;
+}
+
+export type Ink = InkName | InkMono | InkColor | InkGlass;
 
 export type HalftoneClarity = number | Image;
 
@@ -411,6 +433,8 @@ export type Fit = "cover" | "contain";
 export interface Halftone {
   image: Image;
   ink?: Ink;
+  /** The picture's own file (PNG, JPEG, GIF or WebP), embedded as it is; glass ink needs it. */
+  source?: Base64;
   bands?: [number, number];
   clarity?: HalftoneClarity;
   fit?: Fit;
@@ -599,6 +623,8 @@ export interface ReportCode {
 
 export interface Report {
   ok: boolean;
+  /** False when allow_unscannable turned an error into a warning: outside the guarantee. */
+  scannable: boolean;
   errors: Issue[];
   warnings: Issue[];
   min_contrast: number | null;

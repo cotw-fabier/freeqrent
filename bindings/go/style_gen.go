@@ -32,8 +32,11 @@ type Style struct {
 	Dark          *bool  `json:"dark,omitzero"`
 	QuietZone     *uint8 `json:"quiet_zone,omitzero"`
 	AllowInverted *bool  `json:"allow_inverted,omitzero"`
-	Frame         Frame  `json:"frame,omitzero"`
-	Border        Border `json:"border,omitzero"`
+	// Render what the measured glass limits refuse, as warnings; the report says
+	// scannable: false.
+	AllowUnscannable *bool  `json:"allow_unscannable,omitzero"`
+	Frame            Frame  `json:"frame,omitzero"`
+	Border           Border `json:"border,omitzero"`
 	// A hard shadow's offset down and right, in modules (0.25–3).
 	Shadow *float64 `json:"shadow,omitzero"`
 	// How data modules share fg and the data colors fg.2 to fg.4.
@@ -89,6 +92,8 @@ func (v *Style) UnmarshalJSON(data []byte) error {
 			err = json.Unmarshal(raw, &v.QuietZone)
 		case "allow_inverted":
 			err = json.Unmarshal(raw, &v.AllowInverted)
+		case "allow_unscannable":
+			err = json.Unmarshal(raw, &v.AllowUnscannable)
 		case "frame":
 			v.Frame, err = decodeFrame(raw)
 		case "border":
@@ -167,8 +172,11 @@ const (
 
 // Halftone mirrors the schema's Halftone.
 type Halftone struct {
-	Image    Image       `json:"image"`
-	Ink      Ink         `json:"ink,omitzero"`
+	Image Image `json:"image"`
+	Ink   Ink   `json:"ink,omitzero"`
+	// The picture's own file (PNG, JPEG, GIF or WebP), embedded as it is; glass
+	// ink needs it.
+	Source   []byte      `json:"source,omitzero"`
 	Bands    *[2]float64 `json:"bands,omitzero"`
 	Clarity  Clarity     `json:"clarity,omitzero"`
 	Fit      Fit         `json:"fit,omitzero"`
@@ -197,6 +205,8 @@ func (v *Halftone) UnmarshalJSON(data []byte) error {
 			err = json.Unmarshal(raw, &v.Image)
 		case "ink":
 			v.Ink, err = decodeInk(raw)
+		case "source":
+			err = json.Unmarshal(raw, &v.Source)
 		case "bands":
 			err = json.Unmarshal(raw, &v.Bands)
 		case "clarity":
@@ -261,8 +271,9 @@ func (v *Image) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Ink is one of InkMono, InkColor, written as an object tagged by "kind". A
-// document may also give "mono" or "color" as a bare name.
+// Ink is one of InkMono, InkColor, InkGlass, written as an object tagged by
+// "kind". A document may also give "mono", "color" or "glass" as a bare
+// name.
 type Ink interface {
 	isInk()
 }
@@ -285,6 +296,13 @@ func decodeInk(data []byte) (Ink, error) {
 			return InkColor{}, nil
 		}
 		var v InkColor
+		err := json.Unmarshal(data, &v)
+		return v, err
+	case "glass":
+		if bare {
+			return InkGlass{}, nil
+		}
+		var v InkGlass
 		err := json.Unmarshal(data, &v)
 		return v, err
 	}
@@ -375,6 +393,97 @@ func (v *InkColor) UnmarshalJSON(data []byte) error {
 	}
 	return nil
 }
+
+// InkGlass is the Ink {"kind": "glass"}. Liquid glass over the whole photo
+// (SPEC §7.9); needs source. render: baked (one PNG over the photo) or
+// vector (SVG elements over it); default baked.
+type InkGlass struct {
+	Border     *float64    `json:"border,omitzero"`
+	Halo       *uint8      `json:"halo,omitzero"`
+	Lens       *float64    `json:"lens,omitzero"`
+	Core       *float64    `json:"core,omitzero"`
+	Targets    *[2]float64 `json:"targets,omitzero"`
+	Union      *float64    `json:"union,omitzero"`
+	Frost      *float64    `json:"frost,omitzero"`
+	Finders    *[2]float64 `json:"finders,omitzero"`
+	Tint       *bool       `json:"tint,omitzero"`
+	Refraction *bool       `json:"refraction,omitzero"`
+	Rim        *bool       `json:"rim,omitzero"`
+	Resolution *uint8      `json:"resolution,omitzero"`
+	Render     GlassRender `json:"render,omitzero"`
+}
+
+func (InkGlass) isInk() {}
+
+// MarshalJSON writes the variant with its "kind".
+func (v InkGlass) MarshalJSON() ([]byte, error) {
+	type plain InkGlass
+	return json.Marshal(struct {
+		Kind string `json:"kind"`
+		plain
+	}{"glass", plain(v)})
+}
+
+// UnmarshalJSON reads the object strictly: unknown keys are errors.
+func (v *InkGlass) UnmarshalJSON(data []byte) error {
+	fields, keys, err := objectFields(data, "InkGlass")
+	if err != nil {
+		return err
+	}
+	*v = InkGlass{}
+	for _, k := range keys {
+		raw := fields[k]
+		var err error
+		switch k {
+		case "kind":
+			var kind string
+			if err = json.Unmarshal(raw, &kind); err == nil && kind != "glass" {
+				err = fmt.Errorf("%q isn't glass", kind)
+			}
+		case "border":
+			err = json.Unmarshal(raw, &v.Border)
+		case "halo":
+			err = json.Unmarshal(raw, &v.Halo)
+		case "lens":
+			err = json.Unmarshal(raw, &v.Lens)
+		case "core":
+			err = json.Unmarshal(raw, &v.Core)
+		case "targets":
+			err = json.Unmarshal(raw, &v.Targets)
+		case "union":
+			err = json.Unmarshal(raw, &v.Union)
+		case "frost":
+			err = json.Unmarshal(raw, &v.Frost)
+		case "finders":
+			err = json.Unmarshal(raw, &v.Finders)
+		case "tint":
+			err = json.Unmarshal(raw, &v.Tint)
+		case "refraction":
+			err = json.Unmarshal(raw, &v.Refraction)
+		case "rim":
+			err = json.Unmarshal(raw, &v.Rim)
+		case "resolution":
+			err = json.Unmarshal(raw, &v.Resolution)
+		case "render":
+			err = json.Unmarshal(raw, &v.Render)
+		default:
+			err = fmt.Errorf("isn't a key of InkGlass")
+		}
+		if err != nil {
+			return fmt.Errorf("freeqrent: InkGlass.%s: %w", k, err)
+		}
+	}
+	return nil
+}
+
+// GlassRender is one of "baked" or "vector".
+type GlassRender string
+
+// The values of GlassRender.
+const (
+	GlassRenderBaked  GlassRender = "baked"
+	GlassRenderVector GlassRender = "vector"
+)
 
 // Clarity is one of ClarityLevel, Image.
 type Clarity interface {
@@ -4194,7 +4303,10 @@ func (v *Error) UnmarshalJSON(data []byte) error {
 
 // Report mirrors the schema's Report.
 type Report struct {
-	OK            bool      `json:"ok"`
+	OK bool `json:"ok"`
+	// False when allow_unscannable turned an error into a warning: outside the
+	// guarantee.
+	Scannable     bool      `json:"scannable"`
 	Errors        []Error   `json:"errors"`
 	Warnings      []Error   `json:"warnings"`
 	MinContrast   *float64  `json:"min_contrast"`
@@ -4211,7 +4323,7 @@ func (v *Report) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*v = Report{}
-	for _, k := range []string{"ok", "errors", "warnings", "min_contrast", "ecc_budget_used", "logo_scale", "steering", "code"} {
+	for _, k := range []string{"ok", "scannable", "errors", "warnings", "min_contrast", "ecc_budget_used", "logo_scale", "steering", "code"} {
 		if _, ok := fields[k]; !ok {
 			return fmt.Errorf("freeqrent: Report needs %q", k)
 		}
@@ -4222,6 +4334,8 @@ func (v *Report) UnmarshalJSON(data []byte) error {
 		switch k {
 		case "ok":
 			err = json.Unmarshal(raw, &v.OK)
+		case "scannable":
+			err = json.Unmarshal(raw, &v.Scannable)
 		case "errors":
 			err = json.Unmarshal(raw, &v.Errors)
 		case "warnings":
@@ -4723,6 +4837,11 @@ func WithQuietZone(v uint8) Option {
 // WithAllowInverted sets Style.AllowInverted.
 func WithAllowInverted(v bool) Option {
 	return func(s *Style) { s.AllowInverted = &v }
+}
+
+// WithAllowUnscannable sets Style.AllowUnscannable.
+func WithAllowUnscannable(v bool) Option {
+	return func(s *Style) { s.AllowUnscannable = &v }
 }
 
 // WithFrame sets Style.Frame.

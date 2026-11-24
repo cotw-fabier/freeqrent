@@ -38,6 +38,7 @@ var names = map[string]string{
 	"Logo.size":                "LogoSize",
 	"Halftone.ink":             "Ink",
 	"Halftone.clarity":         "Clarity",
+	"InkGlass.render":          "GlassRender", // not Render: that's the function
 	"Intro|0":                  "IntroPreset",
 	"Intro|1":                  "IntroOptions",
 	"Intro|2":                  "PaletteShift",

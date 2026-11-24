@@ -38,6 +38,7 @@ class Failed extends Error {}
 const SWITCHES = new Set([
   'pretty',
   'allow-inverted',
+  'allow-unscannable',
   'dark',
   'no-logo-backdrop',
   'keep-modules',
@@ -357,7 +358,75 @@ function pair(flag, v) {
   return [number(flag, v.slice(0, comma).trim()), number(flag, v.slice(comma + 1).trim())];
 }
 
+// Glass's options after `glass`, as the CLI's options::glass reads them:
+// `:border=0.1,halo=3,targets=0.22/0.92,tint=off,render=vector,…`.
+function glass(flag, options) {
+  if (options === '') return 'glass';
+  if (!options.startsWith(':')) throw new Usage(`--${flag}: unknown ink ${JSON.stringify(`glass${options}`)}: try mono, color[:N] or glass[:KEY=VALUE,...]`);
+  const g = { kind: 'glass' };
+  for (const item of options.slice(1).split(',')) {
+    const eq = item.indexOf('=');
+    if (eq < 0) throw new Usage(`--${flag}: glass option ${JSON.stringify(item)}: expected KEY=VALUE`);
+    const key = item.slice(0, eq);
+    const value = item.slice(eq + 1);
+    const num = (v) => {
+      if (!NUMBER.test(v)) throw new Usage(`--${flag}: glass ${key}: ${JSON.stringify(v)} isn't a number`);
+      return Number(v);
+    };
+    const whole = () => {
+      if (!/^\+?[0-9]+$/.test(value) || Number(value) > 255) {
+        throw new Usage(`--${flag}: glass ${key}: ${JSON.stringify(value)} isn't a whole number 0-255`);
+      }
+      return Number(value);
+    };
+    const both = () => {
+      const slash = value.indexOf('/');
+      if (slash < 0) throw new Usage(`--${flag}: glass ${key}: ${JSON.stringify(value)} isn't two numbers like 0.25/0.9`);
+      return [num(value.slice(0, slash)), num(value.slice(slash + 1))];
+    };
+    const sw = () => {
+      if (['on', 'true', 'yes'].includes(value)) return true;
+      if (['off', 'false', 'no'].includes(value)) return false;
+      throw new Usage(`--${flag}: glass ${key}: ${JSON.stringify(value)}: try on or off`);
+    };
+    switch (key) {
+      case 'border':
+      case 'lens':
+      case 'core':
+      case 'union':
+      case 'frost':
+        g[key] = num(value);
+        break;
+      case 'halo':
+      case 'resolution':
+        g[key] = whole();
+        break;
+      case 'targets':
+      case 'finders':
+        g[key] = both();
+        break;
+      case 'tint':
+      case 'refraction':
+      case 'rim':
+        g[key] = sw();
+        break;
+      case 'render':
+        if (value !== 'baked' && value !== 'vector') {
+          throw new Usage(`--${flag}: glass render: ${JSON.stringify(value)}: try baked or vector`);
+        }
+        g.render = value;
+        break;
+      default:
+        throw new Usage(
+          `--${flag}: unknown glass option ${JSON.stringify(key)}: try border, halo, lens, core, targets, union, frost, finders, tint, refraction, rim, resolution or render`,
+        );
+    }
+  }
+  return g;
+}
+
 function ink(flag, v) {
+  if (v === 'glass' || v.startsWith('glass:')) return glass(flag, v.slice(5));
   const [name, n] = named(flag, v);
   if (name === 'mono') {
     noParam(flag, name, n);
@@ -370,7 +439,7 @@ function ink(flag, v) {
     }
     return { kind: 'color', colors };
   }
-  throw new Usage(`--${flag}: unknown ink ${JSON.stringify(v)}: try mono or color[:N]`);
+  throw new Usage(`--${flag}: unknown ink ${JSON.stringify(v)}: try mono, color[:N] or glass[:KEY=VALUE,...]`);
 }
 
 function readFile(flag, path, io) {
@@ -383,7 +452,16 @@ function readFile(flag, path, io) {
 
 /** A picture flag's pixels: a PNG file, or `sample`. */
 function picture(flag, source, io) {
-  if (source === 'sample') return samplePicture();
+  return pictureFile(flag, source, io).image;
+}
+
+/**
+ * A picture's pixels and, for a PNG file, the file itself (glass ink embeds
+ * it, SPEC §7.9). `sample` has no file here: the CLI's is its own PNG
+ * encoding of the picture, which the npm bin doesn't carry.
+ */
+function pictureFile(flag, source, io) {
+  if (source === 'sample') return { image: samplePicture(), file: undefined };
   const bytes = readFile(flag, source, io);
   if (isJpeg(bytes)) {
     throw new Usage(
@@ -392,7 +470,7 @@ function picture(flag, source, io) {
   }
   if (!isPng(bytes)) throw new Usage(`--${flag} ${source}: not a PNG file`);
   try {
-    return decodePng(bytes);
+    return { image: decodePng(bytes), file: new Uint8Array(bytes) };
   } catch (e) {
     throw new Usage(`--${flag} ${source}: ${e.message}`);
   }
@@ -702,7 +780,8 @@ function parse(argv, io = nodeIo) {
         break;
       case 'halftone':
       case 'art':
-        s.picture = picture(flag, v, io);
+        ({ image: s.picture, file: s.pictureFile } = pictureFile(flag, v, io));
+        s.pictureName = v;
         s.art = flag === 'art';
         break;
       case 'ink':
@@ -856,6 +935,7 @@ function build(s, text, io) {
   if (has('dark')) doc.dark = true;
   if (s.quietZone !== undefined) doc.quiet_zone = s.quietZone;
   if (has('allow-inverted')) doc.allow_inverted = true;
+  if (has('allow-unscannable')) doc.allow_unscannable = true;
   if (has('pretty')) doc.minify = false;
 
   if (s.frame !== undefined) doc.frame = frame('frame', s.frame, s.frameRing);
@@ -883,6 +963,16 @@ function build(s, text, io) {
 
   if (s.picture !== undefined) {
     const h = { image: s.picture };
+    // The file goes along for glass ink; other inks don't read it.
+    const isGlass = s.ink === 'glass' || (s.ink !== undefined && s.ink.kind === 'glass');
+    if (isGlass) {
+      if (s.pictureFile === undefined) {
+        throw new Usage(
+          `--${s.art ? 'art' : 'halftone'} ${s.pictureName} --ink glass: glass ink embeds the picture's file, and the npm bin has none for \`sample\`; pass a PNG file, or use the Rust CLI`,
+        );
+      }
+      h.source = s.pictureFile;
+    }
     if (s.ink !== undefined) h.ink = s.ink;
     if (s.bands !== undefined) h.bands = s.bands;
     if (s.clarity !== undefined) h.clarity = s.clarity;

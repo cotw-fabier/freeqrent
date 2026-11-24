@@ -25,7 +25,8 @@ Preset = Literal[
     "ribbon",
     "leaf",
 ]
-HalftoneInkName = Literal["mono", "color"]
+HalftoneInkName = Literal["mono", "color", "glass"]
+Render = Literal["baked", "vector"]
 Fit = Literal["cover", "contain"]
 ModuleShapeName = Literal["square", "rounded", "dots", "liquid", "bars"]
 Axis = Literal["horizontal", "vertical"]
@@ -106,6 +107,7 @@ class Style(Doc):
         palette: Token paints, merged onto the base's palette.
         replace_palette: Start from the default palette instead of the base's, as the CLI does with --palette-from-*.
         dark: Render the palette's dark twin and allow inverted colors.
+        allow_unscannable: Render what the measured glass limits refuse, as warnings; the report says scannable: false.
         shadow: A hard shadow's offset down and right, in modules (0.25–3).
         color_spread: How data modules share fg and the data colors fg.2 to fg.4.
     """
@@ -121,6 +123,7 @@ class Style(Doc):
     dark: Optional[bool] = None
     quiet_zone: Optional[int] = None
     allow_inverted: Optional[bool] = None
+    allow_unscannable: Optional[bool] = None
     frame: Optional[Frame] = None
     border: Optional[Border] = None
     shadow: Optional[float] = None
@@ -145,10 +148,15 @@ class Style(Doc):
 
 @dataclass
 class Halftone(Doc):
-    """The ``Halftone`` part of a Style document."""
+    """The ``Halftone`` part of a Style document.
+
+    Attributes:
+        source: The picture's own file (PNG, JPEG, GIF or WebP), embedded as it is; glass ink needs it.
+    """
 
     image: Image
     ink: Optional[HalftoneInk] = None
+    source: Optional[Union[bytes, str]] = None
     bands: Optional[Tuple[float, float]] = None
     clarity: Optional[Union[float, Image]] = None
     fit: Optional[Fit] = None
@@ -191,6 +199,30 @@ class Color(Doc):
     kind: ClassVar[Literal["color"]] = "color"
 
     colors: Optional[int] = None
+
+
+@dataclass
+class Glass(Doc):
+    """``{"kind": "glass"}``, one of ``HalftoneInk``.
+
+    Liquid glass over the whole photo (SPEC §7.9); needs source. render: baked (one PNG over the photo) or vector (SVG elements over it); default baked.
+    """
+
+    kind: ClassVar[Literal["glass"]] = "glass"
+
+    border: Optional[float] = None
+    halo: Optional[int] = None
+    lens: Optional[float] = None
+    core: Optional[float] = None
+    targets: Optional[Tuple[float, float]] = None
+    union: Optional[float] = None
+    frost: Optional[float] = None
+    finders: Optional[Tuple[float, float]] = None
+    tint: Optional[bool] = None
+    refraction: Optional[bool] = None
+    rim: Optional[bool] = None
+    resolution: Optional[int] = None
+    render: Optional[Render] = None
 
 
 @dataclass
@@ -830,6 +862,7 @@ HalftoneInk = Union[
     HalftoneInkName,
     Mono,
     Color,
+    Glass,
 ]
 
 ModuleShape = Union[
@@ -999,6 +1032,7 @@ __all__ = [
     "Frame",
     "FrameName",
     "FrameRing",
+    "Glass",
     "Glow",
     "GlyphEye",
     "GlyphModules",
@@ -1044,6 +1078,7 @@ __all__ = [
     "Quint",
     "Radial",
     "Random",
+    "Render",
     "Ring",
     "RingAndEye",
     "RingLogoFrame",

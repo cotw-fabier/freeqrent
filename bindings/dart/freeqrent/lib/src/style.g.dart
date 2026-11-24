@@ -35,6 +35,16 @@ enum QrPreset {
   final String json;
 }
 
+enum QrRender {
+  baked('baked'),
+  vector('vector');
+
+  const QrRender(this.json);
+
+  /// The name in the Style document.
+  final String json;
+}
+
 enum QrFit {
   cover('cover'),
   contain('contain');
@@ -274,6 +284,23 @@ sealed class QrHalftoneInk extends QrDocument {
 
   /// `color`.
   const factory QrHalftoneInk.color({int? colors}) = QrHalftoneInkColor;
+
+  /// `glass`.
+  const factory QrHalftoneInk.glass({
+    double? border,
+    int? halo,
+    double? lens,
+    double? core,
+    List<double>? targets,
+    double? union,
+    double? frost,
+    List<double>? finders,
+    bool? tint,
+    bool? refraction,
+    bool? rim,
+    int? resolution,
+    QrRender? render,
+  }) = QrHalftoneInkGlass;
 }
 
 /// `{"kind": "mono"}`.
@@ -296,6 +323,85 @@ final class QrHalftoneInkColor extends QrHalftoneInk {
   Object? toJson() => colors == null
       ? 'color'
       : {'kind': 'color', if (colors != null) 'colors': colors!};
+}
+
+/// `{"kind": "glass"}`.
+final class QrHalftoneInkGlass extends QrHalftoneInk {
+  /// Its fields; those left out take the core's defaults.
+  const QrHalftoneInkGlass({
+    this.border,
+    this.halo,
+    this.lens,
+    this.core,
+    this.targets,
+    this.union,
+    this.frost,
+    this.finders,
+    this.tint,
+    this.refraction,
+    this.rim,
+    this.resolution,
+    this.render,
+  });
+
+  final double? border;
+
+  final int? halo;
+
+  final double? lens;
+
+  final double? core;
+
+  final List<double>? targets;
+
+  final double? union;
+
+  final double? frost;
+
+  final List<double>? finders;
+
+  final bool? tint;
+
+  final bool? refraction;
+
+  final bool? rim;
+
+  final int? resolution;
+
+  final QrRender? render;
+
+  @override
+  Object? toJson() =>
+      border == null &&
+          halo == null &&
+          lens == null &&
+          core == null &&
+          targets == null &&
+          union == null &&
+          frost == null &&
+          finders == null &&
+          tint == null &&
+          refraction == null &&
+          rim == null &&
+          resolution == null &&
+          render == null
+      ? 'glass'
+      : {
+          'kind': 'glass',
+          if (border != null) 'border': border!,
+          if (halo != null) 'halo': halo!,
+          if (lens != null) 'lens': lens!,
+          if (core != null) 'core': core!,
+          if (targets != null) 'targets': targets!,
+          if (union != null) 'union': union!,
+          if (frost != null) 'frost': frost!,
+          if (finders != null) 'finders': finders!,
+          if (tint != null) 'tint': tint!,
+          if (refraction != null) 'refraction': refraction!,
+          if (rim != null) 'rim': rim!,
+          if (resolution != null) 'resolution': resolution!,
+          if (render != null) 'render': render!.json,
+        };
 }
 
 sealed class QrHalftoneClarity extends QrDocument {
@@ -334,6 +440,7 @@ class QrHalftone extends QrDocument {
   const QrHalftone({
     required this.image,
     this.ink,
+    this.source,
     this.bands,
     this.clarity,
     this.fit,
@@ -345,6 +452,9 @@ class QrHalftone extends QrDocument {
   final QrImage image;
 
   final QrHalftoneInk? ink;
+
+  /// The picture's own file (PNG, JPEG, GIF or WebP), embedded as it is; glass ink needs it.
+  final Uint8List? source;
 
   final List<double>? bands;
 
@@ -362,6 +472,7 @@ class QrHalftone extends QrDocument {
   Map<String, Object?> toJson() => {
     'image': image.toJson(),
     if (ink != null) 'ink': ink!.toJson(),
+    if (source != null) 'source': base64Encode(source!),
     if (bands != null) 'bands': bands!,
     if (clarity != null) 'clarity': clarity!.toJson(),
     if (fit != null) 'fit': fit!.json,
@@ -1631,6 +1742,7 @@ class QrStyle extends QrDocument {
     this.dark,
     this.quietZone,
     this.allowInverted,
+    this.allowUnscannable,
     this.frame,
     this.border,
     this.shadow,
@@ -1679,6 +1791,9 @@ class QrStyle extends QrDocument {
   final int? quietZone;
 
   final bool? allowInverted;
+
+  /// Render what the measured glass limits refuse, as warnings; the report says scannable: false.
+  final bool? allowUnscannable;
 
   final QrFrame? frame;
 
@@ -1738,6 +1853,7 @@ class QrStyle extends QrDocument {
     if (dark != null) 'dark': dark!,
     if (quietZone != null) 'quiet_zone': quietZone!,
     if (allowInverted != null) 'allow_inverted': allowInverted!,
+    if (allowUnscannable != null) 'allow_unscannable': allowUnscannable!,
     if (frame != null) 'frame': frame!.toJson(),
     if (border != null) 'border': border!.toJson(),
     if (shadow != null) 'shadow': shadow!,
