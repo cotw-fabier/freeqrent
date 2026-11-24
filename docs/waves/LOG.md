@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261124170545 · 1.3 · Glass: the slab, texture on the plate, sharp exports
+
+- Landed: the dome is now one slab of glass over the whole code (Pixelux-Glass's lens curve, sin(t^¼·π/2), on a rounded square of the code and its halo) that squeezes the photo toward its rim, frostier there, with a thin light edge; the per-module pull it replaces moved under 1% of pixels. Texture is plate-only, its dips held within 0.12 of the plate; finder glass stays flat. Above texture 0.2, `GlassNeedsZxing`.
+- Landed: sharp raster exports. `Glass::resolution` goes to 96 px per module (was 32); the layer bakes in 512-row bands, each band's shape field worked out over a 2-module margin, and the photo under the glass is held at up to 32 px per module. A 4096 px layer: about 380 MB and 10 s in WebAssembly (was about 2.6 GB). The rasterizer sums each row on its own and works each row's part of a line from its ends, so a band is exactly those rows of the whole: a test bakes shapes, the slab and texture whole and in bands and compares the PNG bytes.
+- Measured: real photos with texture fail only rqrr (hence the warning); frost under 0.12 can lose windmill v3's degraded ZXing render, left as it was (noted, not limited).
+- Checks: fmt, clippy, workspace tests, no_std, core deps, ffi smoke, deny, bindings generate and test. Conformance: only "glass texture and refraction" (new in 1.3.0) changed, with the slab and plate-only texture; every 1.2 hash unchanged.
+
 ## 20261124091813 · 1.2 · Check levels; glass from any shape, in your colours, with texture, refraction and opacity
 
 - Landed (-P): `Style::checks(Checks::Strict | Lenient | Off)`, **lenient by default** (owner, 2026-11-24): every error is readability or hard where it is found; Lenient renders readability errors as `Warning::Unchecked(error)` (the glass limits keep their own warnings) and refuses hard ones, Strict refuses both (1.2's behaviour), Off refuses nothing, clamping ranges and leaving conflicts out. `scannable` false whenever an error renders; `allow_unscannable` deprecated. Measured ranges list hard bounds (`MEASURED`). `verify_style` and the verify suite check as Strict (`Guarantee::strict`). Document `checks`, CLI `--checks`; Python and Dart reports gain `scannable`.

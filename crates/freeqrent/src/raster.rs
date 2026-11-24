@@ -19,24 +19,36 @@ use crate::math;
 /// curve it stands for.
 const TOLERANCE: f64 = 0.01;
 
-/// Coverage of a `width` × `height` pixel grid, 0–1 per pixel.
+/// Coverage of a `width` × `height` pixel grid, 0–1 per pixel: rows `top`
+/// to `top + height` of a taller grid (all of it when `top` is 0). Every
+/// pixel's coverage depends only on the path and the pixel, so a window of
+/// rows is exactly those rows of the whole grid.
 #[derive(Clone, Debug)]
 pub(crate) struct Coverage {
     pub(crate) width: usize,
     pub(crate) height: usize,
+    /// The window's first row in the whole grid.
+    pub(crate) top: usize,
     pub(crate) alpha: Vec<f64>,
 }
 
 impl Coverage {
+    #[cfg(test)]
     pub(crate) fn new(width: usize, height: usize) -> Coverage {
+        Coverage::window(width, 0, height)
+    }
+
+    /// Rows `top` to `top + height` of a grid `width` pixels wide.
+    pub(crate) fn window(width: usize, top: usize, height: usize) -> Coverage {
         Coverage {
             width,
             height,
+            top,
             alpha: vec![0.0; width * height],
         }
     }
 
-    /// Coverage at pixel `(x, y)`, 0 outside the grid.
+    /// Coverage at pixel `(x, y)` of the window, 0 outside it.
     #[cfg(test)]
     pub(crate) fn at(&self, x: i64, y: i64) -> f64 {
         if x < 0 || y < 0 || x as usize >= self.width || y as usize >= self.height {
@@ -47,55 +59,66 @@ impl Coverage {
 
     /// Adds `path`'s fill: the union, `a + b − a·b`, with what is already
     /// here. `path` is SVG path data in user units; a point `(x, y)` lands at
-    /// pixel `((x − origin.0) · scale, (y − origin.1) · scale)`.
+    /// pixel `((x − origin.0) · scale, (y − origin.1) · scale)` of the whole
+    /// grid.
     pub(crate) fn fill(&mut self, path: &str, evenodd: bool, origin: (f64, f64), scale: f64) {
-        let mut acc = Accumulator::new(self.width, self.height);
+        let mut acc = Accumulator::new(self.width, self.top, self.height);
         for poly in flatten(path, TOLERANCE / scale) {
             for pair in poly.windows(2) {
                 let p = |(x, y): (f64, f64)| ((x - origin.0) * scale, (y - origin.1) * scale);
                 acc.line(p(pair[0]), p(pair[1]));
             }
         }
-        let mut sum = 0.0;
-        for (i, a) in self.alpha.iter_mut().enumerate() {
-            sum += acc.cells[i];
-            let w = if evenodd {
-                // The winding number folded to 0–1: odd inside, even out.
-                let m = sum.abs() % 2.0;
-                if m > 1.0 { 2.0 - m } else { m }
-            } else {
-                sum.abs().min(1.0)
-            };
-            *a = *a + w - *a * w;
+        let stride = self.width + 1;
+        for (row, out) in self.alpha.chunks_exact_mut(self.width).enumerate() {
+            // Each row's running sum starts at 0: a closed path's areas sum
+            // to 0 along every row, the cell right of the grid included.
+            let mut sum = 0.0;
+            for (a, &cell) in out.iter_mut().zip(&acc.cells[row * stride..]) {
+                sum += cell;
+                let w = if evenodd {
+                    // The winding number folded to 0–1: odd inside, even out.
+                    let m = sum.abs() % 2.0;
+                    if m > 1.0 { 2.0 - m } else { m }
+                } else {
+                    sum.abs().min(1.0)
+                };
+                *a = *a + w - *a * w;
+            }
         }
     }
 }
 
-/// Signed area per pixel; a running sum along the rows gives the winding.
+/// Signed area per pixel of a window of rows; a running sum along each row
+/// gives the winding.
 struct Accumulator {
     width: usize,
+    top: usize,
     height: usize,
+    /// `width + 1` cells per row: the last is right of the grid.
     cells: Vec<f64>,
 }
 
 impl Accumulator {
-    fn new(width: usize, height: usize) -> Accumulator {
+    fn new(width: usize, top: usize, height: usize) -> Accumulator {
         Accumulator {
             width,
+            top,
             height,
-            // Room for the cell right of the last column.
-            cells: vec![0.0; width * height + 2],
+            cells: vec![0.0; (width + 1) * height],
         }
     }
 
     fn add(&mut self, row: usize, x: i64, v: f64) {
         let x = x.clamp(0, self.width as i64) as usize;
-        self.cells[row * self.width + x] += v;
+        self.cells[(row - self.top) * (self.width + 1) + x] += v;
     }
 
-    /// Accumulates the line from `p0` to `p1` (pixels). Points left of the
-    /// grid count at its left edge and right of it past its right edge, so
-    /// the winding stays right inside.
+    /// Accumulates the line from `p0` to `p1` (pixels of the whole grid)
+    /// over the window's rows. Points left of the grid count at its left
+    /// edge and right of it past its right edge, so the winding stays right
+    /// inside. Each row's part of the line is worked out from its ends
+    /// alone, so a row gets the same areas whatever window it is in.
     fn line(&mut self, p0: (f64, f64), p1: (f64, f64)) {
         if p0.1 == p1.1 {
             return;
@@ -108,22 +131,23 @@ impl Accumulator {
         let w = self.width as f64;
         let clampx = |x: f64| x.clamp(0.0, w);
         let dxdy = (p1.0 - p0.0) / (p1.1 - p0.1);
-        let top = p0.1.max(0.0);
-        let bottom = p1.1.min(self.height as f64);
+        let (lo, hi) = (self.top as f64, (self.top + self.height) as f64);
+        let top = p0.1.max(lo);
+        let bottom = p1.1.min(hi);
         if top >= bottom {
             return;
         }
-        let mut x = p0.0 + (top - p0.1) * dxdy;
+        let at = |y: f64| p0.0 + (y - p0.1) * dxdy;
         let first = math::floor(top) as usize;
-        let last = (math::ceil(bottom) as usize).min(self.height);
+        let last = (math::ceil(bottom) as usize).min(self.top + self.height);
         for row in first..last {
-            let y0 = (row as f64).max(top);
-            let y1 = ((row + 1) as f64).min(bottom);
+            let y0 = (row as f64).max(p0.1);
+            let y1 = ((row + 1) as f64).min(p1.1);
             let dy = y1 - y0;
             if dy <= 0.0 {
                 continue;
             }
-            let xnext = x + dxdy * dy;
+            let (x, xnext) = (at(y0), at(y1));
             let d = dy * dir;
             let (a, b) = if x < xnext {
                 (clampx(x), clampx(xnext))
@@ -159,7 +183,6 @@ impl Accumulator {
                 }
                 self.add(row, bi, d * last_area);
             }
-            x = xnext;
         }
     }
 }
@@ -617,5 +640,21 @@ mod tests {
         c.fill("M0 0H2V2H0Z", false, (0.0, 0.0), 1.0);
         c.fill("M1 1H3V3H1Z", false, (0.0, 0.0), 1.0);
         assert_eq!((c.at(1, 1), area(&c)), (1.0, 7.0));
+    }
+
+    #[test]
+    fn a_window_is_exactly_those_rows() {
+        let path = "M1.3 0.7C9 -2 14 6 11.5 12.2L3 13.9A4 4 0 0 1 1.3 0.7ZM5 5H8V8H5Z";
+        let mut whole = Coverage::new(16, 16);
+        whole.fill(path, true, (0.0, 0.0), 1.0);
+        for (top, height) in [(0, 5), (3, 7), (9, 7), (15, 1)] {
+            let mut part = Coverage::window(16, top, height);
+            part.fill(path, true, (0.0, 0.0), 1.0);
+            assert_eq!(
+                part.alpha[..],
+                whole.alpha[top * 16..(top + height) * 16],
+                "rows {top}+{height}"
+            );
+        }
     }
 }

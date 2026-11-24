@@ -18,8 +18,9 @@ Whenever an error renders anyway, `ScanReport.scannable` is false. `Style::allow
 
 - **Any shape:** baked glass is cut from the code's own geometry (an in-core path rasterizer and an exact distance transform), so module shapes, finder and alignment shapes, dashed timing and data colors work on glass. Vector glass draws the same shapes. No longer `GlassUnsupported`.
 - **Your colours:** `Glass::colors(GlassColors::Palette)` tints each lens with its module's token (lightness stays at the targets); `GlassColors::Photo` (default) and `Neutral`.
-- **Texture, refraction, opacity:** `Glass::texture` (photo detail on the plate and finder glass), `Glass::bevel`, `Glass::ior`, `Glass::dome`, `Glass::opacity`.
+- **Texture, refraction, opacity:** `Glass::texture` (photo detail on the plate; above 0.2 it warns `GlassNeedsZxing`), `Glass::bevel`, `Glass::ior`, `Glass::dome` (the code as one slab of glass whose rim squeezes the photo, after Pixelux-Glass's lens curve), `Glass::opacity`.
 - **Readability estimate:** `RenderError::GlassLowReadability { share, margin, finder }`, measured: opacity under about 0.95 warns. `GLASS_READABILITY`, `GLASS_DOTS_MIN`.
+- **Sharper exports:** `Glass::resolution` goes up to 96 px per module (was 32), so a raster export can bake the glass at its own density instead of upscaling the preview's (4096 px for a code up to about 43 modules across). 96 is physical: higher is clamped (`Checks::Off`) or refused. The layer is baked in bands of rows, and the photo under the glass is held at up to 32 px per module, so a 4096 px layer needs about 380 MB in WebAssembly instead of 2.6 GB. Output: shaped glass (anything but plain squares) changes in the last bits of its edge coverage, as the rasterizer now sums each row on its own; square glass is unchanged.
 - Output: every 1.2 glass style renders byte for byte as before (snapshots and conformance hashes unchanged).
 
 ### Boundary, CLI and bindings

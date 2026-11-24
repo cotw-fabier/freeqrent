@@ -22,7 +22,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::hash::{Hash, Hasher};
 
-use crate::check::{GLASS_RESOLUTION, GLASS_SAFE_TARGETS};
+use crate::check::{GLASS_RESOLUTION, GLASS_RESOLUTION_MAX, GLASS_SAFE_TARGETS};
 use crate::halftone::{self, Halftone, Sampler, Span};
 use crate::image::Rgba8Image;
 use crate::math;
@@ -215,10 +215,12 @@ impl Glass {
         self
     }
 
-    /// How much of the photo's own detail shows through the plate and the
-    /// finder, alignment and timing glass, 0–1 (default 0: flat, as
-    /// measured). Their lightness rides on the photo around the finder and
-    /// plate targets, held past the floors (W20261124091813).
+    /// How much of the photo's own detail shows through the plate, 0–1
+    /// (default 0: flat, as measured). Its lightness rides on the photo
+    /// around the plate's, never more than 0.12 under it; the finder glass
+    /// stays flat. Above [`GLASS_TEXTURE_FULL_BAR`](crate::GLASS_TEXTURE_FULL_BAR)
+    /// the code warns [`GlassNeedsZxing`](crate::Warning::GlassNeedsZxing)
+    /// (W20261124091813).
     pub fn texture(mut self, texture: f32) -> Glass {
         self.texture = texture;
         self
@@ -238,9 +240,10 @@ impl Glass {
         self
     }
 
-    /// A dome across each lens, 0–1 (default 0): the photo magnified
-    /// toward the lens's center, as a drop of water does, on top of the
-    /// bevel's bend at the edge. Baked only.
+    /// The code as one slab of glass, 0–1 (default 0): the plate's rim
+    /// bends the photo toward the middle, squeezed, as a thick glass card
+    /// does, while the code inside barely moves (after Pixelux-Glass's lens
+    /// curve). Shows through [`Glass::texture`]. Baked only.
     pub fn dome(mut self, dome: f32) -> Glass {
         self.dome = dome;
         self
@@ -269,8 +272,9 @@ impl Glass {
         self
     }
 
-    /// Baked pixels per module, 8–32 (default [`GLASS_RESOLUTION`]). The
-    /// layer's size grows with its square.
+    /// Baked pixels per module, 8–96 (default [`GLASS_RESOLUTION`]). The
+    /// layer's size grows with its square; a raster export can bake at its
+    /// own density (size ÷ the SVG's width in modules) to stay sharp.
     pub fn resolution(mut self, px_per_module: u8) -> Glass {
         self.resolution = px_per_module;
         self
@@ -534,10 +538,18 @@ const ETA: f64 = 1.5;
 const MAX_SLOPE: f64 = 12.0;
 /// Normals are taken this far in from an edge.
 const NORMAL_BAND: f64 = 0.2;
-/// A dome's reach inside a lens edge (half the default lens), and how much
-/// of the distance to there it pulls the photo at full strength.
-const DOME_RADIUS: f64 = 0.45;
-const DOME_SCALE: f64 = 0.8;
+/// How far texture may take the plate under its lightness (OKLab L).
+const TEXTURE_DIP: f64 = 0.12;
+
+/// The dome (W20261124091813, after Pixelux-Glass, github.com/CruzCortes/
+/// Pixelux-Glass, MIT; the curve reimplemented, no code taken): the slab's
+/// band at full strength, as a share of the halo and a module, and the
+/// extra frost at its edge.
+const DOME_BAND: f64 = 1.5;
+const DOME_EDGE_FROST: f64 = 0.06;
+/// The slab's edge line: its width (modules) and light.
+const DOME_LINE: f64 = 0.04;
+const DOME_LINE_LIGHT: f64 = 0.55;
 /// The rim light and the inner shade: falloff and strength.
 const RIM_WIDTH: f64 = 0.03;
 const RIM_LIGHT: f64 = 0.6;
@@ -792,29 +804,49 @@ pub(crate) fn readability(style: &Style, qr: &QrMatrix) -> Option<Readability> {
     })
 }
 
+/// The most pixels per module the photo under the glass is held at. It is
+/// frosted (0.12 module by default), so a denser copy would only blur back;
+/// above it the glass's edges are still drawn at the full resolution.
+const PHOTO_RES: i64 = 32;
+/// Rows of the layer baked at a time: the shape fields are worked out per
+/// band (and its margin), so a large layer needs no more memory than a band
+/// of it. Bands give exactly the whole layer's pixels.
+const BAND_ROWS: usize = 512;
+
 /// Bakes `style`'s glass for `qr`, if it has glass.
 pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Baked> {
+    bake_in_bands(style, qr, canvas, BAND_ROWS)
+}
+
+/// [`bake`], `band` rows at a time.
+fn bake_in_bands(style: &Style, qr: &QrMatrix, canvas: &Canvas, band: usize) -> Option<Baked> {
     let h = style.halftone.as_ref()?;
     let g = h.glass().filter(|g| !g.is_vector())?;
     let n = qr.size() as i64;
     let q = style.quiet_zone as i64;
-    let res = g.resolution.clamp(8, 32) as i64;
+    let res = g.resolution.clamp(8, GLASS_RESOLUTION_MAX) as i64;
     let r = res as f64;
     let w = n + 2 * q;
     let wpx = (w * res) as usize;
     let mpx = res as usize;
-    let side = wpx + 2 * mpx;
 
-    // The photo over the box and a module around it, linear sRGB over bg.
+    // The photo over the box and a module around it, linear sRGB over bg,
+    // at `pres` pixels per module: the layer's own, up to PHOTO_RES.
+    let pres = res.min(PHOTO_RES);
+    let pr = pres as f64;
+    // Layer pixels to photo pixels (exactly 1 up to PHOTO_RES).
+    let to_photo = pr / r;
+    let pmpx = pres as usize;
+    let side = (w * pres) as usize + 2 * pmpx;
     let backdrop = halftone::linear(style.palette.background());
     let sampler = Sampler::new(
         &h.image,
         h.fit,
         h.focal,
         Span::WHOLE,
-        (canvas.card * res) as usize,
+        (canvas.card * pres) as usize,
     );
-    let first = (canvas.origin - q - 1) * res;
+    let first = (canvas.origin - q - 1) * pres;
     let mut photo = Vec::with_capacity(side * side);
     for y in 0..side as i64 {
         for x in 0..side as i64 {
@@ -823,9 +855,9 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
     }
 
     // The photo's OKLab lightness over a module's central box, unstretched.
-    let center = |k: i64| (k + q + 1) as f64 * r + 0.5 * r;
+    let center = |k: i64| (k + q + 1) as f64 * pr + 0.5 * pr;
     let lightness = |i: i64, j: i64, size: f64| -> f64 {
-        let half = size / 2.0 * r;
+        let half = size / 2.0 * pr;
         let range = |c: f64| {
             let lo = math::ceil(c - half - 0.5).max(0.0) as usize;
             let hi = (math::floor(c + half - 0.5) as usize).min(side - 1);
@@ -847,8 +879,8 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
     // The picture's dominant dark and light colours under the code: the
     // mean OKLab a, b of its darkest and lightest quarters.
     let (dark_ab, light_ab) = {
-        let from = mpx + (q * res) as usize;
-        let to = from + (n * res) as usize;
+        let from = pmpx + (q * pres) as usize;
+        let to = from + (n * pres) as usize;
         let mut labs = Vec::new();
         for y in (from..to).step_by(3) {
             for x in (from..to).step_by(3) {
@@ -1012,15 +1044,14 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
         union: (g.union as f64).max(1e-3),
     };
     // Any shape but plain squares: glass cut from the code's own geometry.
-    let raster = (!field::analytic(style))
-        .then(|| field::fields(style, qr, canvas, &lenses.cells, q, w, res, lens));
+    let shaped = !field::analytic(style);
     let shadow_px = (
         math::round(SHADOW_OFFSET.0 * r) as i64,
         math::round(SHADOW_OFFSET.1 * r) as i64,
     );
 
     // The frost, and the Gaussian blend's weights per pixel offset.
-    let frost = blur(&photo, side, g.frost as f64 * r);
+    let frost = blur(&photo, side, g.frost as f64 * pr);
     let gauss: Vec<[f64; 3]> = (0..res)
         .map(|k| {
             let f = (k as f64 + 0.5) / r;
@@ -1030,10 +1061,33 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
             })
         })
         .collect();
+    // With a dome, a frostier copy for the edges.
+    let edge_frost = (g.dome > 0.0 && g.refraction).then(|| {
+        blur(
+            &photo,
+            side,
+            (g.frost as f64 + DOME_EDGE_FROST * g.dome as f64) * pr,
+        )
+    });
+    drop(photo);
+    let sample_from = |buf: &[[f64; 3]], sx: f64, sy: f64| -> [f64; 3] {
+        let top = side as f64 - 1.001;
+        let x = (sx * to_photo + pmpx as f64 - 0.5).clamp(0.0, top);
+        let y = (sy * to_photo + pmpx as f64 - 0.5).clamp(0.0, top);
+        let (xi, yi) = (x as usize, y as usize);
+        let (tx, ty) = (x - xi as f64, y - yi as f64);
+        let a = buf[yi * side + xi];
+        let b = buf[yi * side + xi + 1];
+        let c = buf[(yi + 1) * side + xi];
+        let d = buf[(yi + 1) * side + xi + 1];
+        core::array::from_fn(|k| {
+            (a[k] * (1.0 - tx) + b[k] * tx) * (1.0 - ty) + (c[k] * (1.0 - tx) + d[k] * tx) * ty
+        })
+    };
     let sample = |sx: f64, sy: f64| -> [f64; 3] {
         let top = side as f64 - 1.001;
-        let x = (sx + mpx as f64 - 0.5).clamp(0.0, top);
-        let y = (sy + mpx as f64 - 0.5).clamp(0.0, top);
+        let x = (sx * to_photo + pmpx as f64 - 0.5).clamp(0.0, top);
+        let y = (sy * to_photo + pmpx as f64 - 0.5).clamp(0.0, top);
         let (xi, yi) = (x as usize, y as usize);
         let (tx, ty) = (x - xi as f64, y - yi as f64);
         let a = frost[yi * side + xi];
@@ -1051,115 +1105,174 @@ pub(crate) fn bake(style: &Style, qr: &QrMatrix, canvas: &Canvas) -> Option<Bake
     let bevel = BEVEL_DEPTH * (g.bevel as f64 / 0.12f32 as f64);
     let eta = g.ior as f64;
     let dome = g.dome as f64;
-    let normal_band = if dome > 0.0 {
-        DOME_RADIUS + 0.05
-    } else if bevel <= BEVEL_DEPTH {
+    // The slab: the code and its halo as one rounded square, its centre,
+    // half side and corner (modules), and its band, which the dome widens
+    // from the halo to past it.
+    let reach = g.halo as f64;
+    let slab_half = n as f64 / 2.0 + reach;
+    let slab = (
+        n as f64 / 2.0,
+        slab_half,
+        reach.max(1.0).min(slab_half),
+        (dome * DOME_BAND * (reach + 1.0)).max(1e-3),
+    );
+    let normal_band = if bevel <= BEVEL_DEPTH {
         NORMAL_BAND
     } else {
         bevel + 0.08
     };
     let light_dir = [-core::f64::consts::FRAC_1_SQRT_2; 2];
     let mut rgba = vec![0u8; wpx * wpx * 4];
-    for y in 0..wpx {
-        let cj = (y / mpx) as i64 - q;
-        let wy = &gauss[y % mpx];
-        let v = cj as f64 + (((y % mpx) as f64) + 0.5) / r;
-        for x in 0..wpx {
-            let ci = (x / mpx) as i64 - q;
-            if !lenses.near(ci, cj) {
-                continue;
-            }
-            let wx = &gauss[x % mpx];
-            let u = ci as f64 + (((x % mpx) as f64) + 0.5) / r;
-            let (px, py) = (x as i64, y as i64);
-            // The raster field's distance, where there is one, with the
-            // cells' blended shift, feather, tint and flatness.
-            let cut = |f: Option<(f64, [f64; 7])>, kind: u8| match (&raster, f) {
-                (Some(fields), Some((_, p))) => Some((fields.dist(kind, px, py), p)),
-                (_, f) => f,
-            };
-            let dark = cut(lenses.field((u, v), (ci, cj), 1, wx, wy), 1);
-            let light = cut(lenses.field((u, v), (ci, cj), 2, wx, wy), 2);
-            let (kind, d, [delta, feather, tint, func, ab_a, ab_b, read]) = match (dark, light) {
-                (Some(a), Some(b)) if a.0 <= b.0 => (1u8, a.0, a.1),
-                (Some(a), None) => (1, a.0, a.1),
-                (_, Some(b)) => (2, b.0, b.1),
-                (None, None) => continue,
-            };
-            let mut out = [0.0; 3];
-            let mut alpha = 0.0;
-            if d < 0.0 {
-                alpha = if feather <= 0.0 {
-                    (-d / aa + 0.5).clamp(0.0, 1.0)
-                } else {
-                    smoothstep(0.0, feather, -d)
-                };
-                // The outward normal, from the field's gradient.
-                let normal = if (g.refraction || g.rim) && -d < normal_band {
-                    if let Some(fields) = &raster {
-                        fields.normal(kind, px, py)
-                    } else {
-                        let gx = lenses.dist(u + NORMAL_STEP, v, kind) - d;
-                        let gy = lenses.dist(u, v + NORMAL_STEP, kind) - d;
-                        let len = sqrt(gx * gx + gy * gy).max(1e-9);
-                        [gx / len, gy / len]
-                    }
-                } else {
-                    [0.0, 0.0]
-                };
-                let (mut sx, mut sy) = (x as f64 + 0.5, y as f64 + 0.5);
-                if g.refraction {
-                    let off = (refraction(-d, bevel, eta) + dome_pull(-d, dome)) * r;
-                    sx -= normal[0] * off;
-                    sy -= normal[1] * off;
+    for band_top in (0..wpx).step_by(band.max(1)) {
+        let band_end = (band_top + band.max(1)).min(wpx);
+        let raster = shaped.then(|| {
+            field::fields(
+                style,
+                qr,
+                canvas,
+                &lenses.cells,
+                q,
+                w,
+                res,
+                lens,
+                (band_top, band_end),
+            )
+        });
+        for y in band_top..band_end {
+            let cj = (y / mpx) as i64 - q;
+            let wy = &gauss[y % mpx];
+            let v = cj as f64 + (((y % mpx) as f64) + 0.5) / r;
+            for x in 0..wpx {
+                let ci = (x / mpx) as i64 - q;
+                if !lenses.near(ci, cj) {
+                    continue;
                 }
-                let mut lab = oklab(sample(sx, sy));
-                let photo_l = lab[0];
-                lab[0] = (lab[0] + delta).clamp(0.0, 1.0);
-                if g.colors == GlassColors::Palette && tint > 0.0 {
-                    lab[1] += (ab_a - lab[1]) * tint;
-                    lab[2] += (ab_b - lab[2]) * tint;
-                } else if g.tints() && tint > 0.0 {
-                    let target = if kind == 1 {
-                        let boost = if tint > 0.5 { FINDER_CHROMA } else { 1.0 };
-                        [dark_ab[0] * boost, dark_ab[1] * boost]
+                let wx = &gauss[x % mpx];
+                let u = ci as f64 + (((x % mpx) as f64) + 0.5) / r;
+                let (px, py) = (x as i64, y as i64);
+                // The raster field's distance, where there is one, with the
+                // cells' blended shift, feather, tint and flatness.
+                let cut = |f: Option<(f64, [f64; 7])>, kind: u8| match (&raster, f) {
+                    (Some(fields), Some((_, p))) => Some((fields.dist(kind, px, py), p)),
+                    (_, f) => f,
+                };
+                let dark = cut(lenses.field((u, v), (ci, cj), 1, wx, wy), 1);
+                let light = cut(lenses.field((u, v), (ci, cj), 2, wx, wy), 2);
+                let (kind, d, [delta, feather, tint, func, ab_a, ab_b, read]) = match (dark, light)
+                {
+                    (Some(a), Some(b)) if a.0 <= b.0 => (1u8, a.0, a.1),
+                    (Some(a), None) => (1, a.0, a.1),
+                    (_, Some(b)) => (2, b.0, b.1),
+                    (None, None) => continue,
+                };
+                let mut out = [0.0; 3];
+                let mut alpha = 0.0;
+                if d < 0.0 {
+                    alpha = if feather <= 0.0 {
+                        (-d / aa + 0.5).clamp(0.0, 1.0)
                     } else {
-                        light_ab
+                        smoothstep(0.0, feather, -d)
                     };
-                    lab[1] += (target[0] - lab[1]) * tint;
-                    lab[2] += (target[1] - lab[2]) * tint;
+                    // The outward normal, from the field's gradient.
+                    let normal = if (g.refraction || g.rim) && -d < normal_band {
+                        if let Some(fields) = &raster {
+                            fields.normal(kind, px, py)
+                        } else {
+                            let gx = lenses.dist(u + NORMAL_STEP, v, kind) - d;
+                            let gy = lenses.dist(u, v + NORMAL_STEP, kind) - d;
+                            let len = sqrt(gx * gx + gy * gy).max(1e-9);
+                            [gx / len, gy / len]
+                        }
+                    } else {
+                        [0.0, 0.0]
+                    };
+                    let (mut sx, mut sy) = (x as f64 + 0.5, y as f64 + 0.5);
+                    // How far into the dome's band the pixel is: 0 at the edge.
+                    let mut rim = 1.0;
+                    // The slab's bright edge line, 0–1.
+                    let mut slab_edge = 0.0;
+                    if g.refraction {
+                        let off = refraction(-d, bevel, eta) * r;
+                        sx -= normal[0] * off;
+                        sy -= normal[1] * off;
+                        if dome > 0.0 {
+                            // The code as one slab of glass (Pixelux-Glass's
+                            // lens): every sample slides toward the slab's middle
+                            // by 1 − sin(t^¼·π/2), t the depth inside the slab's
+                            // rounded edge over its band. All the way at the
+                            // edge, so the rim shows the photo squeezed; none a
+                            // band in, so the code itself barely moves.
+                            let depth = -rounded_box(u - slab.0, v - slab.0, slab.1, slab.2);
+                            slab_edge = math::exp(-depth.max(0.0) / DOME_LINE) * dome;
+                            rim = lens_curve(depth / slab.3);
+                            sx = (slab.0 + (sx / r - q as f64 - slab.0) * rim + q as f64) * r;
+                            sy = (slab.0 + (sy / r - q as f64 - slab.0) * rim + q as f64) * r;
+                        }
+                    }
+                    let mut lab = oklab(match &edge_frost {
+                        // Frostier toward the edge, as thick glass is.
+                        Some(edge) if rim < 1.0 => {
+                            let (a, b) = (sample_from(&frost, sx, sy), sample_from(edge, sx, sy));
+                            core::array::from_fn(|k| a[k] * rim + b[k] * (1.0 - rim))
+                        }
+                        _ => sample(sx, sy),
+                    });
+                    let photo_l = lab[0];
+                    lab[0] = (lab[0] + delta).clamp(0.0, 1.0);
+                    if g.colors == GlassColors::Palette && tint > 0.0 {
+                        lab[1] += (ab_a - lab[1]) * tint;
+                        lab[2] += (ab_b - lab[2]) * tint;
+                    } else if g.tints() && tint > 0.0 {
+                        let target = if kind == 1 {
+                            let boost = if tint > 0.5 { FINDER_CHROMA } else { 1.0 };
+                            [dark_ab[0] * boost, dark_ab[1] * boost]
+                        } else {
+                            light_ab
+                        };
+                        lab[1] += (target[0] - lab[1]) * tint;
+                        lab[2] += (target[1] - lab[2]) * tint;
+                    }
+                    if func > 0.5 {
+                        // Function glass is flat at its lightness, with as much
+                        // of the photo's detail around it as `texture` asks.
+                        // Only the plate takes texture, and its dips are held
+                        // near the plate's lightness: the finders stay flat.
+                        lab[0] = if kind == 1 {
+                            finder
+                        } else {
+                            (plate + texture * (photo_l - read)).clamp(plate - TEXTURE_DIP, 1.0)
+                        };
+                    }
+                    let mut c = from_oklab(lab).map(encode);
+                    if slab_edge > 0.0 {
+                        // A thin light along the slab's edge, as glass catches it.
+                        c = c.map(|v| v + (1.0 - v) * DOME_LINE_LIGHT * slab_edge);
+                    }
+                    if g.rim {
+                        let facing = normal[0] * light_dir[0] + normal[1] * light_dir[1];
+                        let spec = math::exp(d / RIM_WIDTH) * facing.max(0.0) * RIM_LIGHT;
+                        let shade = math::exp(d / SHADE_WIDTH) * (-facing).max(0.0) * SHADE;
+                        c = c.map(|v| (v + spec * (1.0 - v)) * (1.0 - shade));
+                    }
+                    out = c;
+                } else if g.rim && d < SHADOW_REACH {
+                    let ds = match &raster {
+                        Some(fields) => fields.dist(kind, px - shadow_px.0, py - shadow_px.1),
+                        None => lenses.dist(u - SHADOW_OFFSET.0, v - SHADOW_OFFSET.1, kind),
+                    };
+                    if ds < 0.0 {
+                        alpha = SHADOW_ALPHA * smoothstep(0.0, SHADOW_SOFT, -ds);
+                    }
                 }
-                if func > 0.5 {
-                    // Function glass is flat at its lightness, with as much
-                    // of the photo's detail around it as `texture` asks.
-                    let flat = if kind == 1 { finder } else { plate };
-                    lab[0] = (flat + texture * (photo_l - read)).clamp(0.0, 1.0);
+                // Below full opacity the photo shows through, unshifted.
+                let a8 = math::round(alpha * opacity * 255.0).clamp(0.0, 255.0);
+                if a8 > 0.0 {
+                    let i = (y * wpx + x) * 4;
+                    for k in 0..3 {
+                        rgba[i + k] = math::round(out[k] * 255.0).clamp(0.0, 255.0) as u8;
+                    }
+                    rgba[i + 3] = a8 as u8;
                 }
-                let mut c = from_oklab(lab).map(encode);
-                if g.rim {
-                    let facing = normal[0] * light_dir[0] + normal[1] * light_dir[1];
-                    let spec = math::exp(d / RIM_WIDTH) * facing.max(0.0) * RIM_LIGHT;
-                    let shade = math::exp(d / SHADE_WIDTH) * (-facing).max(0.0) * SHADE;
-                    c = c.map(|v| (v + spec * (1.0 - v)) * (1.0 - shade));
-                }
-                out = c;
-            } else if g.rim && d < SHADOW_REACH {
-                let ds = match &raster {
-                    Some(fields) => fields.dist(kind, px - shadow_px.0, py - shadow_px.1),
-                    None => lenses.dist(u - SHADOW_OFFSET.0, v - SHADOW_OFFSET.1, kind),
-                };
-                if ds < 0.0 {
-                    alpha = SHADOW_ALPHA * smoothstep(0.0, SHADOW_SOFT, -ds);
-                }
-            }
-            // Below full opacity the photo shows through, unshifted.
-            let a8 = math::round(alpha * opacity * 255.0).clamp(0.0, 255.0);
-            if a8 > 0.0 {
-                let i = (y * wpx + x) * 4;
-                for k in 0..3 {
-                    rgba[i + k] = math::round(out[k] * 255.0).clamp(0.0, 255.0) as u8;
-                }
-                rgba[i + 3] = a8 as u8;
             }
         }
     }
@@ -1252,14 +1365,15 @@ fn refraction(depth: f64, bevel: f64, eta: f64) -> f64 {
     REFRACT_SCALE * (bevel / BEVEL_DEPTH) * (slope - tan_r) / (1.0 + slope * tan_r)
 }
 
-/// How far a dome of strength `dome` pulls the photo toward a lens's
-/// middle at `depth` modules inside its edge: a magnifier's pull, largest
-/// at the edge and none past [`DOME_RADIUS`] (W20261124091813).
-fn dome_pull(depth: f64, dome: f64) -> f64 {
-    if dome <= 0.0 {
-        return 0.0;
+/// The dome's lens curve at `t` (0 at the edge, 1 a band in): how much of
+/// the way from the lens's middle the sample stays, `sin(t^¼ · π/2)`, steep
+/// at the edge so the rim squeezes and the face stays clear.
+fn lens_curve(t: f64) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    if t >= 1.0 {
+        return 1.0;
     }
-    dome * DOME_SCALE * (DOME_RADIUS - depth).max(0.0)
+    math::sin_cos(sqrt(sqrt(t)) * core::f64::consts::FRAC_PI_2).0
 }
 
 /// IQ's quadratic smooth minimum.
@@ -1512,7 +1626,7 @@ mod tests {
             (Glass::new().lens(0.7).core(0.8), "Glass.core"),
             (Glass::new().union(0.1), "Glass.union"),
             (Glass::new().frost(f32::NAN), "Glass.frost"),
-            (Glass::new().resolution(40), "Glass.resolution"),
+            (Glass::new().resolution(120), "Glass.resolution"),
             (Glass::new().targets(-0.1, 0.9), "Glass.targets dark"),
             (Glass::new().finders(0.3, 1.2), "Glass.finders plate"),
         ] {
@@ -2226,6 +2340,43 @@ mod tests {
                 mid.contains(" opacity=\"") || mid.contains("mask=\""),
                 "{preset:?}"
             );
+        }
+    }
+
+    #[test]
+    fn bands_bake_exactly_the_whole_layer() {
+        use crate::scanbox::{EyeShape, FinderStyle, RingShape};
+        let shaped = |g: Glass| {
+            glass(g)
+                .modules(ModuleShape::Dots { size: 0.9 })
+                .finders(FinderStyle::new(RingShape::Rounded(0.4), EyeShape::Circle))
+                .timing(TimingStyle::Dotted)
+        };
+        let cases = [
+            ("squares", glass(baked())),
+            ("shapes", shaped(baked())),
+            (
+                "slab and texture",
+                shaped(baked().dome(1.0).texture(0.7).bevel(0.3)),
+            ),
+            (
+                "bars at 24",
+                glass(baked().resolution(24)).modules(ModuleShape::Bars {
+                    axis: crate::Axis::Vertical,
+                    radius: 0.5,
+                }),
+            ),
+            // Above PHOTO_RES the photo is held at its own density.
+            ("shapes at 40", shaped(baked().resolution(40).dome(1.0))),
+        ];
+        for (name, style) in cases {
+            let qr = code(&style, 3);
+            let canvas = scene::canvas(&style, &qr);
+            let whole = bake_in_bands(&style, &qr, &canvas, usize::MAX).unwrap();
+            for band in [61, 160] {
+                let banded = bake_in_bands(&style, &qr, &canvas, band).unwrap();
+                assert!(banded.png == whole.png, "{name}: {band}-row bands differ");
+            }
         }
     }
 }

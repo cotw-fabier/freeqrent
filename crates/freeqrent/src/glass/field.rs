@@ -43,10 +43,14 @@ pub(crate) fn analytic(style: &Style) -> bool {
         && style.timing != TimingStyle::Dashed
 }
 
-/// The dark and light glass's signed distance per pixel of the box, in
-/// modules (negative inside).
+/// The dark and light glass's signed distance per pixel of a band of the
+/// box's rows, in modules (negative inside).
 pub(super) struct Fields {
+    /// The box's side, in pixels.
     side: usize,
+    /// The band's first row and its height.
+    top: usize,
+    height: usize,
     dark: Vec<f32>,
     light: Vec<f32>,
     /// The fields blurred by a pixel, for normals.
@@ -64,11 +68,14 @@ impl Fields {
     }
 
     fn clamp(&self, x: i64, y: i64) -> usize {
-        let top = self.side as i64 - 1;
-        y.clamp(0, top) as usize * self.side + x.clamp(0, top) as usize
+        let last = self.side as i64 - 1;
+        // Clamped to the box, then (only ever by the margin's spare rows,
+        // which [`MARGIN`] keeps unused) to the band.
+        let y = y.clamp(0, last) - self.top as i64;
+        y.clamp(0, self.height as i64 - 1) as usize * self.side + x.clamp(0, last) as usize
     }
 
-    /// `kind`'s distance at pixel `(x, y)` (clamped to the box).
+    /// `kind`'s distance at pixel `(x, y)` of the box (clamped to it).
     pub(super) fn dist(&self, kind: u8, x: i64, y: i64) -> f64 {
         self.of(kind).0[self.clamp(x, y)] as f64
     }
@@ -83,8 +90,18 @@ impl Fields {
     }
 }
 
+/// How far past a band of rows its fields are worked out, in modules (plus
+/// [`MARGIN_PX`]): further than any distance the glass reads (feathers,
+/// bevels, rim, shadow: all under 0.6 module) and the pixels its normals and
+/// shadow look across. Within it the transform finds every pixel's nearest
+/// edge, so a band's fields are exactly the whole box's there.
+pub(super) const MARGIN: i64 = 2;
+/// ... and pixels: the softening's and the normal's reach.
+const MARGIN_PX: i64 = 8;
+
 /// Cuts the glass of `cells` (the box's modules, as [`super::bake`] works
-/// them out) from `style`'s geometry, at `res` pixels per module.
+/// them out) from `style`'s geometry, at `res` pixels per module, for the
+/// box's rows `rows.0` to `rows.1`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn fields(
     style: &Style,
@@ -95,9 +112,13 @@ pub(super) fn fields(
     w: i64,
     res: i64,
     lens: f64,
+    rows: (usize, usize),
 ) -> Fields {
     let n = qr.size() as i64;
     let side = (w * res) as usize;
+    let margin = (MARGIN * res + MARGIN_PX) as usize;
+    let top = rows.0.saturating_sub(margin);
+    let height = (rows.1 + margin).min(side) - top;
     let r = res as f64;
     let cell = |i: i64, j: i64| &cells[((j + q) * w + i + q) as usize];
     // Code modules by what their glass is.
@@ -132,13 +153,13 @@ pub(super) fn fields(
     };
     let shape = &style.modules;
 
-    let mut data = Coverage::new(side, side);
+    let mut data = Coverage::window(side, top, height);
     let mut path = Path::new();
     geometry::draw_modules(shape, &dark_data, origin, &mut path);
     fill(&mut data, &path, false);
     let dark_data_cov = data;
 
-    let mut func = Coverage::new(side, side);
+    let mut func = Coverage::window(side, top, height);
     let mut path = Path::new();
     geometry::draw_modules(shape, &dark_other, origin, &mut path);
     if style.timing == TimingStyle::Plain {
@@ -177,28 +198,28 @@ pub(super) fn fields(
     for j in 0..n {
         for i in 0..n {
             if removed.get(i, j) || cleared.get(i, j) {
-                clear_cell(&mut func, i + q, j + q, res, side);
+                clear_cell(&mut func, i + q, j + q, res);
             }
         }
     }
     let dark_func_cov = func;
 
-    let mut light = Coverage::new(side, side);
+    let mut light = Coverage::window(side, top, height);
     let mut path = Path::new();
     geometry::draw_modules(shape, &light_data, origin, &mut path);
     fill(&mut light, &path, false);
     let light_data_cov = light;
 
     // The plate: every function, cleared and halo cell, less dark glass.
-    let mut plate = Coverage::new(side, side);
+    let mut plate = Coverage::window(side, top, height);
     for j in -q..n + q {
         for i in -q..n + q {
             let c = cell(i, j);
             if c.func > 0.5 && c.kind != 0 {
                 let (x0, y0) = (((i + q) * res) as usize, ((j + q) * res) as usize);
-                for y in y0..y0 + res as usize {
+                for y in y0.max(top)..(y0 + res as usize).min(top + height) {
                     for x in x0..x0 + res as usize {
-                        let k = y * side + x;
+                        let k = (y - top) * side + x;
                         let dark = dark_func_cov.alpha[k].max(dark_data_cov.alpha[k]);
                         plate.alpha[k] = 1.0 - dark;
                     }
@@ -221,19 +242,22 @@ pub(super) fn fields(
     );
     let light = nearer(&signed(&light_data_cov, r), &signed(&plate, r), erode);
     Fields {
-        dark_soft: soften(&dark, side),
-        light_soft: soften(&light, side),
+        dark_soft: soften(&dark, side, height),
+        light_soft: soften(&light, side, height),
         side,
+        top,
+        height,
         dark,
         light,
     }
 }
 
-fn clear_cell(cov: &mut Coverage, i: i64, j: i64, res: i64, side: usize) {
+fn clear_cell(cov: &mut Coverage, i: i64, j: i64, res: i64) {
     let (x0, y0) = ((i * res) as usize, (j * res) as usize);
-    for y in y0..(y0 + res as usize).min(side) {
+    let (side, top) = (cov.width, cov.top);
+    for y in y0.max(top)..(y0 + res as usize).min(top + cov.height) {
         for x in x0..(x0 + res as usize).min(side) {
-            cov.alpha[y * side + x] = 0.0;
+            cov.alpha[(y - top) * side + x] = 0.0;
         }
     }
 }
@@ -249,16 +273,16 @@ fn nearer(data: &[f32], func: &[f32], erode: f32) -> Vec<f32> {
 
 /// A 3 × 3 box blur, twice: enough to smooth the transform's steps out of
 /// the normals.
-fn soften(f: &[f32], side: usize) -> Vec<f32> {
+fn soften(f: &[f32], side: usize, height: usize) -> Vec<f32> {
     let mut a = f.to_vec();
     let mut b = vec![0.0f32; f.len()];
     for _ in 0..2 {
-        for y in 0..side {
+        for y in 0..height {
             for x in 0..side {
                 let mut sum = 0.0;
                 for dy in -1i64..=1 {
                     for dx in -1i64..=1 {
-                        let yy = (y as i64 + dy).clamp(0, side as i64 - 1) as usize;
+                        let yy = (y as i64 + dy).clamp(0, height as i64 - 1) as usize;
                         let xx = (x as i64 + dx).clamp(0, side as i64 - 1) as usize;
                         sum += a[yy * side + xx];
                     }
@@ -276,10 +300,10 @@ fn soften(f: &[f32], side: usize) -> Vec<f32> {
 /// coverage (`0.5 − c` pixels); the rest from the distance transform to the
 /// nearest pixel of the other side, less half a pixel.
 fn signed(cov: &Coverage, r: f64) -> Vec<f32> {
-    let side = cov.width;
+    let (side, height) = (cov.width, cov.height);
     let inside: Vec<bool> = cov.alpha.iter().map(|&c| c >= 0.5).collect();
-    let to_out = edt(&inside, side, false);
-    let to_in = edt(&inside, side, true);
+    let to_out = edt(&inside, side, height, false);
+    let to_in = edt(&inside, side, height, true);
     cov.alpha
         .iter()
         .enumerate()
@@ -305,29 +329,31 @@ const FAR: f64 = 1e12;
 
 /// The squared Euclidean distance from each pixel to the nearest pixel
 /// whose `inside` equals `target` (Felzenszwalb and Huttenlocher's exact
-/// transform: a lower envelope of parabolas, columns then rows).
-fn edt(inside: &[bool], side: usize, target: bool) -> Vec<f64> {
+/// transform: a lower envelope of parabolas, columns then rows) in a
+/// `width` × `height` grid.
+fn edt(inside: &[bool], width: usize, height: usize, target: bool) -> Vec<f64> {
     let mut grid: Vec<f64> = inside
         .iter()
         .map(|&v| if v == target { 0.0 } else { FAR })
         .collect();
-    let mut f = vec![0.0; side];
-    let mut d = vec![0.0; side];
-    let mut v = vec![0usize; side];
-    let mut z = vec![0.0; side + 1];
-    for x in 0..side {
-        for y in 0..side {
-            f[y] = grid[y * side + x];
+    let most = width.max(height);
+    let mut f = vec![0.0; most];
+    let mut d = vec![0.0; most];
+    let mut v = vec![0usize; most];
+    let mut z = vec![0.0; most + 1];
+    for x in 0..width {
+        for y in 0..height {
+            f[y] = grid[y * width + x];
         }
-        edt_1d(&f, &mut d, &mut v, &mut z);
-        for y in 0..side {
-            grid[y * side + x] = d[y];
+        edt_1d(&f[..height], &mut d[..height], &mut v, &mut z);
+        for y in 0..height {
+            grid[y * width + x] = d[y];
         }
     }
-    for y in 0..side {
-        f.copy_from_slice(&grid[y * side..(y + 1) * side]);
-        edt_1d(&f, &mut d, &mut v, &mut z);
-        grid[y * side..(y + 1) * side].copy_from_slice(&d);
+    for y in 0..height {
+        f[..width].copy_from_slice(&grid[y * width..(y + 1) * width]);
+        edt_1d(&f[..width], &mut d[..width], &mut v, &mut z);
+        grid[y * width..(y + 1) * width].copy_from_slice(&d[..width]);
     }
     grid
 }
@@ -374,7 +400,7 @@ mod tests {
         // One target pixel in a 7 × 7 grid: distances are squared offsets.
         let mut inside = vec![false; 49];
         inside[3 * 7 + 2] = true;
-        let d = edt(&inside, 7, true);
+        let d = edt(&inside, 7, 7, true);
         for y in 0..7 {
             for x in 0..7 {
                 let (dx, dy) = (x as f64 - 2.0, y as f64 - 3.0);
@@ -383,7 +409,7 @@ mod tests {
         }
         // Brute force over a scattered set.
         let inside: Vec<bool> = (0..400).map(|k| (k * 37 + k / 7) % 23 == 0).collect();
-        let d = edt(&inside, 20, true);
+        let d = edt(&inside, 20, 20, true);
         for (p, &got) in d.iter().enumerate() {
             let (px, py) = ((p % 20) as f64, (p / 20) as f64);
             let best = (0..400)

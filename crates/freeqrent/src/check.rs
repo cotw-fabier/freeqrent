@@ -131,6 +131,13 @@ pub const GLASS_VECTOR_NARROW_FULL_BAR_VERSION: u8 = 5;
 /// disc at v8) and at 0.5 three, so `Glass.lens` is held to 0.7–1.0 in
 /// vector mode ([`RenderError::OptionOutOfRange`]).
 pub const GLASS_VECTOR_MIN_LENS: f32 = 0.7;
+/// The most plate texture at which every measured glass code held the full
+/// bar (W20261124091813, the three showcase photos × square, Liquid with
+/// rounded finders, 0.9 dots and v8): at 0.4 rqrr lost the samurai at
+/// 4 px per module, at 1 also the windmill; ZXing read every render at
+/// every texture, the degraded one included. Above it a glass code warns
+/// [`Warning::GlassNeedsZxing`].
+pub const GLASS_TEXTURE_FULL_BAR: f32 = 0.2;
 /// The smallest dots baked glass was measured to scan with
 /// (W20261124091813): 0.9 read every picture at its bar; at 0.85 the disc
 /// lost the degraded render once, at 0.75–0.8 once or twice.
@@ -146,6 +153,11 @@ pub const GLASS_READABILITY: f32 = 0.305;
 /// The default baked resolution of glass, in pixels per module
 /// ([`Glass::resolution`](crate::Glass::resolution)).
 pub const GLASS_RESOLUTION: u8 = 16;
+
+/// The most baked pixels per module glass takes
+/// ([`Glass::resolution`](crate::Glass::resolution)): enough for a 4096 px
+/// export of a code up to about 43 modules across, frame included.
+pub(crate) const GLASS_RESOLUTION_MAX: u8 = 96;
 /// The glass layer's size (a baked PNG, or vector glass's elements) above
 /// which a code warns [`Warning::LargeOutput`].
 pub const LARGE_OUTPUT_BYTES: usize = 1_000_000;
@@ -1075,7 +1087,12 @@ fn check_glass(
     found.range("Glass.frost", &mut g.frost, 0.0, 0.3);
     found.range("Glass.finders dark", &mut g.finders.0, 0.0, 1.0);
     found.range("Glass.finders plate", &mut g.finders.1, 0.0, 1.0);
-    found.range_int("Glass.resolution", &mut g.resolution, 8, 32);
+    found.range_int(
+        "Glass.resolution",
+        &mut g.resolution,
+        8,
+        GLASS_RESOLUTION_MAX,
+    );
     found.range("Glass.texture", &mut g.texture, 0.0, 1.0);
     found.range("Glass.bevel", &mut g.bevel, 0.05, 0.45);
     found.range("Glass.ior", &mut g.ior, 1.0, 2.0);
@@ -1193,7 +1210,7 @@ fn check_glass(
             }
     } else {
         version > GLASS_FULL_BAR_VERSION || g.resolution < GLASS_RESOLUTION
-    };
+    } || g.texture > GLASS_TEXTURE_FULL_BAR + 1e-4;
     if zxing {
         warnings.push(Warning::GlassNeedsZxing { version });
     }

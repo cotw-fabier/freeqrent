@@ -601,6 +601,61 @@ fn shapes_colors_and_refraction_scan() {
     assert!(report.ok() && !report.scannable, "{report:?}");
 }
 
+/// Real photographs (the showcase's JPEGs, busier than the synthetic
+/// pictures): the plate's texture and the slab dome at full strength, square, Liquid with rounded finders, 0.9 dots and v8, at their own
+/// bar (texture past `GLASS_TEXTURE_FULL_BAR` drops rqrr, W20261124091813).
+#[test]
+fn real_photos_take_texture_and_the_dome() {
+    use freeqrent::{EyeShape, FinderStyle, ModuleShape, RingShape};
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/showcase/pictures");
+    for name in ["penguin", "samurai", "windmill"] {
+        let file = std::fs::read(format!("{dir}/{name}.jpg")).unwrap();
+        let image = freeqrent_image::decode(&file).unwrap();
+        let g = glass(BAKED).texture(1.0).dome(1.0);
+        let h = Halftone::new(image)
+            .source(file, RasterFormat::Jpeg)
+            .unwrap()
+            .ink(Ink::Glass(g));
+        for (label, style, version) in [
+            ("square", Style::new().halftone(h.clone()), 3u8),
+            (
+                "liquid",
+                Style::new()
+                    .halftone(h.clone())
+                    .modules(ModuleShape::Liquid { smoothness: 0.8 })
+                    .finders(FinderStyle::new(
+                        RingShape::Rounded(2.5),
+                        EyeShape::Rounded(1.5),
+                    )),
+                3,
+            ),
+            (
+                "dots",
+                Style::new()
+                    .halftone(h.clone())
+                    .modules(ModuleShape::Dots { size: 0.9 }),
+                3,
+            ),
+            ("v8", Style::new().halftone(h.clone()), 8),
+        ] {
+            let qr = code(&style, version, Ecc::M);
+            let label = format!("{name} {label} v{version}");
+            let report = style.strict().check(&qr);
+            assert!(report.ok() && report.scannable, "{label}: {report:?}");
+            assert!(
+                report
+                    .warnings
+                    .iter()
+                    .any(|w| matches!(w, Warning::GlassNeedsZxing { .. })),
+                "{label}: texture 1 drops rqrr"
+            );
+            if let Err(e) = verify_style(&style, &qr, TEXT) {
+                panic!("{label}: {e}");
+            }
+        }
+    }
+}
+
 /// Opacity under about 0.95 warns `GlassLowReadability` by default and is
 /// refused under strict checks; full opacity never warns (W20261124091813).
 #[test]
