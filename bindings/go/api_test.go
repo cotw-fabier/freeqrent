@@ -224,16 +224,17 @@ func TestErrors(t *testing.T) {
 			map[string]any{"ecc": "H", "max_version": 40.0}},
 		{"invalid_version_range", "hi", NewStyle(WithEncoding(Encoding{MinVersion: Ptr[uint8](10), MaxVersion: Ptr[uint8](5)})),
 			map[string]any{"min": 10.0, "max": 5.0}},
-		{"contrast_too_low", "hi", NewStyle(WithToken(TokenFG, "#ccc")), map[string]any{"token": "fg"}},
-		{"inverted_colors", "hi", NewStyle(WithToken(TokenFG, "#fff"), WithToken(TokenBG, "#000")), map[string]any{"token": "fg"}},
-		{"quiet_zone_too_small", "hi", NewStyle(WithQuietZone(1)), map[string]any{}},
+		{"contrast_too_low", "hi", NewStyle(WithToken(TokenFG, "#ccc"), WithChecks(ChecksStrict)), map[string]any{"token": "fg"}},
+		{"inverted_colors", "hi", NewStyle(WithToken(TokenFG, "#fff"), WithToken(TokenBG, "#000"), WithChecks(ChecksStrict)), map[string]any{"token": "fg"}},
+		{"quiet_zone_too_small", "hi", NewStyle(WithQuietZone(1), WithChecks(ChecksStrict)), map[string]any{}},
 		{"option_out_of_range", "hi", NewStyle(WithModules(Dots{Size: Ptr(5.0)})),
 			map[string]any{"option": "Dots.size", "value": 5.0, "min": 0.6, "max": 1.0}},
-		{"logo_too_large", "hi", NewStyle(WithLogo(Logo{SVG: Ptr(logoSVG), Scale: Ptr(0.5)})), map[string]any{}},
+		{"logo_too_large", "hi", NewStyle(WithLogo(Logo{SVG: Ptr(logoSVG), Scale: Ptr(0.5)}), WithChecks(ChecksStrict)), map[string]any{}},
 		{"logo_over_alignment", "hi", NewStyle(
 			WithHalftone(Halftone{Image: ImageOf(picture)}),
 			WithLogo(Logo{SVG: Ptr(`<svg viewBox="0 0 1 1"/>`), Scale: Ptr(0.1)}),
 			WithEncoding(Encoding{Version: Ptr[uint8](7), ECC: ECCH}),
+			WithChecks(ChecksStrict),
 		), map[string]any{}},
 		{"turn_needs_round_frame", "hi", NewStyle(WithLogo(Logo{SVG: Ptr(logoSVG)}), WithIdle(IdleLogoTurn)), map[string]any{}},
 		{"replay_too_soon", "hi", NewStyle(WithIntro(IntroOptions{Preset: IntroRipple, DurationMS: Ptr[uint32](1000), Trigger: TriggerEvery{MS: 1500}})),
@@ -320,12 +321,20 @@ func TestCheckReport(t *testing.T) {
 	if !r.OK || len(r.Warnings) == 0 || r.Code.Version == 0 || r.Code.Size != 17+4*r.Code.Version || r.Err() != nil {
 		t.Fatalf("%+v", r)
 	}
-	r, err = Check(url, NewStyle(WithToken(TokenFG, "#bbb")))
+	r, err = Check(url, NewStyle(WithToken(TokenFG, "#bbb"), WithChecks(ChecksStrict)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var e *Error
 	if r.OK || !errors.As(r.Err(), &e) || e.Code != "contrast_too_low" {
+		t.Fatalf("%+v", r)
+	}
+	// By default (checks lenient) it renders, with a warning of the same name.
+	r, err = Check(url, NewStyle(WithToken(TokenFG, "#bbb")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.OK || r.Scannable || len(r.Warnings) == 0 || r.Warnings[0].Code != "contrast_too_low" {
 		t.Fatalf("%+v", r)
 	}
 	// A report for a style render refuses, but not for a document that's wrong.
@@ -446,7 +455,7 @@ func TestConcurrentCallsAgree(t *testing.T) {
 				if _, err := Check(url, styles[i]); err != nil {
 					errs <- err
 				}
-				if _, err := Render(url, Document(`{"palette":{"fg":"#eee"}}`)); err == nil {
+				if _, err := Render(url, Document(`{"palette":{"fg":"#eee"},"checks":"strict"}`)); err == nil {
 					errs <- errors.New("a refused style rendered")
 				}
 			}

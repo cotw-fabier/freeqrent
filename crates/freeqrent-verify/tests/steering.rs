@@ -8,7 +8,7 @@ use freeqrent::{
     AlignmentShape, AlignmentStyle, Ecc, Emphasis, Fit, HALFTONE_DAMAGE_BUDGET, Halftone, QrCode,
     QrMatrix, Style, Version,
 };
-use freeqrent_verify::{Bar, verify_style, verify_with};
+use freeqrent_verify::{Bar, Guarantee, verify_style, verify_with};
 
 const PICTURES: [&str; 5] = ["disc", "gradient", "rings", "photo", "logo"];
 
@@ -19,7 +19,7 @@ fn pinned(version: u8, ecc: Ecc) -> freeqrent::QrBuilder {
 }
 
 fn share(qr: &QrMatrix, style: &Style) -> f64 {
-    let s = style.check(qr).steering.unwrap();
+    let s = style.strict().check(qr).steering.unwrap();
     s.matched_modules as f64 / s.code_modules as f64
 }
 
@@ -35,7 +35,7 @@ fn steered_codes_scan_and_follow_the_picture() {
                     continue; // v2-H can't hold the URL
                 };
                 assert_eq!(qr.ecc(), ecc, "steering never boosts the ECC level");
-                let report = style.check(&qr);
+                let report = style.strict().check(&qr);
                 assert!(report.ok() && report.warnings.is_empty(), "{report:?}");
                 if let Err(e) = verify_style(&style, &qr, text) {
                     panic!("{kind} v{version} {ecc:?}: {e}");
@@ -63,7 +63,15 @@ fn steering_off_is_the_standard_encoding() {
     let b = pinned(10, Ecc::M);
     let qr = b.encode_text_for("HELLO", &style).unwrap();
     assert_eq!(qr, b.boost_ecc(false).encode_text("HELLO").unwrap());
-    assert_eq!(style.check(&qr).steering.unwrap().steerable_modules, 0);
+    assert_eq!(
+        style
+            .strict()
+            .check(&qr)
+            .steering
+            .unwrap()
+            .steerable_modules,
+        0
+    );
 }
 
 #[test]
@@ -81,7 +89,11 @@ fn steered_outlines_fit() {
             .boost_ecc(false)
             .encode_text(text)
             .unwrap();
-        let unsteered = Style::new().alignment(outline).check(&qr).ecc_budget_used;
+        let unsteered = Style::new()
+            .alignment(outline)
+            .strict()
+            .check(&qr)
+            .ecc_budget_used;
         let style = Style::new()
             .alignment(outline)
             .halftone(Halftone::new(picture("photo", 120)));
@@ -89,7 +101,7 @@ fn steered_outlines_fit() {
             .encode_text_for(text, &style)
             .unwrap();
         // Measured: 0.55–1.44 unsteered, 0–0.44 steered.
-        let used = style.check(&qr).ecc_budget_used;
+        let used = style.strict().check(&qr).ecc_budget_used;
         assert!(
             used <= unsteered / 2.0 && used < 0.5,
             "v{version}: {used} vs {unsteered}"

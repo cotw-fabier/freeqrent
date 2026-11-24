@@ -8,6 +8,7 @@ use freeqrent::{
     AlignmentShape, AlignmentStyle, Corner, Ecc, Emphasis, EyeShape, FinderStyle, ModuleShape,
     Palette, QrCode, RingShape, Style, TimingStyle, Version,
 };
+use freeqrent_verify::Guarantee;
 
 const RINGS: [RingShape; 6] = [
     RingShape::Square,
@@ -111,7 +112,7 @@ fn outline_emphasis_scans_within_budget() {
                 .version(Version::new(version).unwrap())
                 .encode_text("HTTPS://EXAMPLE.COM")
                 .unwrap();
-            if !style.check(&qr).ok() {
+            if !style.strict().check(&qr).ok() {
                 continue;
             }
             rendered += 1;

@@ -86,6 +86,7 @@ const VALUES = new Set([
   'border',
   'shadow',
   'spread',
+  'checks',
   'effect',
   'texture',
   'caption',
@@ -669,6 +670,9 @@ function parse(argv, io = nodeIo) {
       case 'spread':
         s.spread = oneOf(flag, v, ['modules', 'regions']);
         break;
+      case 'checks':
+        s.checks = oneOf(flag, v, ['strict', 'lenient', 'off']);
+        break;
       case 'effect':
         s.effect = effect(flag, v);
         break;
@@ -936,6 +940,7 @@ function build(s, text, io) {
   if (s.quietZone !== undefined) doc.quiet_zone = s.quietZone;
   if (has('allow-inverted')) doc.allow_inverted = true;
   if (has('allow-unscannable')) doc.allow_unscannable = true;
+  if (s.checks !== undefined) doc.checks = s.checks;
   if (has('pretty')) doc.minify = false;
 
   if (s.frame !== undefined) doc.frame = frame('frame', s.frame, s.frameRing);

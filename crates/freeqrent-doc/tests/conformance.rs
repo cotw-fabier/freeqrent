@@ -139,7 +139,8 @@ fn documents_and_results_fit_the_schema() {
     }
 }
 
-/// Every code the suite renders scans, held to its own report's bar.
+/// Every code the suite renders scans, held to its own report's bar,
+/// except those rendered past an error (`checks` lenient or off).
 #[test]
 fn rendered_cases_scan() {
     let mut verified = 0;
@@ -164,6 +165,10 @@ fn rendered_cases_scan() {
             continue;
         }
         let (s, qr) = freeqrent_doc::prepare(Payload::Text(&text), &style).unwrap();
+        // A code rendered past an error is outside the guarantee (SPEC §9).
+        if !s.check(&qr).scannable {
+            continue;
+        }
         freeqrent_verify::verify_style(&s, &qr, &text)
             .unwrap_or_else(|e| panic!("{:?}: {e:?}", field(&case, "name")));
         verified += 1;

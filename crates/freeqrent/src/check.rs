@@ -138,6 +138,123 @@ pub const GLASS_RESOLUTION: u8 = 16;
 /// which a code warns [`Warning::LargeOutput`].
 pub const LARGE_OUTPUT_BYTES: usize = 1_000_000;
 
+/// How strictly [`Style::check`](crate::Style::check) holds a style to
+/// what was measured to scan (SPEC §9; W20261124091813). Every error is
+/// either a *readability* error (a measured risk: the code can be drawn,
+/// some scanners may miss it) or a *hard* one (the code can't be drawn as
+/// asked, or certainly won't decode).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Checks {
+    /// Refuses every error, readability and hard alike: the guarantee
+    /// that a rendered code scans.
+    Strict,
+    /// The default. Readability errors render, each as a warning
+    /// ([`Warning::Unchecked`], or the same-named glass warning), and
+    /// [`ScanReport::scannable`] is false. Hard errors are refused.
+    #[default]
+    Lenient,
+    /// Nothing is refused. Every error becomes a warning and the code
+    /// renders as well as it can: options outside their range are clamped
+    /// into it and options that can't be combined are left out (SPEC §9
+    /// lists what each error draws).
+    Off,
+}
+
+/// Options whose range is a scan measurement on one side, with the hard
+/// bounds past which the value stops making sense (SPEC §9): inside the
+/// hard bounds, an out-of-range value is a readability error, drawn as
+/// given under [`Checks::Lenient`]; past them, or NaN, it is a hard error
+/// and [`Checks::Off`] clamps it to the hard bounds. Every other range is
+/// physical: out of it is a hard error, clamped to the range.
+const MEASURED: &[(&str, f32, f32)] = &[
+    ("Square.gap", 0.0, 0.45),
+    ("Dots.size", 0.05, 1.0),
+    ("Effect::Glow radius", 0.05, 1.0),
+    ("Effect::Glow strength", 0.0, 1.0),
+    ("Effect::Emboss depth", 0.05, 0.5),
+    ("Effect::Sketch roughness", 0.02, 0.5),
+    ("Texture::Grain amount", 0.02, 0.5),
+    ("Texture::Scanlines opacity", 0.05, 1.0),
+    ("Texture::Ink fade", 0.05, 1.0),
+    ("Texture::Scanlines opacity + Texture::Ink fade", 0.0, 2.0),
+    ("Glass.lens", 0.1, 1.0),
+];
+
+/// Errors as they are found, each marked hard or not (readability).
+#[derive(Default)]
+pub(crate) struct Found {
+    list: Vec<(RenderError, bool)>,
+}
+
+impl Found {
+    /// A readability error: a measured risk.
+    fn soft(&mut self, e: RenderError) {
+        self.list.push((e, false));
+    }
+
+    /// A hard error: can't be drawn as asked, or certainly won't decode.
+    fn hard(&mut self, e: RenderError) {
+        self.list.push((e, true));
+    }
+
+    /// Holds `value` to `min`–`max` (NaN fails). Out of range, it is a
+    /// hard error and clamped, unless [`MEASURED`] lists the option and the
+    /// value is within its hard bounds: then a readability error, and kept.
+    fn range(&mut self, option: &'static str, value: &mut f32, min: f32, max: f32) {
+        if *value >= min && *value <= max {
+            return;
+        }
+        let e = RenderError::OptionOutOfRange {
+            option,
+            value: *value,
+            min,
+            max,
+        };
+        let hard = MEASURED.iter().find(|m| m.0 == option);
+        match hard {
+            Some(&(_, lo, hi)) if *value >= lo && *value <= hi => self.soft(e),
+            Some(&(_, lo, hi)) => {
+                self.hard(e);
+                *value = if value.is_nan() {
+                    min
+                } else {
+                    value.clamp(lo, hi)
+                };
+            }
+            None => {
+                self.hard(e);
+                *value = if value.is_nan() {
+                    min
+                } else {
+                    value.clamp(min, max)
+                };
+            }
+        }
+    }
+
+    /// [`Found::range`] for whole numbers; their ranges are all physical.
+    fn range_int<T: Copy + Into<f64>>(
+        &mut self,
+        option: &'static str,
+        value: &mut T,
+        min: T,
+        max: T,
+    ) {
+        let (v, lo, hi) = ((*value).into(), min.into(), max.into());
+        if v >= lo && v <= hi {
+            return;
+        }
+        self.hard(RenderError::OptionOutOfRange {
+            option,
+            value: v as f32,
+            min: lo as f32,
+            max: hi as f32,
+        });
+        *value = if v < lo { min } else { max };
+    }
+}
+
 /// A reason a code isn't rendered.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -451,6 +568,12 @@ pub enum Warning {
         /// The estimated size of the layer's PNG.
         bytes: usize,
     },
+    /// An error rendered anyway, under [`Checks::Lenient`] (readability
+    /// errors) or [`Checks::Off`] (every error), with the code drawn as
+    /// SPEC §9 says for that error. [`ScanReport::scannable`] is false.
+    /// The three glass limits keep their own warnings
+    /// ([`Warning::GlassHaloTooNarrow`] and the two after it).
+    Unchecked(RenderError),
 }
 
 /// Intros longer than this raise [`Warning::LongIntro`] (SPEC §8.1).
@@ -539,6 +662,7 @@ impl fmt::Display for Warning {
                 "the glass layer is about {} KB; a lower glass resolution (baked) or a smaller code makes it smaller",
                 bytes.div_ceil(1000)
             ),
+            Warning::Unchecked(e) => write!(f, "{e}; rendered anyway, so it may not scan"),
         }
     }
 }
@@ -565,9 +689,9 @@ pub struct ScanReport {
     /// (SPEC §7.8).
     #[cfg(feature = "halftone")]
     pub steering: Option<Steering>,
-    /// False when [`Style::allow_unscannable`](crate::Style::allow_unscannable)
-    /// turned an error into a warning: the code renders, outside the
-    /// guarantee that it scans (SPEC §9).
+    /// False when an error was rendered anyway, as a warning
+    /// ([`Checks::Lenient`] or [`Checks::Off`]): the code renders, outside
+    /// the guarantee that it scans (SPEC §9).
     pub scannable: bool,
 }
 
@@ -585,171 +709,178 @@ pub const EMBOSS_MAX: f32 = 0.12;
 /// The roughest sketch (SPEC §7.5).
 pub const SKETCH_MAX: f32 = 0.15;
 
-fn in_range(errors: &mut Vec<RenderError>, option: &'static str, value: f32, min: f32, max: f32) {
-    // Written so that NaN fails.
-    if !(value >= min && value <= max) {
-        errors.push(RenderError::OptionOutOfRange {
-            option,
-            value,
-            min,
-            max,
-        });
-    }
+/// Checks `style` against `qr` at its [`Checks`] level.
+pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
+    resolve(style, qr).0
 }
 
-pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
-    let mut errors = Vec::new();
+/// Every error `style` has on `qr`, whatever its [`Checks`] level: what
+/// fitting a code to a style (`QrBuilder::encode_text_for`) steers clear of.
+pub(crate) fn raw_errors(style: &Style, qr: &QrMatrix) -> Vec<RenderError> {
+    let mut s = style.clone();
+    let mut found = Found::default();
     let mut warnings = Vec::new();
+    examine(&mut s, qr, &mut found, &mut warnings);
+    found.list.into_iter().map(|(e, _)| e).collect()
+}
 
-    match style.modules {
-        ModuleShape::Square { gap } => in_range(&mut errors, "Square.gap", gap, 0.0, 0.25),
-        ModuleShape::Rounded { radius } => {
-            in_range(&mut errors, "Rounded.radius", radius, 0.0, 0.5)
+/// The report at `style`'s [`Checks`] level, and the style to draw: the
+/// same style, except under [`Checks::Off`] with hard errors, where options
+/// outside their range are clamped and options that can't be combined are
+/// left out (SPEC §9).
+pub(crate) fn resolve(style: &Style, qr: &QrMatrix) -> (ScanReport, Style) {
+    let mut s = style.clone();
+    let mut found = Found::default();
+    let mut warnings = Vec::new();
+    let mut report = examine(&mut s, qr, &mut found, &mut warnings);
+    let mut errors = Vec::new();
+    for (e, hard) in found.list {
+        let refuse = match style.checks {
+            Checks::Strict => true,
+            Checks::Lenient => hard,
+            Checks::Off => false,
+        };
+        if refuse {
+            errors.push(e);
+        } else {
+            report.scannable = false;
+            warnings.push(match e {
+                RenderError::GlassHaloTooNarrow { halo } => Warning::GlassHaloTooNarrow { halo },
+                RenderError::GlassFinderContrast { delta_l, plate } => {
+                    Warning::GlassFinderContrast { delta_l, plate }
+                }
+                RenderError::GlassTargetsTooWeak { dark, light } => {
+                    Warning::GlassTargetsTooWeak { dark, light }
+                }
+                e => Warning::Unchecked(e),
+            });
         }
+    }
+    report.errors = errors;
+    report.warnings = warnings;
+    (report, s)
+}
+
+/// Every check, on a copy of the style that range checks clamp and
+/// conflicts trim (used only under [`Checks::Off`]). Errors go to `found`;
+/// the report's `errors` and `warnings` are filled in by [`resolve`].
+fn examine(
+    s: &mut Style,
+    qr: &QrMatrix,
+    found: &mut Found,
+    warnings: &mut Vec<Warning>,
+) -> ScanReport {
+    match &mut s.modules {
+        ModuleShape::Square { gap } => found.range("Square.gap", gap, 0.0, 0.25),
+        ModuleShape::Rounded { radius } => found.range("Rounded.radius", radius, 0.0, 0.5),
         ModuleShape::Dots { size } => {
-            in_range(&mut errors, "Dots.size", size, 0.6, 1.0);
-            if (0.6..0.75).contains(&size) {
-                warnings.push(Warning::SmallDots { size });
+            found.range("Dots.size", size, 0.6, 1.0);
+            if (0.6..0.75).contains(size) {
+                warnings.push(Warning::SmallDots { size: *size });
             }
         }
         ModuleShape::Liquid { smoothness } => {
-            in_range(&mut errors, "Liquid.smoothness", smoothness, 0.0, 1.0)
+            found.range("Liquid.smoothness", smoothness, 0.0, 1.0)
         }
-        ModuleShape::Bars { radius, .. } => in_range(&mut errors, "Bars.radius", radius, 0.0, 0.5),
+        ModuleShape::Bars { radius, .. } => found.range("Bars.radius", radius, 0.0, 0.5),
     }
 
-    match style.quiet_zone {
-        0 | 1 => errors.push(RenderError::QuietZoneTooSmall {
-            modules: style.quiet_zone,
+    match s.quiet_zone {
+        0 | 1 => found.soft(RenderError::QuietZoneTooSmall {
+            modules: s.quiet_zone,
         }),
         2 | 3 => warnings.push(Warning::NarrowQuietZone {
-            modules: style.quiet_zone,
+            modules: s.quiet_zone,
         }),
         _ => {}
     }
 
-    match style.frame {
-        Frame::RoundedSquare(r) => in_range(
-            &mut errors,
-            "Frame::RoundedSquare radius",
-            r,
-            0.0,
-            style.quiet_zone as f32,
-        ),
-        Frame::Circle { filler_density, .. } => in_range(
-            &mut errors,
-            "Frame::Circle filler_density",
-            filler_density,
-            0.0,
-            1.0,
-        ),
+    let quiet = s.quiet_zone as f32;
+    match &mut s.frame {
+        Frame::RoundedSquare(r) => found.range("Frame::RoundedSquare radius", r, 0.0, quiet),
+        Frame::Circle { filler_density, .. } => {
+            found.range("Frame::Circle filler_density", filler_density, 0.0, 1.0)
+        }
         Frame::Square | Frame::None => {}
     }
-    match style.border {
-        Some(Border::Solid { width }) => {
-            in_range(&mut errors, "Border::Solid width", width, 0.1, 2.0)
-        }
-        Some(Border::Double { width }) => {
-            in_range(&mut errors, "Border::Double width", width, 0.3, 3.0)
-        }
+    match &mut s.border {
+        Some(Border::Solid { width }) => found.range("Border::Solid width", width, 0.1, 2.0),
+        Some(Border::Double { width }) => found.range("Border::Double width", width, 0.3, 3.0),
         _ => {}
     }
-    match style.effect {
+    match &mut s.effect {
         Some(Effect::Glow { radius, strength }) => {
-            in_range(&mut errors, "Effect::Glow radius", radius, 0.05, 0.5);
-            in_range(
-                &mut errors,
-                "Effect::Glow strength",
-                strength,
-                0.0,
-                GLOW_MAX,
-            );
+            found.range("Effect::Glow radius", radius, 0.05, 0.5);
+            found.range("Effect::Glow strength", strength, 0.0, GLOW_MAX);
         }
         Some(Effect::Emboss { depth }) => {
-            in_range(&mut errors, "Effect::Emboss depth", depth, 0.05, EMBOSS_MAX)
+            found.range("Effect::Emboss depth", depth, 0.05, EMBOSS_MAX)
         }
-        Some(Effect::Sketch { roughness }) => in_range(
-            &mut errors,
-            "Effect::Sketch roughness",
-            roughness,
-            0.02,
-            SKETCH_MAX,
-        ),
+        Some(Effect::Sketch { roughness }) => {
+            found.range("Effect::Sketch roughness", roughness, 0.02, SKETCH_MAX)
+        }
         _ => {}
     }
-    if let Some(c) = &style.caption {
-        in_range(&mut errors, "Caption.size", c.size, 1.0, 4.0);
-        in_range(
-            &mut errors,
-            "Caption.tracking",
-            c.tracking as f32,
-            0.0,
-            50.0,
-        );
+    if let Some(c) = &mut s.caption {
+        found.range("Caption.size", &mut c.size, 1.0, 4.0);
+        found.range_int("Caption.tracking", &mut c.tracking, 0, 50);
     }
-    for texture in &style.textures {
-        match *texture {
-            Texture::Grain { amount } => {
-                in_range(&mut errors, "Texture::Grain amount", amount, 0.02, 0.1)
+    for texture in &mut s.textures {
+        match texture {
+            Texture::Grain { amount } => found.range("Texture::Grain amount", amount, 0.02, 0.1),
+            Texture::Scanlines { opacity } => {
+                found.range("Texture::Scanlines opacity", opacity, 0.05, 0.3)
             }
-            Texture::Scanlines { opacity } => in_range(
-                &mut errors,
-                "Texture::Scanlines opacity",
-                opacity,
-                0.05,
-                0.3,
-            ),
-            Texture::Ink { fade } => in_range(&mut errors, "Texture::Ink fade", fade, 0.05, 0.3),
+            Texture::Ink { fade } => found.range("Texture::Ink fade", fade, 0.05, 0.3),
         }
     }
     // Measured: lines over faded modules lose codes when both are strong.
-    if let (Some(lines), Some(fade)) = (style.scanlines(), style.ink_fade())
+    if let (Some(lines), Some(fade)) = (s.scanlines(), s.ink_fade())
         && lines >= 0.05
         && fade >= 0.05
     {
-        let both = lines + fade;
-        in_range(
-            &mut errors,
+        let mut both = lines + fade;
+        found.range(
             "Texture::Scanlines opacity + Texture::Ink fade",
-            both,
+            &mut both,
             0.0,
             0.4,
         );
     }
-    if let Some(offset) = style.shadow {
-        in_range(&mut errors, "Style.shadow offset", offset, 0.25, 3.0);
-        if style.frame == Frame::None || style.palette.background().alpha() < 1.0 {
-            errors.push(RenderError::ShadowNeedsBackground);
+    if let Some(offset) = &mut s.shadow {
+        found.range("Style.shadow offset", offset, 0.25, 3.0);
+        if s.frame == Frame::None || s.palette.background().alpha() < 1.0 {
+            found.hard(RenderError::ShadowNeedsBackground);
+            s.shadow = None;
         }
     }
-    if let Some(logo) = &style.logo {
-        in_range(&mut errors, "Logo.scale", logo.scale, 0.0, 0.5);
-        in_range(&mut errors, "Logo.padding", logo.padding, 0.0, 4.0);
-        if let LogoShape::Rounded(r) = logo.shape {
-            in_range(&mut errors, "LogoShape::Rounded radius", r, 0.0, f32::MAX);
+    if let Some(logo) = &mut s.logo {
+        found.range("Logo.scale", &mut logo.scale, 0.0, 0.5);
+        found.range("Logo.padding", &mut logo.padding, 0.0, 4.0);
+        if let LogoShape::Rounded(r) = &mut logo.shape {
+            found.range("LogoShape::Rounded radius", r, 0.0, f32::MAX);
         }
-        if let Some(width) = logo.frame_width {
-            in_range(&mut errors, "Logo.frame_width", width, 0.1, 2.5);
+        if let Some(width) = &mut logo.frame_width {
+            found.range("Logo.frame_width", width, 0.1, 2.5);
         }
-        if let Some(moon) = logo.moon {
-            in_range(&mut errors, "Logo.moon_size", moon, 0.4, 4.0);
+        if let Some(moon) = &mut logo.moon {
+            found.range("Logo.moon_size", moon, 0.4, 4.0);
         }
     }
 
-    #[cfg_attr(not(feature = "halftone"), allow(unused_mut))]
-    let mut scannable = true;
     #[cfg(feature = "halftone")]
-    check_halftone(style, &mut errors, &mut warnings);
+    check_halftone(s, found, warnings);
     #[cfg(feature = "halftone")]
-    let glass_contrast = check_glass(style, qr, &mut errors, &mut warnings, &mut scannable);
+    let glass_contrast = check_glass(s, qr, found, warnings);
     #[cfg(not(feature = "halftone"))]
     let glass_contrast: Option<f32> = None;
     #[cfg(feature = "animate")]
-    check_intro(style, qr, &mut errors, &mut warnings);
-    check_scan_boxes(style, &mut errors, &mut warnings);
-    check_target(style, qr, &mut errors, &mut warnings);
-    let ecc_budget_used = budget(style, qr, &mut errors);
+    check_intro(s, qr, found, warnings);
+    check_scan_boxes(s, found, warnings);
+    check_target(s, qr, found, warnings);
+    let ecc_budget_used = budget(s, qr, found);
 
+    let style = &*s;
     let palette = &style.palette;
     if palette.background().is_translucent() {
         warnings.push(Warning::TranslucentBackground);
@@ -769,7 +900,7 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
         };
         min_contrast = min_contrast.min(contrast.delta_l);
         if contrast.delta_l < CONTRAST_FLOOR {
-            errors.push(RenderError::ContrastTooLow {
+            found.soft(RenderError::ContrastTooLow {
                 token,
                 delta_l: contrast.delta_l,
             });
@@ -783,7 +914,7 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
             if style.allow_inverted {
                 warnings.push(Warning::Inverted { token });
             } else {
-                errors.push(RenderError::InvertedColors { token });
+                found.soft(RenderError::InvertedColors { token });
             }
         }
     }
@@ -793,7 +924,7 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
     if style.logo.as_ref().is_some_and(|l| l.frame.is_some()) {
         let contrast = palette.contrast(Token::LogoFrame);
         if contrast.delta_l < FRAME_FLOOR {
-            errors.push(RenderError::ContrastTooLow {
+            found.soft(RenderError::ContrastTooLow {
                 token: Token::LogoFrame,
                 delta_l: contrast.delta_l,
             });
@@ -801,14 +932,14 @@ pub(crate) fn check(style: &Style, qr: &QrMatrix) -> ScanReport {
     }
 
     ScanReport {
-        errors,
-        warnings,
+        errors: Vec::new(),
+        warnings: Vec::new(),
         min_contrast,
         ecc_budget_used,
         logo_scale: style.logo.as_ref().map(|_| logo_scale(style, qr)),
         #[cfg(feature = "halftone")]
         steering: steering(style, qr),
-        scannable,
+        scannable: true,
     }
 }
 
@@ -846,21 +977,20 @@ fn steering(style: &Style, qr: &QrMatrix) -> Option<Steering> {
 /// A picture's options. In color, the gap between the dark and light
 /// bands is the code's contrast, judged like a token's (reported as `fg`).
 #[cfg(feature = "halftone")]
-fn check_halftone(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut Vec<Warning>) {
+fn check_halftone(s: &mut Style, found: &mut Found, warnings: &mut Vec<Warning>) {
     use crate::halftone::{Clarity, Ink};
-    let Some(h) = &style.halftone else {
+    let Some(h) = &mut s.halftone else {
         return;
     };
-    if let Clarity::Uniform(c) = h.clarity {
-        in_range(errors, "Clarity::Uniform", c, 0.0, 1.0);
+    if let Clarity::Uniform(c) = &mut h.clarity {
+        found.range("Clarity::Uniform", c, 0.0, 1.0);
     }
     if let Ink::Color { .. } = h.ink {
-        let (dark, light) = h.bands;
-        in_range(errors, "Halftone.bands dark", dark, 0.0, 1.0);
-        in_range(errors, "Halftone.bands light", light, 0.0, 1.0);
-        let gap = light - dark;
+        found.range("Halftone.bands dark", &mut h.bands.0, 0.0, 1.0);
+        found.range("Halftone.bands light", &mut h.bands.1, 0.0, 1.0);
+        let gap = h.bands.1 - h.bands.0;
         if gap < CONTRAST_FLOOR {
-            errors.push(RenderError::ContrastTooLow {
+            found.soft(RenderError::ContrastTooLow {
                 token: Token::Fg,
                 delta_l: gap,
             });
@@ -874,130 +1004,126 @@ fn check_halftone(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut V
 }
 
 /// Glass ink (SPEC §7.9): its options' ranges, what it can't be combined
-/// with, and the measured limits, some of which
-/// [`Style::allow_unscannable`] turns into warnings. Returns the finder
-/// contrast, the code's own.
+/// with (hard errors, left out under [`Checks::Off`]), and the measured
+/// limits (readability errors). Returns the finder contrast, the code's
+/// own.
 #[cfg(feature = "halftone")]
 fn check_glass(
-    style: &Style,
+    s: &mut Style,
     qr: &QrMatrix,
-    errors: &mut Vec<RenderError>,
+    found: &mut Found,
     warnings: &mut Vec<Warning>,
-    scannable: &mut bool,
 ) -> Option<f32> {
     use crate::scanbox::{FinderStyle, TimingStyle};
-    let h = style.halftone.as_ref()?;
-    let g = h.glass()?;
-    if h.source.is_none() {
-        errors.push(RenderError::GlassNeedsSource);
+    let quiet = s.quiet_zone;
+    let h = s.halftone.as_mut()?;
+    let has_source = h.source.is_some();
+    let clarity = h.clarity != crate::halftone::Clarity::default();
+    let g = h.glass_mut()?;
+    if !has_source {
+        found.hard(RenderError::GlassNeedsSource);
     }
-    in_range(errors, "Glass.border", g.border, 0.0, 0.25);
-    in_range(
-        errors,
-        "Glass.halo",
-        g.halo as f32,
-        0.0,
-        style.quiet_zone as f32,
-    );
+    found.range("Glass.border", &mut g.border, 0.0, 0.25);
+    found.range_int("Glass.halo", &mut g.halo, 0, quiet);
     let min_lens = if g.is_vector() {
         GLASS_VECTOR_MIN_LENS
     } else {
         0.5
     };
-    in_range(errors, "Glass.lens", g.lens, min_lens, 1.0);
-    in_range(
-        errors,
-        "Glass.core",
-        g.core,
-        0.3,
-        if g.lens.is_nan() {
-            1.0
-        } else {
-            g.lens.min(1.0)
-        },
-    );
-    in_range(errors, "Glass.targets dark", g.targets.0, 0.0, 1.0);
-    in_range(errors, "Glass.targets light", g.targets.1, 0.0, 1.0);
-    in_range(errors, "Glass.union", g.union, 0.2, 0.8);
-    in_range(errors, "Glass.frost", g.frost, 0.0, 0.3);
-    in_range(errors, "Glass.finders dark", g.finders.0, 0.0, 1.0);
-    in_range(errors, "Glass.finders plate", g.finders.1, 0.0, 1.0);
-    in_range(errors, "Glass.resolution", g.resolution as f32, 8.0, 32.0);
+    found.range("Glass.lens", &mut g.lens, min_lens, 1.0);
+    let lens = g.lens.min(1.0);
+    found.range("Glass.core", &mut g.core, 0.3_f32.min(lens), lens);
+    found.range("Glass.targets dark", &mut g.targets.0, 0.0, 1.0);
+    found.range("Glass.targets light", &mut g.targets.1, 0.0, 1.0);
+    found.range("Glass.union", &mut g.union, 0.2, 0.8);
+    found.range("Glass.frost", &mut g.frost, 0.0, 0.3);
+    found.range("Glass.finders dark", &mut g.finders.0, 0.0, 1.0);
+    found.range("Glass.finders plate", &mut g.finders.1, 0.0, 1.0);
+    found.range_int("Glass.resolution", &mut g.resolution, 8, 32);
+    let g = *g;
 
-    // What glass doesn't draw, refused rather than ignored.
+    // What glass doesn't draw: hard errors, left out under `Checks::Off`.
     let mut unsupported = |yes: bool, option: &'static str| {
         if yes {
-            errors.push(RenderError::GlassUnsupported { option });
+            found.hard(RenderError::GlassUnsupported { option });
         }
+        yes
     };
-    unsupported(matches!(style.frame, Frame::Circle { .. }), "Frame::Circle");
-    unsupported(style.modules != ModuleShape::SQUARE, "Style.modules");
-    unsupported(style.finders != FinderStyle::default(), "Style.finders");
+    if unsupported(matches!(s.frame, Frame::Circle { .. }), "Frame::Circle") {
+        s.frame = Frame::Square;
+    }
+    if unsupported(s.modules != ModuleShape::SQUARE, "Style.modules") {
+        s.modules = ModuleShape::SQUARE;
+    }
+    if unsupported(s.finders != FinderStyle::default(), "Style.finders") {
+        s.finders = FinderStyle::default();
+    }
     let square = |r: RingShape, e: EyeShape| r == RingShape::Square && e == EyeShape::Square;
-    unsupported(
-        matches!(style.alignment.shape, AlignmentShape::Own { outer, eye } if !square(outer, eye)),
+    if unsupported(
+        matches!(s.alignment.shape, AlignmentShape::Own { outer, eye } if !square(outer, eye)),
         "AlignmentShape::Own",
-    );
-    unsupported(style.timing == TimingStyle::Dashed, "TimingStyle::Dashed");
-    unsupported(
-        scene::data_tokens(style).len() > 1,
-        "data colors (fg.2–fg.4)",
-    );
-    unsupported(!style.textures.is_empty(), "Style.textures");
+    ) {
+        s.alignment.shape = AlignmentShape::Match;
+    }
+    if unsupported(s.timing == TimingStyle::Dashed, "TimingStyle::Dashed") {
+        s.timing = TimingStyle::Plain;
+    }
+    if unsupported(scene::data_tokens(s).len() > 1, "data colors (fg.2–fg.4)") {
+        for t in [Token::Fg2, Token::Fg3, Token::Fg4] {
+            s.palette.unset(t);
+        }
+    }
+    if unsupported(!s.textures.is_empty(), "Style.textures") {
+        s.textures.clear();
+    }
     // Effects filter the glass, not the photo (W20261123231733). Sketch
     // holds on both renders and every effect on vector glass; over the
     // baked layer a glow lost the bar (dusk v11, from strength 0.05) and
     // an emboss lost 11–14 of 40 noise seeds on the rings at v7 at every
     // depth, so those two stay refused there (SPEC §7.9).
-    if !g.is_vector() {
-        unsupported(
-            matches!(style.effect, Some(Effect::Glow { .. })),
+    if !g.is_vector()
+        && (unsupported(
+            matches!(s.effect, Some(Effect::Glow { .. })),
             "Effect::Glow on baked glass",
-        );
-        unsupported(
-            matches!(style.effect, Some(Effect::Emboss { .. })),
+        ) || unsupported(
+            matches!(s.effect, Some(Effect::Emboss { .. })),
             "Effect::Emboss on baked glass",
-        );
+        ))
+    {
+        s.effect = None;
     }
-    unsupported(
-        h.clarity != crate::halftone::Clarity::default(),
-        "Halftone.clarity",
-    );
+    if unsupported(clarity, "Halftone.clarity")
+        && let Some(h) = &mut s.halftone
+    {
+        h.clarity = crate::halftone::Clarity::default();
+    }
     // Intros, palette shifts and the other idles move the photo and glass
     // whole (SPEC §8.3); these two would need the modules: the eyes to
     // pulse, and the read colors to check the band against.
     #[cfg(feature = "animate")]
-    {
-        unsupported(
-            style.idle.contains(&crate::Idle::FinderPulse),
-            "Idle::FinderPulse",
-        );
-        unsupported(style.idle.contains(&crate::Idle::Shimmer), "Idle::Shimmer");
+    for idle in [crate::Idle::FinderPulse, crate::Idle::Shimmer] {
+        let option = if idle == crate::Idle::Shimmer {
+            "Idle::Shimmer"
+        } else {
+            "Idle::FinderPulse"
+        };
+        if unsupported(s.idle.contains(&idle), option) {
+            s.idle.retain(|&i| i != idle);
+        }
     }
 
-    // Measured limits: errors, or warnings when unscannable codes are
-    // allowed.
-    let mut limits = Vec::new();
+    // Measured limits: readability errors.
     if g.halo < 1 {
-        limits.push((
-            RenderError::GlassHaloTooNarrow { halo: g.halo },
-            Warning::GlassHaloTooNarrow { halo: g.halo },
-        ));
+        found.soft(RenderError::GlassHaloTooNarrow { halo: g.halo });
     }
     let (plate, contrast) = (g.finders.1, g.finders.1 - g.finders.0);
     // A hair of slack, so the measured pair (0.92 − 0.30) counts as 0.62.
     let below = |v: f32, floor: f32| v < floor - 1e-4;
     if below(contrast, GLASS_FINDER_FLOOR) || below(plate, GLASS_PLATE_FLOOR) {
-        limits.push((
-            RenderError::GlassFinderContrast {
-                delta_l: contrast,
-                plate,
-            },
-            Warning::GlassFinderContrast {
-                delta_l: contrast,
-                plate,
-            },
-        ));
+        found.soft(RenderError::GlassFinderContrast {
+            delta_l: contrast,
+            plate,
+        });
     } else if below(contrast, GLASS_FINDER_WARNING) {
         warnings.push(Warning::LowContrast {
             token: Token::FinderOuter,
@@ -1007,18 +1133,7 @@ fn check_glass(
     let (dark, light) = g.targets;
     let weak = (dark - GLASS_SAFE_TARGETS.0).max(GLASS_SAFE_TARGETS.1 - light);
     if weak > GLASS_TARGET_MARGIN + 1e-4 {
-        limits.push((
-            RenderError::GlassTargetsTooWeak { dark, light },
-            Warning::GlassTargetsTooWeak { dark, light },
-        ));
-    }
-    for (error, warning) in limits {
-        if style.allow_unscannable {
-            warnings.push(warning);
-            *scannable = false;
-        } else {
-            errors.push(error);
-        }
+        found.soft(RenderError::GlassTargetsTooWeak { dark, light });
     }
     let version = qr.version().number();
     let zxing = if g.is_vector() {
@@ -1035,7 +1150,7 @@ fn check_glass(
     if zxing {
         warnings.push(Warning::GlassNeedsZxing { version });
     }
-    let bytes = crate::glass::estimated_bytes(style, g, qr);
+    let bytes = crate::glass::estimated_bytes(s, &g, qr);
     if bytes > LARGE_OUTPUT_BYTES {
         warnings.push(Warning::LargeOutput { bytes });
     }
@@ -1043,59 +1158,45 @@ fn check_glass(
 }
 
 #[cfg(feature = "animate")]
-fn check_intro(
-    style: &Style,
-    qr: &QrMatrix,
-    errors: &mut Vec<RenderError>,
-    warnings: &mut Vec<Warning>,
-) {
-    if let Some(ms) = style.theme_transition {
-        in_range(errors, "Style.theme_transition", ms as f32, 0.0, 10_000.0);
+fn check_intro(s: &mut Style, qr: &QrMatrix, found: &mut Found, warnings: &mut Vec<Warning>) {
+    if let Some(ms) = &mut s.theme_transition {
+        found.range_int("Style.theme_transition", ms, 0, 10_000);
     }
-    for (token, delta_l) in crate::animate::motion_contrast(style, qr) {
+    for (token, delta_l) in crate::animate::motion_contrast(s, qr) {
         if delta_l < CONTRAST_FLOOR {
             warnings.push(Warning::MotionContrast { token, delta_l });
         }
     }
-    if style.idle.contains(&crate::Idle::LogoTurn) {
-        let round = style.logo.as_ref().is_some_and(|l| match l.frame {
+    if s.idle.contains(&crate::Idle::LogoTurn) {
+        let round = s.logo.as_ref().is_some_and(|l| match l.frame {
             Some(crate::LogoFrame::Orbit) => true,
             Some(_) => l.shape == LogoShape::Circle,
             None => false,
         });
         if !round {
-            errors.push(RenderError::TurnNeedsRoundFrame);
+            found.hard(RenderError::TurnNeedsRoundFrame);
+            s.idle.retain(|&i| i != crate::Idle::LogoTurn);
         }
     }
-    let Some(intro) = &style.intro else {
+    let Some(intro) = &mut s.intro else {
         return;
     };
-    in_range(
-        errors,
-        "Intro.duration_ms",
-        intro.duration_ms as f32,
-        100.0,
-        10_000.0,
-    );
-    in_range(
-        errors,
-        "Intro.delay_ms",
-        intro.delay_ms as f32,
-        0.0,
-        10_000.0,
-    );
-    in_range(errors, "Intro.groups", intro.groups as f32, 2.0, 16.0);
-    if let Some(crate::Ease::Custom(c)) = intro.ease {
-        in_range(errors, "CubicBezier.x1", c.x1, 0.0, 1.0);
-        in_range(errors, "CubicBezier.x2", c.x2, 0.0, 1.0);
-        in_range(errors, "CubicBezier.y1", c.y1, -10.0, 10.0);
-        in_range(errors, "CubicBezier.y2", c.y2, -10.0, 10.0);
+    found.range_int("Intro.duration_ms", &mut intro.duration_ms, 100, 10_000);
+    found.range_int("Intro.delay_ms", &mut intro.delay_ms, 0, 10_000);
+    found.range_int("Intro.groups", &mut intro.groups, 2, 16);
+    if let Some(crate::Ease::Custom(c)) = &mut intro.ease {
+        found.range("CubicBezier.x1", &mut c.x1, 0.0, 1.0);
+        found.range("CubicBezier.x2", &mut c.x2, 0.0, 1.0);
+        found.range("CubicBezier.y1", &mut c.y1, -10.0, 10.0);
+        found.range("CubicBezier.y2", &mut c.y2, -10.0, 10.0);
     }
-    if let crate::Trigger::Every(every_ms) = intro.trigger {
-        in_range(errors, "Trigger::Every", every_ms as f32, 1000.0, 60_000.0);
+    if let crate::Trigger::Every(every_ms) = &mut intro.trigger {
+        found.range_int("Trigger::Every", every_ms, 1000, 60_000);
+        let every_ms = *every_ms;
         let intro_ms = intro.delay_ms.saturating_add(intro.duration_ms);
         if intro.entrance().is_some() && every_ms < intro_ms.saturating_mul(2) {
-            errors.push(RenderError::ReplayTooSoon { every_ms, intro_ms });
+            // Replays as asked under `Checks::Off`, overlapping.
+            found.hard(RenderError::ReplayTooSoon { every_ms, intro_ms });
         }
     }
     if intro.duration_ms > LONG_INTRO_MS {
@@ -1103,7 +1204,7 @@ fn check_intro(
             ms: intro.duration_ms,
         });
     }
-    let count = crate::animate::element_count(style, qr);
+    let count = crate::animate::element_count(s, qr);
     if count > ANIMATED_ELEMENTS {
         warnings.push(Warning::ManyAnimatedElements { count });
     }
@@ -1113,30 +1214,19 @@ fn check_intro(
 const MIN_PX_PER_MODULE: f32 = 3.0;
 const MIN_MM_PER_MODULE: f32 = 0.4;
 
-fn check_target(
-    style: &Style,
-    qr: &QrMatrix,
-    errors: &mut Vec<RenderError>,
-    warnings: &mut Vec<Warning>,
-) {
-    let modules = scene::canvas(style, qr).side as f32;
-    match style.target {
+fn check_target(s: &mut Style, qr: &QrMatrix, found: &mut Found, warnings: &mut Vec<Warning>) {
+    let modules = scene::canvas(s, qr).side as f32;
+    match &mut s.target {
         None => {}
         Some(TargetSize::Pixels(px)) => {
-            let px_per_module = px as f32 / modules;
+            let px_per_module = *px as f32 / modules;
             if px_per_module < MIN_PX_PER_MODULE {
                 warnings.push(Warning::SmallOnScreen { px_per_module });
             }
         }
         Some(TargetSize::Millimeters(mm)) => {
-            in_range(
-                errors,
-                "TargetSize::Millimeters",
-                mm,
-                f32::MIN_POSITIVE,
-                f32::MAX,
-            );
-            let mm_per_module = mm / modules;
+            found.range("TargetSize::Millimeters", mm, f32::MIN_POSITIVE, f32::MAX);
+            let mm_per_module = *mm / modules;
             if mm_per_module < MIN_MM_PER_MODULE {
                 warnings.push(Warning::SmallInPrint { mm_per_module });
             }
@@ -1144,48 +1234,53 @@ fn check_target(
     }
 }
 
-fn check_scan_boxes(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut Vec<Warning>) {
+fn check_scan_boxes(s: &mut Style, found: &mut Found, warnings: &mut Vec<Warning>) {
     let mut rings = Vec::new();
     for corner in scene::CORNERS {
-        let (ring, eye) = style.finders.at(corner);
+        let (mut ring, mut eye) = s.finders.at(corner);
         // A custom ring replaces the shape; its own warning says so.
-        if style.glyphs.get(GlyphPart::Ring, Some(corner)).is_none() {
+        if s.glyphs.get(GlyphPart::Ring, Some(corner)).is_none() {
             rings.push(ring);
         }
-        if let RingShape::Rounded(r) = ring {
-            in_range(errors, "FinderStyle.outer radius", r, 0.0, 2.5);
+        if let RingShape::Rounded(r) = &mut ring {
+            found.range("FinderStyle.outer radius", r, 0.0, 2.5);
         }
-        if let EyeShape::Rounded(r) = eye {
-            in_range(errors, "FinderStyle.eye radius", r, 0.0, 1.5);
+        if let EyeShape::Rounded(r) = &mut eye {
+            found.range("FinderStyle.eye radius", r, 0.0, 1.5);
+        }
+        if (ring, eye) != s.finders.at(corner) {
+            s.finders = s.finders.corner(corner, ring, eye);
         }
     }
-    if let AlignmentShape::Own { outer, eye } = style.alignment.shape {
-        rings.push(outer);
+    if let AlignmentShape::Own { outer, eye } = &mut s.alignment.shape {
+        rings.push(*outer);
         if let RingShape::Rounded(r) = outer {
-            in_range(errors, "AlignmentShape.outer radius", r, 0.0, 2.5);
+            found.range("AlignmentShape.outer radius", r, 0.0, 2.5);
         }
         if let EyeShape::Rounded(r) = eye {
-            in_range(errors, "AlignmentShape.eye radius", r, 0.0, 0.5);
+            found.range("AlignmentShape.eye radius", r, 0.0, 0.5);
         }
     }
     if rings.iter().any(|&r| r != RingShape::Square) {
         warnings.push(Warning::RoundedFinder);
     }
-    check_glyphs(style, errors, warnings);
+    check_glyphs(s, found, warnings);
 }
 
 /// Custom shapes (SPEC §7.1, §7.2): the library can't see inside them, so
 /// they always warn.
-fn check_glyphs(style: &Style, errors: &mut Vec<RenderError>, warnings: &mut Vec<Warning>) {
-    let g = &style.glyphs;
-    if !g.any() {
+fn check_glyphs(s: &mut Style, found: &mut Found, warnings: &mut Vec<Warning>) {
+    if !s.glyphs.any() {
         return;
     }
     #[cfg(feature = "halftone")]
-    if style.halftone.is_some() {
-        errors.push(RenderError::GlyphOnPicture);
+    if s.halftone.is_some() {
+        found.hard(RenderError::GlyphOnPicture);
+        s.glyphs = crate::glyph::Glyphs::default();
+        return;
     }
-    let _ = &errors;
+    let _ = &found;
+    let g = &s.glyphs;
     if g.modules.is_some() {
         warnings.push(Warning::CustomModules);
     }
@@ -1247,20 +1342,33 @@ impl Budget {
 }
 
 /// Spends the error-correction budget (SPEC §7.2 Outline, §7.3 logo) and
-/// returns the worst block's share of its correctable codewords.
-fn budget(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
+/// returns the worst block's share of its correctable codewords. Over the
+/// budget is a readability error while the damage stays within what
+/// Reed–Solomon corrects, and hard past it (the code can't decode); either
+/// way the code is drawn as asked when it renders.
+fn budget(style: &Style, qr: &QrMatrix, found: &mut Found) -> f32 {
     let cleared = scene::cleared(style, qr);
     if cleared.is_empty() && style.logo.is_none() {
         return 0.0;
     }
     let budget = Budget::new(qr, damage_budget(style, qr));
     let share = |damaged: u16| damaged as f32 / budget.correctable as f32;
+    let mut push = |e: RenderError, damaged: u16| {
+        if damaged > budget.correctable {
+            found.hard(e);
+        } else {
+            found.soft(e);
+        }
+    };
     let outline = budget.worst(qr, &cleared, None);
     if outline > budget.allowed {
-        errors.push(RenderError::EccBudgetExceeded {
-            damaged: outline,
-            allowed: budget.allowed,
-        });
+        push(
+            RenderError::EccBudgetExceeded {
+                damaged: outline,
+                allowed: budget.allowed,
+            },
+            outline,
+        );
         return share(outline);
     }
     let Some(logo) = &style.logo else {
@@ -1274,7 +1382,7 @@ fn budget(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
     let scale = logo_scale(style, qr);
     let (ok, worst) = fits(scale);
     if ok && spares_alignment(style) && !logo::cover(logo, qr, scale).alignment.is_empty() {
-        errors.push(RenderError::LogoOverAlignment);
+        push(RenderError::LogoOverAlignment, 0);
     }
     if !ok {
         // Coverage grows with scale, so search the hundredths below it.
@@ -1287,9 +1395,12 @@ fn budget(style: &Style, qr: &QrMatrix, errors: &mut Vec<RenderError>) -> f32 {
                 hi = mid - 1;
             }
         }
-        errors.push(RenderError::LogoTooLarge {
-            max_scale: lo as f32 / 100.0,
-        });
+        push(
+            RenderError::LogoTooLarge {
+                max_scale: lo as f32 / 100.0,
+            },
+            worst,
+        );
     }
     share(worst)
 }
@@ -1351,19 +1462,199 @@ mod tests {
         })
     }
 
+    /// Every error at every level (SPEC §9): `Strict` refuses it,
+    /// `Lenient` renders a readability error with its warning and refuses a
+    /// hard one, `Off` renders both, to a whole SVG.
+    #[cfg(all(feature = "halftone", feature = "animate"))]
+    #[test]
+    fn every_error_at_every_level() {
+        use crate::{
+            Glass, Glyph, Halftone, Idle, Intro, Logo, Palette, Preset, RasterFormat, Rgba8Image,
+            Trigger,
+        };
+        let code = qr(5, Ecc::M);
+        let image = Rgba8Image::filled(8, 8, [90, 90, 90, 255]).unwrap();
+        let photo = || {
+            Halftone::new(image.clone())
+                .ink(crate::Ink::Glass(Glass::new()))
+                .source(crate::png::encode_rgba(&image), RasterFormat::Png)
+                .unwrap()
+        };
+        let logo = || Logo::svg(r#"<svg viewBox="0 0 1 1"/>"#).unwrap();
+        let readability: Vec<(&str, Style)> = alloc::vec![
+            (
+                "contrast",
+                Style::new().palette(Palette::from_tokens([("fg", "#bbb")]).unwrap()),
+            ),
+            (
+                "inverted",
+                Style::new()
+                    .palette(Palette::from_tokens([("fg", "#fff"), ("bg", "#000")]).unwrap()),
+            ),
+            ("quiet zone", Style::new().quiet_zone(1)),
+            ("quiet zone 0", Style::new().quiet_zone(0)),
+            (
+                "measured range",
+                Style::new().modules(ModuleShape::Dots { size: 0.4 })
+            ),
+            ("glass halo", Style::new().halftone(photo()).quiet_zone(4)),
+        ];
+        let hard: Vec<(&str, Style)> = alloc::vec![
+            (
+                "physical range",
+                Style::new().modules(ModuleShape::Rounded { radius: 0.9 }),
+            ),
+            (
+                "NaN",
+                Style::new().modules(ModuleShape::Dots { size: f32::NAN }),
+            ),
+            ("shadow", Style::new().shadow(1.0).frame(Frame::None)),
+            (
+                "turn",
+                Style::new().logo(logo().scale(0.1)).idle(Idle::LogoTurn),
+            ),
+            (
+                "replay",
+                Style::new().intro(
+                    Intro::new(Preset::Ripple)
+                        .duration_ms(1400)
+                        .trigger(Trigger::Every(2000)),
+                ),
+            ),
+            (
+                "glyph on picture",
+                Style::new()
+                    .halftone(Halftone::new(image.clone()))
+                    .module_glyph(
+                        Glyph::svg(
+                            r#"<svg viewBox="0 0 1 1"><circle cx=".5" cy=".5" r=".5"/></svg>"#
+                        )
+                        .unwrap(),
+                    ),
+            ),
+            (
+                "glass source",
+                Style::new()
+                    .halftone(Halftone::new(image.clone()).ink(crate::Ink::Glass(Glass::new()))),
+            ),
+            (
+                "glass unsupported",
+                Style::new()
+                    .halftone(photo())
+                    .modules(ModuleShape::Dots { size: 0.9 }),
+            ),
+        ];
+        let glass_halo = |s: Style| match s.halftone.as_ref().and_then(|h| h.glass()) {
+            Some(_) => s.clone().halftone({
+                let mut h = s.halftone.clone().unwrap();
+                *h.glass_mut().unwrap() = Glass::new().halo(0);
+                h
+            }),
+            None => s,
+        };
+        let whole = |name: &str, svg: &str| {
+            assert!(svg.starts_with("<svg") && svg.ends_with("</svg>"), "{name}");
+            // Numbers outside embedded files are finite.
+            let text: alloc::string::String = svg
+                .split("data:")
+                .enumerate()
+                .map(|(i, part)| {
+                    if i == 0 {
+                        part
+                    } else {
+                        part.split_once('"').map_or("", |p| p.1)
+                    }
+                })
+                .collect();
+            let bare_inf = text.match_indices("inf").any(|(i, _)| {
+                let b = text.as_bytes();
+                !b.get(i + 3).is_some_and(u8::is_ascii_alphabetic)
+                    && !(i > 0 && b[i - 1].is_ascii_alphabetic())
+            });
+            assert!(!text.contains("NaN") && !bare_inf, "{name}");
+        };
+        for (name, style) in readability {
+            let style = if name == "glass halo" {
+                glass_halo(style)
+            } else {
+                style
+            };
+            let strict = style.clone().checks(Checks::Strict).check(&code);
+            assert!(!strict.ok() && strict.scannable, "{name}: {strict:?}");
+            for level in [Checks::Lenient, Checks::Off] {
+                let s = style.clone().checks(level);
+                let report = s.check(&code);
+                assert!(
+                    report.ok() && !report.scannable,
+                    "{name} {level:?}: {report:?}"
+                );
+                assert!(report.warnings.len() >= strict.errors.len(), "{name}");
+                whole(name, &s.render(&code).unwrap());
+            }
+        }
+        for (name, style) in hard {
+            for level in [Checks::Strict, Checks::Lenient] {
+                let report = style.clone().checks(level).check(&code);
+                assert!(!report.ok(), "{name} {level:?}: {report:?}");
+                assert!(style.clone().checks(level).render(&code).is_err(), "{name}");
+            }
+            let off = style.clone().checks(Checks::Off);
+            let report = off.check(&code);
+            assert!(report.ok() && !report.scannable, "{name}: {report:?}");
+            assert!(
+                report
+                    .warnings
+                    .iter()
+                    .any(|w| matches!(w, Warning::Unchecked(_))),
+                "{name}: {report:?}"
+            );
+            whole(name, &off.render(&code).unwrap());
+            off.plan(&code).unwrap();
+        }
+        // The damage budgets: refused strictly, drawn as asked with checks off.
+        for (name, style, v, ecc) in [
+            ("outline", outline(), 2, Ecc::L),
+            ("logo", Style::new().logo(logo().scale(0.5)), 2, Ecc::L),
+        ] {
+            let code = qr(v, ecc);
+            assert!(
+                !style.clone().checks(Checks::Strict).check(&code).ok(),
+                "{name}"
+            );
+            let off = style.checks(Checks::Off);
+            assert!(!off.check(&code).scannable, "{name}");
+            whole(name, &off.render(&code).unwrap());
+        }
+        // Fitting a code to a style still steers clear of what it would
+        // warn about: the logo bumps the code whatever the level.
+        let big = Style::new().logo(logo().scale(0.3));
+        let fitted = |s: &Style| {
+            QrCode::builder()
+                .ecc(Ecc::L)
+                .boost_ecc(false)
+                .encode_text_for("HELLO", s)
+                .unwrap()
+                .version()
+        };
+        assert_eq!(fitted(&big), fitted(&big.clone().checks(Checks::Off)));
+    }
+
     #[cfg(feature = "halftone")]
     #[test]
     fn scanlines_and_ink_share_a_limit() {
         let qr = crate::QrCode::encode("HELLO", crate::Ecc::M).unwrap();
-        let both = |lines, fade| {
+        let both = |lines, fade, checks| {
             Style::new()
                 .texture(Texture::Scanlines { opacity: lines })
                 .texture(Texture::Ink { fade })
+                .checks(checks)
                 .check(&qr)
                 .ok()
         };
-        assert!(both(0.25, 0.15));
-        assert!(!both(0.3, 0.3));
+        assert!(both(0.25, 0.15, Checks::Strict));
+        assert!(!both(0.3, 0.3, Checks::Strict));
+        // A measured limit: drawn as given by default.
+        assert!(both(0.3, 0.3, Checks::Lenient));
         assert!(
             Style::new()
                 .texture(Texture::Ink { fade: 0.3 })
@@ -1375,13 +1666,40 @@ mod tests {
     #[test]
     fn effects_keep_to_their_measured_limits() {
         let qr = crate::QrCode::encode("HELLO", crate::Ecc::M).unwrap();
-        let glow = |radius, strength| Style::new().effect(Effect::Glow { radius, strength });
+        let glow = |radius, strength| {
+            Style::new()
+                .effect(Effect::Glow { radius, strength })
+                .checks(Checks::Strict)
+        };
         assert!(glow(0.5, GLOW_MAX).check(&qr).ok());
         assert!(!glow(0.3, 0.4).check(&qr).ok());
         assert!(!glow(0.6, 0.1).check(&qr).ok());
-        let emboss = |depth| Style::new().effect(Effect::Emboss { depth });
+        let emboss = |depth| {
+            Style::new()
+                .effect(Effect::Emboss { depth })
+                .checks(Checks::Strict)
+        };
         assert!(emboss(EMBOSS_MAX).check(&qr).ok());
         assert!(!emboss(0.15).check(&qr).ok());
+        // Measured limits: drawn as given by default, with a warning.
+        let lenient = glow(0.3, 0.4).checks(Checks::Lenient).check(&qr);
+        assert!(lenient.ok() && !lenient.scannable, "{lenient:?}");
+        assert!(matches!(
+            lenient.warnings[..],
+            [Warning::Unchecked(RenderError::OptionOutOfRange {
+                option: "Effect::Glow strength",
+                ..
+            })]
+        ));
+        // Past the hard bound, refused unless checks are off, which clamps.
+        let wild = glow(0.3, 3.0).checks(Checks::Lenient);
+        assert!(!wild.check(&qr).ok());
+        let off = wild.checks(Checks::Off);
+        assert!(off.check(&qr).ok());
+        assert_eq!(
+            off.render(&qr).unwrap(),
+            glow(0.3, 1.0).checks(Checks::Off).render(&qr).unwrap()
+        );
     }
 
     #[test]
@@ -1415,7 +1733,10 @@ mod tests {
         use crate::{Halftone, Logo, Rgba8Image};
         let picture = Halftone::new(Rgba8Image::filled(8, 8, [90, 90, 90, 255]).unwrap());
         let logo = Logo::svg(r#"<svg viewBox="0 0 1 1"/>"#).unwrap().scale(0.1);
-        let halftone = Style::new().halftone(picture.clone()).logo(logo.clone());
+        let halftone = Style::new()
+            .halftone(picture.clone())
+            .logo(logo.clone())
+            .checks(Checks::Strict);
         let report = halftone.check(&qr(7, Ecc::H));
         assert!(
             matches!(report.errors[..], [RenderError::LogoOverAlignment]),
@@ -1447,6 +1768,7 @@ mod tests {
             Style::new()
                 .palette(palette)
                 .logo(logo.clone())
+                .checks(Checks::Strict)
                 .check(&qr(7, Ecc::M))
         };
         // Between the frame's floor and the read tokens' warning: clean,

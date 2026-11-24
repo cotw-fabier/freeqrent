@@ -8,8 +8,8 @@
 //! schema (`schema/freeqrent.schema.json`) is generated from these tables.
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner,
-    CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
+    AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, Checks, ColorSpread,
+    Corner, CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
     FrameRing, Glass, GlassRender, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro,
     LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Paint, Palette, Preset, QrBuilder, QrCode,
     RasterFormat, RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, Token,
@@ -48,6 +48,7 @@ pub const STYLE_KEYS: &[&str] = &[
     "quiet_zone",
     "allow_inverted",
     "allow_unscannable",
+    "checks",
     "frame",
     "border",
     "shadow",
@@ -92,6 +93,8 @@ pub const EFFECTS: &[&str] = &["glow", "emboss", "sketch"];
 pub const TEXTURES: &[&str] = &["grain", "scanlines", "ink"];
 /// `caption.font`.
 pub const CAPTION_FONTS: &[&str] = &["sans", "serif", "mono"];
+/// `checks` (SPEC §9): how strictly the checks hold the style.
+pub const CHECKS: &[&str] = &["strict", "lenient", "off"];
 /// `color_spread`.
 pub const SPREADS: &[&str] = &["modules", "regions"];
 /// `border.kind`; a bare name takes the default width.
@@ -238,8 +241,27 @@ fn document(v: &Value) -> Result<Document, DocError> {
     let inverted = o.opt("allow_inverted", bool_of)?;
     let allow = inverted.unwrap_or(style.inverted_allowed()) || dark;
     style = style.allow_inverted(allow);
+    if o.has("allow_unscannable") && o.has("checks") {
+        return Err(DocError::invalid(
+            "checks",
+            "give checks or allow_unscannable (the 1.2 switch), not both",
+        ));
+    }
     if let Some(allow) = o.opt("allow_unscannable", bool_of)? {
-        style = style.allow_unscannable(allow);
+        style = style.checks(if allow {
+            Checks::Lenient
+        } else {
+            Checks::Strict
+        });
+    }
+    if let Some(level) = o.opt("checks", |v, p| {
+        Ok(match name_of(v, p, CHECKS)? {
+            "strict" => Checks::Strict,
+            "lenient" => Checks::Lenient,
+            _ => Checks::Off,
+        })
+    })? {
+        style = style.checks(level);
     }
     if let Some(f) = o.opt("frame", frame)? {
         style = style.frame(f);

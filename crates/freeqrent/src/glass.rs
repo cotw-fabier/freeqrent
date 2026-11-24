@@ -1031,8 +1031,8 @@ mod tests {
     }
 
     use crate::{
-        Border, Ecc, Frame, Halftone, ImageError, Ink, Logo, ModuleShape, QrCode, RasterFormat,
-        RenderError, Rgba8Image, Style, TimingStyle, Version, Warning,
+        Border, Checks, Ecc, Frame, Halftone, ImageError, Ink, Logo, ModuleShape, QrCode,
+        RasterFormat, RenderError, Rgba8Image, Style, TimingStyle, Version, Warning,
     };
     use crate::{GLASS_TARGET_MARGIN, LARGE_OUTPUT_BYTES};
     use alloc::string::String;
@@ -1162,16 +1162,20 @@ mod tests {
             ),
         ];
         for (g, error, warning) in cases {
-            let refused = glass(g).check(&qr);
+            let strict = glass(g).checks(Checks::Strict);
+            let refused = strict.check(&qr);
             assert_eq!(refused.errors, core::slice::from_ref(&error), "{refused:?}");
             assert!(refused.scannable);
-            assert!(glass(g).render(&qr).is_err());
-            let allowed = glass(g).allow_unscannable(true);
-            let report = allowed.check(&qr);
-            assert!(report.ok(), "{report:?}");
-            assert!(!report.scannable);
-            assert!(report.warnings.contains(&warning), "{report:?}");
-            assert!(allowed.render(&qr).is_ok());
+            assert!(strict.render(&qr).is_err());
+            // A readability error: rendered with its warning by default,
+            // and with checks off.
+            for allowed in [glass(g), glass(g).checks(Checks::Off)] {
+                let report = allowed.check(&qr);
+                assert!(report.ok(), "{report:?}");
+                assert!(!report.scannable);
+                assert!(report.warnings.contains(&warning), "{report:?}");
+                assert!(allowed.render(&qr).is_ok());
+            }
             // The messages say what's wrong.
             let (e, w) = (alloc::format!("{error}"), alloc::format!("{warning}"));
             assert!(
@@ -1185,7 +1189,9 @@ mod tests {
         // Between the floor and the warning: a low-contrast warning only.
         let soft = glass(Glass::new().finders(0.35, 0.95)).check(&qr);
         // The spike's plate, too dark: refused.
-        let dim = glass(Glass::new().finders(0.20, 0.88)).check(&qr);
+        let dim = glass(Glass::new().finders(0.20, 0.88))
+            .checks(Checks::Strict)
+            .check(&qr);
         assert!(
             matches!(dim.errors[..], [RenderError::GlassFinderContrast { .. }]),
             "{dim:?}"
@@ -1201,25 +1207,51 @@ mod tests {
     }
 
     #[test]
-    fn allowing_unscannable_codes_changes_nothing_else() {
+    fn check_levels_change_nothing_without_errors() {
         let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
         for style in [
             Style::new(),
             Style::new().modules(ModuleShape::Dots { size: 0.7 }),
             Style::new().halftone(picture()),
         ] {
-            let allowed = style.clone().allow_unscannable(true);
-            assert!(allowed.unscannable_allowed());
-            assert_eq!(style.check(&qr), allowed.check(&qr));
-            assert!(allowed.check(&qr).scannable);
-            assert_eq!(style.render(&qr), allowed.render(&qr));
+            for level in [Checks::Strict, Checks::Lenient, Checks::Off] {
+                let leveled = style.clone().checks(level);
+                assert_eq!(style.check(&qr), leveled.check(&qr));
+                assert!(leveled.check(&qr).scannable);
+                assert_eq!(style.render(&qr), leveled.render(&qr));
+            }
         }
-        // Errors it doesn't cover stay errors.
-        let low = Style::new()
-            .palette(crate::Palette::from_tokens([("fg", "#bbb")]).unwrap())
-            .allow_unscannable(true);
-        let report = low.check(&qr);
-        assert!(!report.ok() && report.scannable, "{report:?}");
+        // The 1.2 switch maps onto the levels.
+        #[allow(deprecated)]
+        {
+            let old = Style::new().allow_unscannable(false);
+            assert_eq!(old.checks_level(), Checks::Strict);
+            assert!(!old.unscannable_allowed());
+            let old = old.allow_unscannable(true);
+            assert_eq!(old.checks_level(), Checks::Lenient);
+            assert!(old.unscannable_allowed());
+        }
+        // A hard error is refused by default and rendered with checks off,
+        // the conflicting option left out.
+        let circle = glass(Glass::new()).frame(Frame::Circle {
+            filler_density: 0.5,
+            ring: crate::FrameRing::None,
+        });
+        let unsupported = RenderError::GlassUnsupported {
+            option: "Frame::Circle",
+        };
+        assert_eq!(
+            circle.check(&qr).errors,
+            core::slice::from_ref(&unsupported)
+        );
+        let off = circle.clone().checks(Checks::Off);
+        let report = off.check(&qr);
+        assert!(report.ok() && !report.scannable, "{report:?}");
+        assert!(report.warnings.contains(&Warning::Unchecked(unsupported)));
+        assert_eq!(
+            off.render(&qr).unwrap(),
+            glass(Glass::new()).checks(Checks::Off).render(&qr).unwrap()
+        );
     }
 
     #[test]
@@ -1260,13 +1292,26 @@ mod tests {
             [Warning::GlassNeedsZxing { version: v + 1 }]
         );
         let tiny = glass(vector_glass().lens(0.6).core(0.5));
-        assert!(tiny.check(&code(&tiny, 3)).errors.iter().any(|e| matches!(
-            e,
-            RenderError::OptionOutOfRange {
-                option: "Glass.lens",
-                ..
-            }
-        )));
+        let narrow_lens = |e: &RenderError| {
+            matches!(
+                e,
+                RenderError::OptionOutOfRange {
+                    option: "Glass.lens",
+                    ..
+                }
+            )
+        };
+        let strict = tiny.clone().checks(Checks::Strict);
+        assert!(strict.check(&code(&tiny, 3)).errors.iter().any(narrow_lens));
+        // A measured range: drawn as given by default, with a warning.
+        let report = tiny.check(&code(&tiny, 3));
+        assert!(report.ok() && !report.scannable, "{report:?}");
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| matches!(w, Warning::Unchecked(e) if narrow_lens(e)))
+        );
         assert!(
             glass(baked().lens(0.6).core(0.5))
                 .check(&code(&tiny, 3))

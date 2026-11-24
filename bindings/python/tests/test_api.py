@@ -62,8 +62,12 @@ def test_check_returns_a_parsed_report() -> None:
     assert report.code.ecc in ("L", "M", "Q", "H")
     assert report.code.size == 17 + 4 * report.code.version
     assert json.loads(report.json)["ok"] is True
-    refused = fq.check(URL, {"palette": {"fg": "#bbb"}})
+    refused = fq.check(URL, {"palette": {"fg": "#bbb"}, "checks": "strict"})
     assert not refused.ok and refused.errors[0].code == "contrast_too_low"
+    # By default (checks lenient) it renders, with a warning of the same name.
+    lenient = fq.check(URL, {"palette": {"fg": "#bbb"}})
+    assert lenient.ok and not lenient.scannable
+    assert lenient.warnings[0].code == "contrast_too_low"
 
 
 def test_check_reports_steering_for_pictures() -> None:

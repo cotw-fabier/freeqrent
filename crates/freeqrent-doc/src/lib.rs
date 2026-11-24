@@ -14,7 +14,13 @@
 //! )?;
 //! assert!(svg.starts_with("<svg"));
 //!
-//! let err = render(Payload::Text("hi"), r##"{"palette":{"fg":"#eee"}}"##).unwrap_err();
+//! // Under "checks": "strict" an error refuses; by default (lenient) a
+//! // readability error renders with a warning of the same name.
+//! let err = render(
+//!     Payload::Text("hi"),
+//!     r##"{"palette":{"fg":"#eee"},"checks":"strict"}"##,
+//! )
+//! .unwrap_err();
 //! assert_eq!(err.code, "contrast_too_low");
 //! # Ok::<(), freeqrent_doc::DocError>(())
 //! ```

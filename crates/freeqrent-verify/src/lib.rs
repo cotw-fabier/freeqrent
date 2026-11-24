@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use freeqrent::{QrMatrix, ScanReport, Style, Warning};
+use freeqrent::{Checks, QrMatrix, ScanReport, Style, Warning};
 use resvg::{tiny_skia, usvg};
 
 /// A greyscale image, 0 = black, row-major.
@@ -203,6 +203,20 @@ impl Bar {
     }
 }
 
+/// The guarantee's view of a style (SPEC §9): the same style at
+/// [`Checks::Strict`], whatever level it was given, so its report counts
+/// every error as one. The verify suite checks styles through it.
+pub trait Guarantee {
+    /// The style at [`Checks::Strict`].
+    fn strict(&self) -> Style;
+}
+
+impl Guarantee for Style {
+    fn strict(&self) -> Style {
+        self.clone().checks(Checks::Strict)
+    }
+}
+
 /// Checks that `svg` decodes to `expected` under every one of [`RENDERS`]
 /// with both decoders.
 pub fn verify(svg: &str, expected: &str) -> Result<(), VerifyError> {
@@ -222,12 +236,15 @@ pub fn verify_with(svg: &str, expected: &str, bar: Bar) -> Result<(), VerifyErro
 }
 
 /// Renders `qr` with `style` and checks it against the style's own bar
-/// ([`Bar::for_report`]).
+/// ([`Bar::for_report`]). The style is held to the guarantee whatever its
+/// own level: it renders as [`Checks::Strict`], so a style with any error
+/// fails as [`VerifyError::Render`] (SPEC §9).
 pub fn verify_style(style: &Style, qr: &QrMatrix, expected: &str) -> Result<(), VerifyError> {
-    let svg = style
+    let strict = style.strict();
+    let svg = strict
         .render(qr)
         .map_err(|e| VerifyError::Render(e.to_string()))?;
-    verify_with(&svg, expected, Bar::for_report(&style.check(qr)))
+    verify_with(&svg, expected, Bar::for_report(&strict.check(qr)))
 }
 
 /// Checks one render with ZXing, and with rqrr too when `rqrr` is set.

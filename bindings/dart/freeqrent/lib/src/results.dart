@@ -68,6 +68,7 @@ final class ScanReport {
   /// Parses the report JSON.
   ScanReport.fromJson(this.json)
     : ok = json['ok'] as bool,
+      scannable = json['scannable'] as bool,
       errors = [
         for (final e in json['errors'] as List)
           ScanIssue._fromJson(e as Map<String, Object?>),
@@ -89,6 +90,11 @@ final class ScanReport {
 
   /// True when the style renders (no errors).
   final bool ok;
+
+  /// False when an error was rendered anyway, as a warning of the same name
+  /// (`checks` lenient, the default, or off): the code is outside the
+  /// guarantee that it scans.
+  final bool scannable;
 
   /// Why it would be refused.
   final List<ScanIssue> errors;

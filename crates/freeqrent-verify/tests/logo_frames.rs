@@ -9,7 +9,7 @@ use freeqrent::{
     Ecc, Idle, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape,
     Preset, QrCode, QrMatrix, RenderError, Style, Version,
 };
-use freeqrent_verify::{Gray, Render, rasterize, verify_one, verify_style};
+use freeqrent_verify::{Gray, Guarantee, Render, rasterize, verify_one, verify_style};
 
 /// The worst case for a scanner: dark, with light stripes, no margin.
 const DARK: &str = r##"<svg viewBox="0 0 10 10"><rect width="10" height="10" fill="#17161c"/><path d="M2 2h6v2h-6zM2 6h6v2h-6z" fill="#fefcf8"/></svg>"##;
@@ -35,7 +35,7 @@ fn fitted(style: &Style) -> QrMatrix {
 }
 
 fn assert_verifies(style: &Style, qr: &QrMatrix, text: &str, label: &str) {
-    let report = style.check(qr);
+    let report = style.strict().check(qr);
     assert!(report.ok(), "{label}: {report:?}");
     if let Err(e) = verify_style(style, qr, text) {
         panic!("{label} v{}: {e}", qr.version().number());
@@ -63,7 +63,7 @@ fn frames_scan_on_the_largest_logo() {
                             .scale(0.05);
                         let style = Style::new().modules(modules).logo(logo);
                         let label = format!("{ecc:?} {shape:?} {frame:?} {modules:?}");
-                        let report = style.check(&qr);
+                        let report = style.strict().check(&qr);
                         if !report.ok() {
                             // Version 4 at L can't afford a framed plate.
                             assert!(
@@ -84,7 +84,7 @@ fn frames_scan_on_the_largest_logo() {
 #[test]
 fn frames_cost_budget_and_widths_are_checked() {
     let qr = code(TEXT, 8, Ecc::Q);
-    let used = |logo: Logo| Style::new().logo(logo).check(&qr).ecc_budget_used;
+    let used = |logo: Logo| Style::new().logo(logo).strict().check(&qr).ecc_budget_used;
     let plain = Logo::svg(MARK).unwrap().scale(0.16);
     for frame in LogoFrame::ALL {
         assert!(
@@ -94,7 +94,7 @@ fn frames_cost_budget_and_widths_are_checked() {
     }
     let wide = Style::new().logo(plain.clone().frame(LogoFrame::Ring).frame_width(3.0));
     // Out of range (and, as wide as that, too large for this code too).
-    assert!(wide.check(&qr).errors.iter().any(|e| matches!(
+    assert!(wide.strict().check(&qr).errors.iter().any(|e| matches!(
         e,
         RenderError::OptionOutOfRange {
             option: "Logo.frame_width",
@@ -103,7 +103,7 @@ fn frames_cost_budget_and_widths_are_checked() {
     )));
     let moon = Style::new().logo(plain.frame(LogoFrame::Orbit).moon_size(4.5));
     // Out of range (and, as wide as that, too large for this code too).
-    assert!(moon.check(&qr).errors.iter().any(|e| matches!(
+    assert!(moon.strict().check(&qr).errors.iter().any(|e| matches!(
         e,
         RenderError::OptionOutOfRange {
             option: "Logo.moon_size",
@@ -300,6 +300,7 @@ fn only_round_frames_turn() {
             Some(logo) => style.logo(logo.scale(0.16)),
             None => style,
         }
+        .strict()
         .check(&qr)
         .errors
     };
@@ -377,7 +378,7 @@ fn faint_frames_scan_at_their_floor() {
                                 .logo(logo)
                                 .palette(palette.clone())
                                 .allow_inverted(dark);
-                            let report = style.check(&qr);
+                            let report = style.strict().check(&qr);
                             if report
                                 .errors
                                 .iter()

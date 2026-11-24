@@ -110,10 +110,15 @@ test('check, plan, renderFrame and the palette functions parse', () => {
   assert.equal(report.ok, true);
   assert.equal(typeof report.logo_scale, 'number');
   assert.deepEqual(Object.keys(report.code), ['version', 'ecc', 'size', 'mask']);
-  const refused = fq.check(TEXT, { palette: { fg: '#eeeeee' } });
+  const refused = fq.check(TEXT, { palette: { fg: '#eeeeee' }, checks: 'strict' });
   assert.equal(refused.ok, false);
   assert.equal(refused.errors[0].code, 'contrast_too_low');
   assert.equal(refused.errors[0].detail.token, 'fg');
+  // By default (checks lenient) it renders, with a warning of the same name.
+  const lenient = fq.check(TEXT, { palette: { fg: '#eeeeee' } });
+  assert.equal(lenient.ok, true);
+  assert.equal(lenient.scannable, false);
+  assert.equal(lenient.warnings[0].code, 'contrast_too_low');
 
   const plan = fq.plan(TEXT, { intro: 'ripple' });
   assert.deepEqual(plan.tracks[0].ease, [0.22, 1, 0.36, 1]);
@@ -197,19 +202,19 @@ test('errors carry code, message and parsed detail', () => {
     assert.equal(typeof d.ecc, 'string');
   });
   fails(() => fq.render(TEXT, { encoding: { min_version: 20, max_version: 10 } }), 'invalid_version_range');
-  fails(() => fq.render(TEXT, { palette: { fg: '#eeeeee' } }), 'contrast_too_low', (d) => {
+  fails(() => fq.render(TEXT, { palette: { fg: '#eeeeee' }, checks: 'strict' }), 'contrast_too_low', (d) => {
     assert.equal(d.token, 'fg');
     assert.equal(typeof d.delta_l, 'number');
   });
-  fails(() => fq.render(TEXT, { palette: { fg: '#ffffff', bg: '#000000' } }), 'inverted_colors');
-  fails(() => fq.render(TEXT, { quiet_zone: 0 }), 'quiet_zone_too_small');
+  fails(() => fq.render(TEXT, { palette: { fg: '#ffffff', bg: '#000000' }, checks: 'strict' }), 'inverted_colors');
+  fails(() => fq.render(TEXT, { quiet_zone: 0, checks: 'strict' }), 'quiet_zone_too_small');
   fails(() => fq.render(TEXT, { modules: { kind: 'dots', size: 5 } }), 'option_out_of_range', (d) => {
     assert.equal(typeof d.option, 'string');
     assert.equal(d.value, 5);
     assert.equal(typeof d.min, 'number');
     assert.equal(typeof d.max, 'number');
   });
-  fails(() => fq.render(TEXT, { logo: { svg: MARK, scale: 0.4 }, encoding: { version: 4, ecc: 'L', boost_ecc: false } }), 'logo_too_large', (d) => {
+  fails(() => fq.render(TEXT, { logo: { svg: MARK, scale: 0.4 }, encoding: { version: 4, ecc: 'L', boost_ecc: false }, checks: 'strict' }), 'logo_too_large', (d) => {
     assert.equal(typeof d.max_scale, 'number');
   });
   fails(() => fq.render(TEXT, { logo: { svg: MARK }, idle: ['logo-turn'] }), 'turn_needs_round_frame');
@@ -238,7 +243,7 @@ test('bad arguments are invalid_argument errors', () => {
 test('init resolves, and the library keeps working after an error', async () => {
   await fq.init();
   await fq.init();
-  assert.throws(() => fq.render(TEXT, { palette: { fg: '#eee' } }));
+  assert.throws(() => fq.render(TEXT, { palette: { fg: '#eee' }, checks: 'strict' }));
   assert.ok(fq.render(TEXT).startsWith('<svg'));
 });
 

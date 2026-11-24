@@ -3,8 +3,8 @@
 //! core.
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, ColorSpread, Corner,
-    CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
+    AlignmentShape, AlignmentStyle, Axis, Border, Caption, CaptionFont, Checks, ColorSpread,
+    Corner, CubicBezier, Ease, Ecc, EciPolicy, Effect, Emphasis, EyeShape, FinderStyle, Fit, Frame,
     FrameRing, Glass, GlassRender, Glyph, Halftone, Idle, Ink, Intro, Logo, LogoFrame, LogoIntro,
     LogoShape, LogoSize, LogoTiming, Mask, ModuleShape, Palette, Preset, QrCode, RasterFormat,
     Rgba8Image, RingShape, StaggerOrder, Style, TargetSize, Texture, TimingStyle, TrackingGrid,
@@ -401,7 +401,7 @@ fn glass() {
         .unwrap()
         .ink(Ink::Glass(g));
     let parsed = style(&doc);
-    assert_eq!(parsed, Style::new().halftone(h).allow_unscannable(true));
+    assert_eq!(parsed, Style::new().halftone(h).checks(Checks::Lenient));
     assert!(parsed.unscannable_allowed());
     // A bare "glass" takes the defaults, under art too.
     let bare = format!(
@@ -471,10 +471,20 @@ fn glass() {
         r#"{{"halftone":{{"image":{},"source":"{source}","ink":{{"kind":"glass","halo":0}}}}}}"#,
         image_json(&p)
     );
-    let e = freeqrent_doc::render(Payload::Text(text), &halo0).unwrap_err();
+    let strict = halo0.replacen('{', r#"{"checks":"strict","#, 1);
+    let e = freeqrent_doc::render(Payload::Text(text), &strict).unwrap_err();
     assert_eq!(
         (e.code, e.detail.as_str()),
         ("glass_halo_too_narrow", r#"{"halo":0}"#)
+    );
+    // Rendered by default (checks lenient), and by the 1.2 switch.
+    freeqrent_doc::render(Payload::Text(text), &halo0).unwrap();
+    let both = halo0.replacen('{', r#"{"checks":"off","allow_unscannable":true,"#, 1);
+    assert_eq!(
+        freeqrent_doc::render(Payload::Text(text), &both)
+            .unwrap_err()
+            .code,
+        "invalid_style"
     );
     let allowed = halo0.replacen('{', r#"{"allow_unscannable":true,"#, 1);
     let report = freeqrent_doc::check(Payload::Text(text), &allowed).unwrap();
@@ -492,6 +502,14 @@ fn glass() {
         (e.code, e.detail.as_str()),
         ("glass_unsupported", r#"{"option":"Frame::Circle"}"#)
     );
+    // A hard error renders with checks off, its warning named like it.
+    let off = unsupported.replacen('{', r#"{"checks":"off","#, 1);
+    let report = freeqrent_doc::check(Payload::Text(text), &off).unwrap();
+    assert!(
+        report.contains(r#"{"code":"glass_unsupported","message":"Frame::Circle can't be combined with glass ink; rendered anyway"#),
+        "{report}"
+    );
+    freeqrent_doc::render(Payload::Text(text), &off).unwrap();
     let no_source = format!(
         r#"{{"halftone":{{"image":{},"ink":"glass"}}}}"#,
         image_json(&p)
@@ -813,14 +831,20 @@ fn boundary_functions_match_the_core() {
         )
     );
 
-    let refused =
-        freeqrent_doc::check(Payload::Text(text), r##"{"palette":{"fg":"#ddd"}}"##).unwrap();
+    let refused = freeqrent_doc::check(
+        Payload::Text(text),
+        r##"{"palette":{"fg":"#ddd"},"checks":"strict"}"##,
+    )
+    .unwrap();
     assert!(
         refused.starts_with(r#"{"ok":false,"scannable":true,"errors":[{"code":"contrast_too_low""#),
         "{refused}"
     );
-    let e =
-        freeqrent_doc::render(Payload::Text(text), r##"{"palette":{"fg":"#ddd"}}"##).unwrap_err();
+    let e = freeqrent_doc::render(
+        Payload::Text(text),
+        r##"{"palette":{"fg":"#ddd"},"checks":"strict"}"##,
+    )
+    .unwrap_err();
     assert_eq!(e.code, "contrast_too_low");
     assert!(
         e.detail.starts_with(r#"{"token":"fg","delta_l":0."#),
@@ -948,8 +972,12 @@ fn frames_are_the_cores_still_frames() {
     assert!(!after.contains("@keyframes"));
     let bar = freeqrent_verify::Bar::for_report(&style.check(&qr));
     freeqrent_verify::verify_with(&after, text, bar).unwrap();
-    let e = freeqrent_doc::render_frame(Payload::Text(text), r##"{"palette":{"fg":"#ccc"}}"##, 0)
-        .unwrap_err();
+    let e = freeqrent_doc::render_frame(
+        Payload::Text(text),
+        r##"{"palette":{"fg":"#ccc"},"checks":"strict"}"##,
+        0,
+    )
+    .unwrap_err();
     assert_eq!(e.code, "contrast_too_low");
 }
 

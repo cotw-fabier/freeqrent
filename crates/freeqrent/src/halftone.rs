@@ -149,6 +149,14 @@ impl Halftone {
         }
     }
 
+    /// [`Halftone::glass`], to clamp in place.
+    pub(crate) fn glass_mut(&mut self) -> Option<&mut Glass> {
+        match &mut self.ink {
+            Ink::Glass(g) => Some(g),
+            _ => None,
+        }
+    }
+
     /// How sub-cells are painted (default [`Ink::Mono`]).
     pub fn ink(mut self, ink: Ink) -> Halftone {
         self.ink = ink;

@@ -12,12 +12,12 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use freeqrent::{
-    AlignmentShape, AlignmentStyle, Border, Caption, CaptionFont, Clarity, ColorSpread, Corner,
-    Ease, Ecc, Effect, Emphasis, EyeShape, FinderStyle, Fit, FrameRing, Glyph, Halftone, Idle, Ink,
-    Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape, Origin, Paint,
-    Palette, PaletteOpts, PaletteReport, Preset, QrBuilder, QrCode, QrMatrix, RasterFormat,
-    Rgba8Image, RingShape, ScanReport, StaggerOrder, Style, TargetSize, Texture, TimingStyle,
-    Token, TrackingGrid, Trigger, Version,
+    AlignmentShape, AlignmentStyle, Border, Caption, CaptionFont, Checks, Clarity, ColorSpread,
+    Corner, Ease, Ecc, Effect, Emphasis, EyeShape, FinderStyle, Fit, FrameRing, Glyph, Halftone,
+    Idle, Ink, Intro, Logo, LogoFrame, LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape,
+    Origin, Paint, Palette, PaletteOpts, PaletteReport, Preset, QrBuilder, QrCode, QrMatrix,
+    RasterFormat, Rgba8Image, RingShape, ScanReport, StaggerOrder, Style, TargetSize, Texture,
+    TimingStyle, Token, TrackingGrid, Trigger, Version,
 };
 
 const HELP: &str = "\
@@ -154,8 +154,11 @@ Style:
   --no-steer               keep standard padding (no module steering)
   --allow-inverted         permit light modules on a dark background, and let
                            --palette-from-* keep a dark source's polarity
-  --allow-unscannable      render what the measured glass limits refuse, as
-                           warnings; --check then says it is not scannable
+  --checks LEVEL           strict (refuse every error), lenient (the default:
+                           readability errors render as warnings, hard ones
+                           are refused) or off (refuse nothing); --check says
+                           NOT scannable when an error rendered anyway
+  --allow-unscannable      deprecated: --checks lenient
   --dark                   the palette's dark twin: luma mirrored, hue kept
                            (implies --allow-inverted); pictures stay upright
   --target-px N            displayed size in device pixels (warns when too small)
@@ -217,7 +220,7 @@ pub struct StyleArgs {
     tokens: Vec<(String, String)>,
     quiet_zone: Option<u8>,
     allow_inverted: bool,
-    allow_unscannable: bool,
+    checks: Option<Checks>,
     dark: bool,
     pretty: bool,
     title: Option<String>,
@@ -479,7 +482,7 @@ impl StyleArgs {
         match flag {
             "pretty" => self.pretty = true,
             "allow-inverted" => self.allow_inverted = true,
-            "allow-unscannable" => self.allow_unscannable = true,
+            "allow-unscannable" => self.checks = Some(Checks::Lenient),
             "dark" => self.dark = true,
             "no-logo-backdrop" => self.no_logo_backdrop = true,
             "keep-modules" => self.keep_modules = true,
@@ -544,6 +547,7 @@ impl StyleArgs {
             "border" => self.border = Some(options::border(value)?),
             "shadow" => self.shadow = Some(options::number(flag, value)?),
             "spread" => self.spread = Some(options::spread(value)?),
+            "checks" => self.checks = Some(options::checks(value)?),
             "effect" => self.effect = Some(options::effect(value)?),
             "texture" => self.textures.push(options::texture(value)?),
             "caption" => self.caption = Some(value.to_string()),
@@ -795,8 +799,10 @@ impl StyleArgs {
             .palette(palette)
             .quiet_zone(self.quiet_zone.unwrap_or(quiet_zone))
             .allow_inverted(self.allow_inverted || self.dark || inverted)
-            .allow_unscannable(self.allow_unscannable)
             .minify(!self.pretty);
+        if let Some(level) = self.checks {
+            style = style.checks(level);
+        }
         if let Some(frame) = &self.frame {
             let ring = self.frame_ring.unwrap_or_default();
             style = style.frame(options::frame(frame, ring)?);
@@ -1122,7 +1128,7 @@ fn print_report(out: &mut dyn Write, report: &ScanReport) -> io::Result<()> {
         let scannable = if report.scannable {
             "scannable"
         } else {
-            "NOT scannable (allowed by --allow-unscannable; outside the guarantee)"
+            "NOT scannable (an error rendered anyway, see the warnings; --checks strict refuses it)"
         };
         writeln!(
             out,

@@ -10,7 +10,7 @@ use freeqrent::{
     Ecc, Frame, FrameRing, Idle, Intro, Logo, LogoFrame, ModuleShape, Palette, Preset, QrCode,
     QrMatrix, StaggerOrder, Style, Token, Trigger, Version, Warning,
 };
-use freeqrent_verify::{Gray, rasterize, scannable_after};
+use freeqrent_verify::{Gray, Guarantee, rasterize, scannable_after};
 
 fn code(text: &str, version: u8) -> QrMatrix {
     QrCode::builder()
@@ -251,9 +251,9 @@ fn palette_shifts_stay_scannable_throughout() {
         let qr = code(text, version);
         let style = Style::new().palette(ink()).intro(Intro::palette_from(&old));
         assert!(
-            style.check(&qr).warnings.is_empty(),
+            style.strict().check(&qr).warnings.is_empty(),
             "{:?}",
-            style.check(&qr).warnings
+            style.strict().check(&qr).warnings
         );
         assert_eq!(
             scannable_after(&style, &qr, text, 25).unwrap(),
@@ -268,7 +268,7 @@ fn opposite_polarity_shifts_warn() {
     let dark = Palette::from_tokens([("bg", "#101014"), ("fg", "#f4f1ea")]).unwrap();
     let qr = code(PAYLOADS[1].0, PAYLOADS[1].1);
     let style = Style::new().intro(Intro::palette_from(&dark));
-    let warned = style.check(&qr).warnings.iter().any(|w| {
+    let warned = style.strict().check(&qr).warnings.iter().any(|w| {
         matches!(
             w,
             Warning::MotionContrast {

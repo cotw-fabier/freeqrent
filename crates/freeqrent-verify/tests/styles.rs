@@ -9,7 +9,7 @@ use freeqrent::{
     Axis, ColorSpread, Ecc, Effect, Frame, FrameRing, ModuleShape, Palette, QrCode, Style, Texture,
     Token, Warning,
 };
-use freeqrent_verify::rasterize;
+use freeqrent_verify::{Guarantee, rasterize};
 
 fn shapes() -> Vec<ModuleShape> {
     vec![
@@ -90,7 +90,7 @@ fn palettes_scan() {
 fn warning_band_is_reported() {
     let qr = QrCode::encode("HELLO", Ecc::M).unwrap();
     let palette = Palette::from_tokens([("finder.eye", "#c0392b")]).unwrap();
-    let report = Style::new().palette(palette).check(&qr);
+    let report = Style::new().palette(palette).strict().check(&qr);
     assert!(report.ok());
     assert!(
         report.warnings.iter().any(|w| matches!(

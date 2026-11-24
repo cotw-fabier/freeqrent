@@ -8,9 +8,9 @@ use freeqrent::Style;
 
 use crate::json::{self, Value};
 use crate::style::{
-    BORDERS, CAPTION_FONTS, CORNERS, EASES, ECCS, ECIS, EFFECTS, EMPHASES, EYES, FITS, FRAME_RINGS,
-    FRAMES, GLASS_RENDERS, GRIDS, INKS, LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS, STAGGERS,
-    STYLE_KEYS, TARGETS, TEXTURES, TIMINGS, TRIGGERS, idles, intro_presets, logo_frames,
+    BORDERS, CAPTION_FONTS, CHECKS, CORNERS, EASES, ECCS, ECIS, EFFECTS, EMPHASES, EYES, FITS,
+    FRAME_RINGS, FRAMES, GLASS_RENDERS, GRIDS, INKS, LOGO_SHAPES, MODULE_SHAPES, RINGS, SPREADS,
+    STAGGERS, STYLE_KEYS, TARGETS, TEXTURES, TIMINGS, TRIGGERS, idles, intro_presets, logo_frames,
     logo_intros, logo_sizes, logo_timings, tokens,
 };
 
@@ -266,7 +266,14 @@ fn style() -> Value {
             "allow_unscannable",
             described(
                 boolean(),
-                "Render what the measured glass limits refuse, as warnings; the report says scannable: false.",
+                "Deprecated (1.3.0): true is checks lenient, false checks strict. Not with checks.",
+            ),
+        ),
+        (
+            "checks",
+            described(
+                one_of(CHECKS),
+                "How strictly the checks hold the style (default lenient): strict refuses every error; lenient renders readability errors as warnings and refuses hard ones; off refuses nothing. The report says scannable: false when an error was rendered anyway.",
             ),
         ),
         ("frame", r("Frame")),
@@ -735,7 +742,7 @@ fn report() -> Value {
                 "scannable",
                 described(
                     boolean(),
-                    "False when allow_unscannable turned an error into a warning: outside the guarantee.",
+                    "False when an error was rendered anyway, as a warning (checks lenient or off): outside the guarantee.",
                 ),
             ),
             ("errors", array(r("Error"))),

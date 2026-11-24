@@ -32,15 +32,15 @@ CASES: List[Tuple[str, Callable[[], Any], Dict[str, Any]]] = [
     ("invalid_argument", render('{"title":"\ud800"}'), {"reason": None}),
     ("data_too_long", render({"encoding": {"ecc": "H"}}, "x" * 3000), {"bits_needed": None, "bits_available": None, "max_version": 40, "ecc": "H"}),
     ("invalid_version_range", render({"encoding": {"min_version": 9, "max_version": 3}}), {"min": 9, "max": 3}),
-    ("contrast_too_low", render({"palette": {"fg": "#ccc"}}), {"token": "fg", "delta_l": None}),
-    ("inverted_colors", render({"palette": {"fg": "#fff", "bg": "#000"}}), {"token": "fg"}),
-    ("quiet_zone_too_small", render({"quiet_zone": 0}), {"modules": 0}),
+    ("contrast_too_low", render({"palette": {"fg": "#ccc"}, "checks": "strict"}), {"token": "fg", "delta_l": None}),
+    ("inverted_colors", render({"palette": {"fg": "#fff", "bg": "#000"}, "checks": "strict"}), {"token": "fg"}),
+    ("quiet_zone_too_small", render({"quiet_zone": 0, "checks": "strict"}), {"modules": 0}),
     ("option_out_of_range", render({"modules": {"kind": "dots", "size": 5}}), {"option": "Dots.size", "value": 5, "min": 0.6, "max": 1}),
-    ("ecc_budget_exceeded", render({"alignment": {"emphasis": "outline"}, "encoding": {"ecc": "L", "version": 2}}), {"damaged": None, "allowed": None}),
-    ("logo_too_large", render({"logo": {"svg": SVG, "scale": 0.45}, "encoding": {"ecc": "L"}}), {"max_scale": None}),
+    ("ecc_budget_exceeded", render({"alignment": {"emphasis": "outline"}, "encoding": {"ecc": "L", "version": 2}, "checks": "strict"}), {"damaged": None, "allowed": None}),
+    ("logo_too_large", render({"logo": {"svg": SVG, "scale": 0.45}, "encoding": {"ecc": "L"}, "checks": "strict"}), {"max_scale": None}),
     (
         "logo_over_alignment",
-        render({"halftone": {"image": {"width": 8, "height": 8, "rgba": GRAY}}, "logo": {"svg": SVG, "scale": 0.1}, "encoding": {"ecc": "H", "version": 7}}),
+        render({"halftone": {"image": {"width": 8, "height": 8, "rgba": GRAY}}, "logo": {"svg": SVG, "scale": 0.1}, "encoding": {"ecc": "H", "version": 7}, "checks": "strict"}),
         {},
     ),
     ("turn_needs_round_frame", render({"logo": {"svg": SVG}, "idle": ["logo-turn"]}), {}),
@@ -68,12 +68,12 @@ def test_errors_carry_their_fields(code: str, call: Callable[[], Any], detail: D
 
 def test_the_native_module_raises_the_same_error() -> None:
     with pytest.raises(fq.FreeQrentError) as info:
-        _native.render("hi", '{"palette":{"fg":"#ccc"}}')
+        _native.render("hi", '{"palette":{"fg":"#ccc"},"checks":"strict"}')
     assert info.value.code == "contrast_too_low"
 
 
 def test_render_refuses_with_the_reports_first_error() -> None:
-    style = {"palette": {"fg": "#ccc"}}
+    style = {"palette": {"fg": "#ccc"}, "checks": "strict"}
     report = fq.check(URL, style)
     assert not report.ok
     with pytest.raises(fq.FreeQrentError) as info:
@@ -93,7 +93,7 @@ def test_check_still_raises_for_a_bad_document_or_a_payload_that_does_not_fit() 
 
 def test_errors_pickle_and_compare_by_fields() -> None:
     with pytest.raises(fq.FreeQrentError) as info:
-        fq.render(URL, {"quiet_zone": 0})
+        fq.render(URL, {"quiet_zone": 0, "checks": "strict"})
     e = info.value
     back = pickle.loads(pickle.dumps(e))
     assert (back.code, back.message, back.detail) == (e.code, e.message, e.detail)

@@ -7,6 +7,9 @@ export type PresetName = "classic" | "ink" | "candy" | "terminal" | "sunset" | "
 
 export type TimingStyle = "plain" | "dotted" | "dashed";
 
+/** How strictly the checks hold the style (default lenient): strict refuses every error; lenient renders readability errors as warnings and refuses hard ones; off refuses nothing. The report says scannable: false when an error was rendered anyway. */
+export type StyleChecks = "strict" | "lenient" | "off";
+
 /** How data modules share fg and the data colors fg.2 to fg.4. */
 export type ColorSpread = "modules" | "regions";
 
@@ -30,8 +33,10 @@ export interface Style {
   dark?: boolean;
   quiet_zone?: number;
   allow_inverted?: boolean;
-  /** Render what the measured glass limits refuse, as warnings; the report says scannable: false. */
+  /** Deprecated (1.3.0): true is checks lenient, false checks strict. Not with checks. */
   allow_unscannable?: boolean;
+  /** How strictly the checks hold the style (default lenient): strict refuses every error; lenient renders readability errors as warnings and refuses hard ones; off refuses nothing. The report says scannable: false when an error was rendered anyway. */
+  checks?: StyleChecks;
   frame?: Frame;
   border?: Border;
   /** A hard shadow's offset down and right, in modules (0.25–3). */
@@ -623,7 +628,7 @@ export interface ReportCode {
 
 export interface Report {
   ok: boolean;
-  /** False when allow_unscannable turned an error into a warning: outside the guarantee. */
+  /** False when an error was rendered anyway, as a warning (checks lenient or off): outside the guarantee. */
   scannable: boolean;
   errors: Issue[];
   warnings: Issue[];

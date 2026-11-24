@@ -8,6 +8,7 @@ use freeqrent::{
     EXTRACT_CONTRAST, Ecc, FRAME_FLOOR, INVERTED_CONTRAST, ModuleShape, Palette, PaletteOpts,
     QrCode, Rgba8Image, Style, Token, Warning,
 };
+use freeqrent_verify::Guarantee;
 
 /// Builds a `w × h` image from a function of the pixel position.
 fn image(w: u32, h: u32, f: impl Fn(f64, f64) -> [u8; 4]) -> Rgba8Image {
@@ -137,7 +138,7 @@ fn extracted_palettes_pass_without_warnings() {
                     "{name} {token}: {c:?}"
                 );
             }
-            let report = Style::new().palette(palette).check(&qr);
+            let report = Style::new().palette(palette).strict().check(&qr);
             assert!(
                 report.ok() && report.warnings.is_empty(),
                 "{name}: {report:?}"
@@ -225,7 +226,7 @@ fn site_palettes_pass_and_scan() {
         }
         .unwrap();
         println!("{name}: {:?}", report.choices);
-        let check = Style::new().palette(palette.clone()).check(&qr);
+        let check = Style::new().palette(palette.clone()).strict().check(&qr);
         assert!(check.ok() && check.warnings.is_empty(), "{name}: {check:?}");
         let style = Style::new()
             .modules(ModuleShape::Rounded { radius: 0.4 })
@@ -308,7 +309,7 @@ fn inverted_palettes_pass_and_scan() {
             "{name} logo.frame: {c:?}"
         );
         let style = Style::new().palette(palette).allow_inverted(true);
-        let check = style.check(&qr);
+        let check = style.strict().check(&qr);
         assert!(
             check.ok()
                 && check
@@ -350,12 +351,13 @@ fn dark_twins_scan_like_their_palettes() {
         let light = Style::new().palette(palette);
         let dark = Style::new().palette(twin).allow_inverted(true);
         let low = |s: &Style| {
-            s.check(&qr)
+            s.strict()
+                .check(&qr)
                 .warnings
                 .iter()
                 .any(|w| matches!(w, Warning::LowContrast { .. }))
         };
-        assert!(dark.check(&qr).ok(), "{i}");
+        assert!(dark.strict().check(&qr).ok(), "{i}");
         assert!(
             !low(&dark) || low(&light),
             "{i}: the twin warns, the palette doesn't"

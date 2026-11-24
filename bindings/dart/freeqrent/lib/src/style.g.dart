@@ -116,6 +116,17 @@ enum QrToken {
   final String json;
 }
 
+enum QrChecks {
+  strict('strict'),
+  lenient('lenient'),
+  off('off');
+
+  const QrChecks(this.json);
+
+  /// The name in the Style document.
+  final String json;
+}
+
 enum QrFrameRing {
   none('none'),
   solid('solid'),
@@ -1743,6 +1754,7 @@ class QrStyle extends QrDocument {
     this.quietZone,
     this.allowInverted,
     this.allowUnscannable,
+    this.checks,
     this.frame,
     this.border,
     this.shadow,
@@ -1792,8 +1804,11 @@ class QrStyle extends QrDocument {
 
   final bool? allowInverted;
 
-  /// Render what the measured glass limits refuse, as warnings; the report says scannable: false.
+  /// Deprecated (1.3.0): true is checks lenient, false checks strict. Not with checks.
   final bool? allowUnscannable;
+
+  /// How strictly the checks hold the style (default lenient): strict refuses every error; lenient renders readability errors as warnings and refuses hard ones; off refuses nothing. The report says scannable: false when an error was rendered anyway.
+  final QrChecks? checks;
 
   final QrFrame? frame;
 
@@ -1854,6 +1869,7 @@ class QrStyle extends QrDocument {
     if (quietZone != null) 'quiet_zone': quietZone!,
     if (allowInverted != null) 'allow_inverted': allowInverted!,
     if (allowUnscannable != null) 'allow_unscannable': allowUnscannable!,
+    if (checks != null) 'checks': checks!.json,
     if (frame != null) 'frame': frame!.toJson(),
     if (border != null) 'border': border!.toJson(),
     if (shadow != null) 'shadow': shadow!,

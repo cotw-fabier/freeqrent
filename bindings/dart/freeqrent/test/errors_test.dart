@@ -105,7 +105,10 @@ void main() {
 
   test('render errors carry their fields', () {
     final contrast = caught(
-      () => FreeQrent.render(url, style: '{"palette":{"fg":"#ccc"}}'),
+      () => FreeQrent.render(
+        url,
+        style: '{"palette":{"fg":"#ccc"},"checks":"strict"}',
+      ),
     );
     expect(contrast.code, 'contrast_too_low');
     expect(contrast.detail['token'], 'fg');
@@ -131,7 +134,10 @@ void main() {
     final inverted = caught(
       () => FreeQrent.render(
         url,
-        style: const QrStyle(palette: {QrToken.bg: '#000', QrToken.fg: '#fff'}),
+        style: const QrStyle(
+          palette: {QrToken.bg: '#000', QrToken.fg: '#fff'},
+          checks: QrChecks.strict,
+        ),
       ),
     );
     expect(inverted.code, 'inverted_colors');
@@ -145,6 +151,7 @@ void main() {
             scale: 0.45,
           ),
           encoding: QrEncoding(ecc: QrEcc.l, version: 5),
+          checks: QrChecks.strict,
         ),
       ),
     );

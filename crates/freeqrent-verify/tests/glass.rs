@@ -21,7 +21,7 @@ const VECTOR: GlassRender = GlassRender::Vector;
 fn glass(render: GlassRender) -> Glass {
     Glass::new().render(render)
 }
-use freeqrent_verify::{Bar, Gray, rasterize, scannable_after, verify_style};
+use freeqrent_verify::{Bar, Gray, Guarantee, rasterize, scannable_after, verify_style};
 
 const TEXT: &str = "https://example.com";
 /// The pictures' side: about the baked resolution at v5–v10.
@@ -65,7 +65,7 @@ fn assert_scans(style: &Style, qr: &QrMatrix, render: GlassRender, label: &str) 
 
 /// [`assert_scans`] for vector glass with lenses `lens` wide.
 fn assert_scans_lens(style: &Style, qr: &QrMatrix, render: GlassRender, lens: f32, label: &str) {
-    let report = style.check(qr);
+    let report = style.strict().check(qr);
     assert!(report.ok() && report.scannable, "{label}: {report:?}");
     let version = qr.version().number();
     let boundary = if render == VECTOR && lens < GLASS_VECTOR_FULL_BAR_LENS {
@@ -260,7 +260,7 @@ fn frames_and_art_scan() {
         for (label, style) in styles {
             for version in [4u8, 9] {
                 let qr = code(&style, version, Ecc::M);
-                let report = style.check(&qr);
+                let report = style.strict().check(&qr);
                 assert!(report.ok() && report.scannable, "{label}: {report:?}");
                 if let Err(e) = verify_style(&style, &qr, TEXT) {
                     panic!("{label} {render:?} v{version}: {e}");
@@ -348,7 +348,7 @@ fn effects_scan() {
         let style = Style::new()
             .halftone(halftone("face", glass(BAKED)))
             .effect(effect);
-        let report = style.check(&code(&style, 3, Ecc::M));
+        let report = style.strict().check(&code(&style, 3, Ecc::M));
         assert!(
             report
                 .errors
@@ -486,7 +486,8 @@ fn measured_limits_are_refused_and_allowed_on_request() {
         for (g, label) in cases {
             let style = Style::new().halftone(halftone("face", g));
             let qr = code(&style, 5, Ecc::M);
-            let refused = style.check(&qr);
+            let strict = style.strict();
+            let refused = strict.check(&qr);
             assert!(
                 refused.errors.iter().any(|e| matches!(
                     e,
@@ -496,8 +497,9 @@ fn measured_limits_are_refused_and_allowed_on_request() {
                 )),
                 "{render:?} {label}: {refused:?}"
             );
-            assert!(style.render(&qr).is_err());
-            let allowed = style.allow_unscannable(true);
+            assert!(strict.render(&qr).is_err());
+            // Rendered with a warning by default (Checks::Lenient).
+            let allowed = style;
             let report = allowed.check(&qr);
             assert!(report.ok() && !report.scannable, "{label}: {report:?}");
             assert!(allowed.render(&qr).is_ok(), "{label}");

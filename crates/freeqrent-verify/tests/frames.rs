@@ -8,7 +8,7 @@ use common::assert_scans;
 use freeqrent::{
     Border, Caption, Ecc, Frame, FrameRing, ModuleShape, Palette, QrCode, Style, Version,
 };
-use freeqrent_verify::{Bar, verify_with};
+use freeqrent_verify::{Bar, Guarantee, verify_with};
 
 #[test]
 fn round_frames_scan() {
@@ -153,7 +153,7 @@ fn captions_scan_even_as_solid_bars() {
                             .unwrap();
                         let svg = style.render(&qr).unwrap();
                         let svg = solid_caption(&svg, size, fill);
-                        let bar = Bar::for_report(&style.check(&qr));
+                        let bar = Bar::for_report(&style.strict().check(&qr));
                         if let Err(e) = verify_with(&svg, text, bar) {
                             panic!(
                                 "{frame:?} {border:?} size {size} qz{qz} {fill} v{version}: {e}"

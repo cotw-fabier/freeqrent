@@ -16,7 +16,7 @@ test('require gives the CJS build, and it renders like the ESM one', async () =>
   assert.deepEqual(cjs.check(TEXT, STYLE), esm.check(TEXT, STYLE));
   assert.deepEqual(Object.keys(cjs).sort(), Object.keys(esm).sort());
   assert.throws(
-    () => cjs.render(TEXT, { palette: { fg: '#eee' } }),
+    () => cjs.render(TEXT, { palette: { fg: '#eee' }, checks: 'strict' }),
     (e) => e instanceof cjs.FreeQrentError && e.code === 'contrast_too_low' && e.detail.token === 'fg',
   );
 });

@@ -10,7 +10,7 @@ use freeqrent::{
     Intro, LayerRole, Logo, LogoFrame, LogoShape, Palette, Preset, QrCode, QrMatrix, RenderError,
     Rgba8Image, Style, TimingStyle, Token, TrackingGrid, Version, Warning,
 };
-use freeqrent_verify::{Bar, Render, rasterize, verify_at, verify_one, verify_style};
+use freeqrent_verify::{Bar, Guarantee, Render, rasterize, verify_at, verify_one, verify_style};
 
 const TEXT: &str = "https://example.com";
 const PICTURES: [&str; 5] = ["disc", "gradient", "rings", "photo", "logo"];
@@ -24,7 +24,7 @@ fn fitted(style: &Style, version: u8, ecc: Ecc) -> QrMatrix {
 }
 
 fn assert_verifies(style: &Style, qr: &QrMatrix, label: &str) {
-    let report = style.check(qr);
+    let report = style.strict().check(qr);
     assert!(report.ok(), "{label}: {report:?}");
     assert!(report.warnings.is_empty(), "{label}: {:?}", report.warnings);
     if let Err(e) = verify_style(style, qr, TEXT) {
@@ -75,7 +75,7 @@ fn dark_halftones_scan() {
                         }
                         let qr = fitted(&style, version, ecc);
                         let label = format!("{kind} {ink:?} {clarity} {ecc:?}");
-                        let report = style.check(&qr);
+                        let report = style.strict().check(&qr);
                         assert!(report.ok(), "{label}: {report:?}");
                         assert!(
                             report
@@ -170,7 +170,7 @@ fn logos_on_pictures_scan_at_every_size_in_both_polarities() {
                         .unwrap();
                     let label = format!("{frame:?} {kind} art={art} dark={dark}");
                     let v = qr.version().number();
-                    let report = style.check(&qr);
+                    let report = style.strict().check(&qr);
                     if art {
                         assert!(report.ok(), "{label}: {report:?}");
                     } else {
@@ -190,14 +190,14 @@ fn logos_on_pictures_scan_at_every_size_in_both_polarities() {
 /// Fits `style` without a version range and checks every size.
 fn style_scans_from(style: &Style, label: &str) {
     let qr = fitted(style, 1, Ecc::M);
-    let report = style.check(&qr);
+    let report = style.strict().check(&qr);
     assert!(report.ok(), "{label}: {report:?}");
     assert_every_size(style, &qr, label);
 }
 
 fn assert_every_size(style: &Style, qr: &QrMatrix, label: &str) {
     let svg = style.render(qr).unwrap();
-    let bar = Bar::for_report(&style.check(qr));
+    let bar = Bar::for_report(&style.strict().check(qr));
     for px in 4..=14 {
         let render = Render {
             px_per_module: px,
@@ -326,7 +326,7 @@ fn intros_break_the_picture_into_tiles() {
             let svg = animated.render(&qr).unwrap();
             let wrappers = svg.matches("\"><svg x=").count();
             assert_eq!(wrappers, 12, "{preset:?} {ink:?}");
-            let report = animated.check(&qr);
+            let report = animated.strict().check(&qr);
             assert!(
                 report.warnings.is_empty(),
                 "{preset:?}: {:?}",
@@ -361,7 +361,7 @@ fn options_are_checked() {
             .bands(0.4, 0.75),
     );
     assert!(matches!(
-        narrow.check(&qr).errors[..],
+        narrow.strict().check(&qr).errors[..],
         [RenderError::ContrastTooLow {
             token: Token::Fg,
             ..
@@ -372,7 +372,7 @@ fn options_are_checked() {
             .ink(Ink::Color { colors: 4 })
             .bands(0.35, 0.9),
     );
-    let report = soft.check(&qr);
+    let report = soft.strict().check(&qr);
     assert!(report.ok());
     assert!(matches!(
         report.warnings[..],
@@ -383,7 +383,7 @@ fn options_are_checked() {
     ));
     let bad = Style::new().halftone(Halftone::new(image).clarity(Clarity::Uniform(1.5)));
     assert!(matches!(
-        bad.check(&qr).errors[..],
+        bad.strict().check(&qr).errors[..],
         [RenderError::OptionOutOfRange {
             option: "Clarity::Uniform",
             ..

@@ -9,7 +9,7 @@ use freeqrent::{
     Corner, Ecc, Frame, FrameRing, Glyph, Intro, Preset, QrCode, QrMatrix, RasterFormat, Style,
     Version, Warning,
 };
-use freeqrent_verify::{Bar, rasterize, verify_with};
+use freeqrent_verify::{Bar, Guarantee, rasterize, verify_with};
 
 /// Module shapes that fill the cell's center, in a 100-unit box.
 const HEART: &str = r#"<svg viewBox="0 0 100 100"><path d="M50 92 8 50C-8 30 8 4 30 6c10 1 16 7 20 14 4-7 10-13 20-14 22-2 38 24 22 44z"/></svg>"#;
@@ -83,7 +83,7 @@ fn module_glyphs_scan() {
             },
         ] {
             let style = Style::new().module_glyph(glyph.clone()).frame(frame);
-            let report = style.check(&code("HELLO", 1));
+            let report = style.strict().check(&code("HELLO", 1));
             assert!(report.warnings.contains(&Warning::CustomModules));
             assert_scans(&style, &format!("{name} {frame:?}"));
         }
@@ -104,6 +104,7 @@ fn finder_glyphs_scan() {
         let style = Style::new().finder_glyphs(ring, eye);
         assert!(
             style
+                .strict()
                 .check(&code("HELLO", 1))
                 .warnings
                 .contains(&Warning::CustomFinder)
@@ -127,13 +128,13 @@ fn hollow_glyphs_are_caught_by_verify() {
     let hollow = r#"<svg viewBox="0 0 10 10"><path fill-rule="evenodd" d="M0 0h10v10H0zM2 2v6h6V2z"/></svg>"#;
     let style = Style::new().module_glyph(svg(hollow));
     let qr = code(PAYLOADS[2].0, PAYLOADS[2].1);
-    let bar = Bar::for_report(&style.check(&qr));
+    let bar = Bar::for_report(&style.strict().check(&qr));
     assert!(verify_with(&style.render(&qr).unwrap(), PAYLOADS[2].0, bar).is_err());
     // A ring with no band through the middle of its sides.
     let corners =
         r#"<svg viewBox="0 0 7 7"><path d="M0 0h2v2H0zM5 0h2v2H5zM0 5h2v2H0zM5 5h2v2H5z"/></svg>"#;
     let style = Style::new().finder_glyphs(Some(svg(corners)), None);
-    let bar = Bar::for_report(&style.check(&qr));
+    let bar = Bar::for_report(&style.strict().check(&qr));
     assert!(verify_with(&style.render(&qr).unwrap(), PAYLOADS[2].0, bar).is_err());
 }
 

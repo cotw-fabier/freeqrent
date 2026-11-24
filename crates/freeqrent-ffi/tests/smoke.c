@@ -27,8 +27,8 @@ int main(void) {
     expect(out != NULL && strlen(out) == len, "out_len is the length");
     freeqrent_free(out);
 
-    code = freeqrent_render((const uint8_t *)text, strlen(text), FREEQRENT_TEXT, "{\"palette\":{\"fg\":\"#ddd\"}}", &out, NULL);
-    expect(code == FREEQRENT_ERROR, "a pale fg is refused");
+    code = freeqrent_render((const uint8_t *)text, strlen(text), FREEQRENT_TEXT, "{\"palette\":{\"fg\":\"#ddd\"},\"checks\":\"strict\"}", &out, NULL);
+    expect(code == FREEQRENT_ERROR, "a pale fg is refused under strict checks");
     expect(out != NULL && strstr(out, "\"code\":\"contrast_too_low\"") != NULL, "the error says why");
     freeqrent_free(out);
 

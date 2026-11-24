@@ -285,7 +285,12 @@ pub fn inputs() -> Vec<String> {
         ),
         case("check clean", "check", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"preset":"ink"}}"#)),
         case("check warnings", "check", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"preset":"terminal","modules":{{"kind":"dots","size":0.7}}}}"#)),
-        case("check refused", "check", &format!(r##""payload":{{"text":"{URL}"}},"style":{{"palette":{{"fg":"#bbb"}}}}"##)),
+        case("check refused", "check", &format!(r##""payload":{{"text":"{URL}"}},"style":{{"palette":{{"fg":"#bbb"}},"checks":"strict"}}"##)),
+        case("check lenient", "check", &format!(r##""payload":{{"text":"{URL}"}},"style":{{"palette":{{"fg":"#bbb"}}}}"##)),
+        case("check hard", "check", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"shadow":1,"frame":"none"}}"#)),
+        case("check off", "check", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"shadow":1,"frame":"none","checks":"off"}}"#)),
+        render("checks off", r#"{"shadow":1,"frame":"none","modules":{"kind":"rounded","radius":0.9},"checks":"off"}"#),
+        render("checks lenient", r##"{"palette":{"fg":"#bbb"},"quiet_zone":1}"##),
         case(
             "check logo",
             "check",
@@ -310,7 +315,7 @@ pub fn inputs() -> Vec<String> {
         ),
         case("error unknown key", "render", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"shape":"dots"}}"#)),
         case("error shadow", "render", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"frame":"none","shadow":1}}"#)),
-        case("error contrast", "render", &format!(r##""payload":{{"text":"{URL}"}},"style":{{"palette":{{"fg":"#ccc"}}}}"##)),
+        case("error contrast", "render", &format!(r##""payload":{{"text":"{URL}"}},"style":{{"palette":{{"fg":"#ccc"}},"checks":"strict"}}"##)),
         case("error too long", "render", &format!(r#""payload":{{"text":"{}"}},"style":{{"encoding":{{"ecc":"H"}}}}"#, "x".repeat(3000))),
         case("error logo", "render", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"logo":{{"svg":"<html></html>"}}}}"#)),
         case(
@@ -375,7 +380,7 @@ pub fn inputs() -> Vec<String> {
         case(
             "error glass halo",
             "render",
-            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{{"image":{disc},"source":"{disc_file}","ink":{{"kind":"glass","halo":0}}}}}}"#),
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{{"image":{disc},"source":"{disc_file}","ink":{{"kind":"glass","halo":0}}}},"checks":"strict"}}"#),
         ),
         case(
             "check glass halo allowed",

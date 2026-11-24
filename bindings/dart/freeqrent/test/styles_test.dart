@@ -404,10 +404,18 @@ void main() {
       ),
     );
     expect(warned.warnings.map((w) => w.code), contains('small_dots'));
-    final refused = FreeQrent.check(url, style: '{"palette":{"fg":"#bbb"}}');
+    final refused = FreeQrent.check(
+      url,
+      style: '{"palette":{"fg":"#bbb"},"checks":"strict"}',
+    );
     expect(refused.ok, isFalse);
     expect(refused.errors.first.code, 'contrast_too_low');
     expect(refused.errors.first.detail['token'], 'fg');
+    // By default (checks lenient) it renders, with a warning of the same name.
+    final lenient = FreeQrent.check(url, style: '{"palette":{"fg":"#bbb"}}');
+    expect(lenient.ok, isTrue);
+    expect(lenient.scannable, isFalse);
+    expect(lenient.warnings.first.code, 'contrast_too_low');
   });
 
   test('the plan is typed', () {

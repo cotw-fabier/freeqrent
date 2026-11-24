@@ -210,7 +210,7 @@ impl QrBuilder {
         style: &Style,
     ) -> Result<QrMatrix, EncodeError> {
         let affordable = |qr: &QrMatrix| {
-            !style.check(qr).errors.iter().any(|e| {
+            !crate::check::raw_errors(style, qr).iter().any(|e| {
                 matches!(
                     e,
                     RenderError::LogoTooLarge { .. }

@@ -6,7 +6,7 @@ mod common;
 
 use common::picture;
 use freeqrent::{Ecc, Halftone, Ink, QrCode, Style, TrackingGrid};
-use freeqrent_verify::verify_style;
+use freeqrent_verify::{Guarantee, verify_style};
 
 #[test]
 fn art_mode_scans_on_every_grid() {
@@ -32,7 +32,7 @@ fn art_mode_scans_on_every_grid() {
                         let label = format!("{} {grid:?} {ecc:?} {kind} {ink:?}", text.len());
                         assert!((min..=max).contains(&qr.version()), "{label}");
                         assert_eq!(qr.ecc(), ecc, "{label}");
-                        let report = style.check(&qr);
+                        let report = style.strict().check(&qr);
                         assert!(report.ok(), "{label}: {report:?}");
                         assert!(report.warnings.is_empty(), "{label}: {report:?}");
                         // Measured: 31–79% of modules steerable, 64–87% match.
@@ -100,7 +100,7 @@ fn dark_art_scans_on_every_grid() {
                             .encode_text_for(text, &style)
                             .unwrap();
                         let label = format!("{} {grid:?} {ecc:?} {kind} {ink:?}", text.len());
-                        let report = style.check(&qr);
+                        let report = style.strict().check(&qr);
                         assert!(report.ok(), "{label}: {report:?}");
                         assert!(
                             report

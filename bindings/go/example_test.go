@@ -31,7 +31,7 @@ func ExampleDocument() {
 }
 
 func ExampleError() {
-	_, err := freeqrent.Render("hi", freeqrent.NewStyle(freeqrent.WithToken(freeqrent.TokenFG, "#eee")))
+	_, err := freeqrent.Render("hi", freeqrent.NewStyle(freeqrent.WithToken(freeqrent.TokenFG, "#eee"), freeqrent.WithChecks(freeqrent.ChecksStrict)))
 	var e *freeqrent.Error
 	if errors.As(err, &e) {
 		fmt.Println(e.Code, e.Detail["token"])

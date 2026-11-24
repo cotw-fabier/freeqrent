@@ -32,11 +32,16 @@ type Style struct {
 	Dark          *bool  `json:"dark,omitzero"`
 	QuietZone     *uint8 `json:"quiet_zone,omitzero"`
 	AllowInverted *bool  `json:"allow_inverted,omitzero"`
-	// Render what the measured glass limits refuse, as warnings; the report says
-	// scannable: false.
-	AllowUnscannable *bool  `json:"allow_unscannable,omitzero"`
-	Frame            Frame  `json:"frame,omitzero"`
-	Border           Border `json:"border,omitzero"`
+	// Deprecated (1.3.0): true is checks lenient, false checks strict. Not with
+	// checks.
+	AllowUnscannable *bool `json:"allow_unscannable,omitzero"`
+	// How strictly the checks hold the style (default lenient): strict refuses
+	// every error; lenient renders readability errors as warnings and refuses
+	// hard ones; off refuses nothing. The report says scannable: false when an
+	// error was rendered anyway.
+	Checks Checks `json:"checks,omitzero"`
+	Frame  Frame  `json:"frame,omitzero"`
+	Border Border `json:"border,omitzero"`
 	// A hard shadow's offset down and right, in modules (0.25–3).
 	Shadow *float64 `json:"shadow,omitzero"`
 	// How data modules share fg and the data colors fg.2 to fg.4.
@@ -94,6 +99,8 @@ func (v *Style) UnmarshalJSON(data []byte) error {
 			err = json.Unmarshal(raw, &v.AllowInverted)
 		case "allow_unscannable":
 			err = json.Unmarshal(raw, &v.AllowUnscannable)
+		case "checks":
+			err = json.Unmarshal(raw, &v.Checks)
 		case "frame":
 			v.Frame, err = decodeFrame(raw)
 		case "border":
@@ -1769,6 +1776,19 @@ const (
 // Palette is token: A CSS paint: a color, or a gradient where the token
 // takes one.
 type Palette map[Token]string
+
+// How strictly the checks hold the style (default lenient): strict refuses
+// every error; lenient renders readability errors as warnings and refuses
+// hard ones; off refuses nothing. The report says scannable: false when an
+// error was rendered anyway. Checks is one of "strict", "lenient" or "off".
+type Checks string
+
+// The values of Checks.
+const (
+	ChecksStrict  Checks = "strict"
+	ChecksLenient Checks = "lenient"
+	ChecksOff     Checks = "off"
+)
 
 // Frame is one of FrameSquare, FrameNone, FrameRounded, FrameCircle, written
 // as an object tagged by "kind". A document may also give "square", "none",
@@ -4304,8 +4324,8 @@ func (v *Error) UnmarshalJSON(data []byte) error {
 // Report mirrors the schema's Report.
 type Report struct {
 	OK bool `json:"ok"`
-	// False when allow_unscannable turned an error into a warning: outside the
-	// guarantee.
+	// False when an error was rendered anyway, as a warning (checks lenient or
+	// off): outside the guarantee.
 	Scannable     bool      `json:"scannable"`
 	Errors        []Error   `json:"errors"`
 	Warnings      []Error   `json:"warnings"`
@@ -4842,6 +4862,11 @@ func WithAllowInverted(v bool) Option {
 // WithAllowUnscannable sets Style.AllowUnscannable.
 func WithAllowUnscannable(v bool) Option {
 	return func(s *Style) { s.AllowUnscannable = &v }
+}
+
+// WithChecks sets Style.Checks.
+func WithChecks(v Checks) Option {
+	return func(s *Style) { s.Checks = v }
 }
 
 // WithFrame sets Style.Frame.

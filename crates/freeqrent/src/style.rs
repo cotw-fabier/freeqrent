@@ -8,7 +8,7 @@ use core::fmt;
 
 #[cfg(feature = "animate")]
 use crate::animate::{Idle, Intro};
-use crate::check::{self, RenderError, ScanReport};
+use crate::check::{self, Checks, RenderError, ScanReport};
 use crate::glyph::{self, Glyph, Glyphs};
 #[cfg(feature = "halftone")]
 use crate::halftone::Halftone;
@@ -316,7 +316,7 @@ pub struct Style {
     pub(crate) palette: Palette,
     pub(crate) quiet_zone: u8,
     pub(crate) allow_inverted: bool,
-    pub(crate) allow_unscannable: bool,
+    pub(crate) checks: Checks,
     pub(crate) minify: bool,
     pub(crate) title: Option<String>,
     pub(crate) description: Option<String>,
@@ -353,7 +353,7 @@ impl Default for Style {
             palette: Palette::default(),
             quiet_zone: 4,
             allow_inverted: false,
-            allow_unscannable: false,
+            checks: Checks::Lenient,
             minify: true,
             title: None,
             description: None,
@@ -444,23 +444,39 @@ impl Style {
         self
     }
 
-    /// Renders a code the checks measured not to scan, instead of refusing
-    /// it (SPEC §9; default false). The errors this covers
-    /// ([`RenderError::GlassHaloTooNarrow`](crate::RenderError::GlassHaloTooNarrow),
-    /// [`RenderError::GlassFinderContrast`](crate::RenderError::GlassFinderContrast),
-    /// [`RenderError::GlassTargetsTooWeak`](crate::RenderError::GlassTargetsTooWeak))
-    /// become warnings of the same names, and
-    /// [`ScanReport::scannable`](crate::ScanReport::scannable) is false:
-    /// the code is drawn as asked and probably doesn't scan. Nothing else
-    /// changes; a style without such an error renders as before.
-    pub fn allow_unscannable(mut self, allow: bool) -> Style {
-        self.allow_unscannable = allow;
+    /// How strictly the checks hold this style to what was measured to
+    /// scan (SPEC §9; default [`Checks::Lenient`]): [`Checks::Strict`]
+    /// refuses every error, `Lenient` renders readability errors as
+    /// warnings and refuses hard ones, [`Checks::Off`] refuses nothing.
+    /// Whenever an error is rendered anyway,
+    /// [`ScanReport::scannable`](crate::ScanReport::scannable) is false.
+    pub fn checks(mut self, checks: Checks) -> Style {
+        self.checks = checks;
         self
     }
 
-    /// Whether codes measured not to scan render ([`Style::allow_unscannable`]).
+    /// The [`Checks`] level ([`Style::checks`]).
+    pub fn checks_level(&self) -> Checks {
+        self.checks
+    }
+
+    /// The 1.2 switch, kept as a shorthand: `true` is [`Checks::Lenient`],
+    /// `false` [`Checks::Strict`]. The last of this and [`Style::checks`]
+    /// called wins.
+    #[deprecated(since = "1.3.0", note = "use `Style::checks`")]
+    pub fn allow_unscannable(mut self, allow: bool) -> Style {
+        self.checks = if allow {
+            Checks::Lenient
+        } else {
+            Checks::Strict
+        };
+        self
+    }
+
+    /// Whether codes measured not to scan render: any level but
+    /// [`Checks::Strict`].
     pub fn unscannable_allowed(&self) -> bool {
-        self.allow_unscannable
+        self.checks != Checks::Strict
     }
 
     /// Compact output (the default) or one element per line.
@@ -812,8 +828,19 @@ impl Style {
         check::check(self, qr)
     }
 
+    /// The style to draw: this one, or under [`Checks::Off`] with hard
+    /// errors, a copy with options clamped and conflicts left out. Fails
+    /// with the first error [`check`](Style::check) reports.
+    fn resolved(&self, qr: &QrMatrix) -> Result<Style, RenderError> {
+        let (report, style) = check::resolve(self, qr);
+        match report.errors.into_iter().next() {
+            Some(error) => Err(error),
+            None => Ok(style),
+        }
+    }
+
     /// Renders `qr` to an SVG string, or fails if [`check`](Style::check)
-    /// finds an error.
+    /// reports an error.
     pub fn render(&self, qr: &QrMatrix) -> Result<String, RenderError> {
         let mut out = String::new();
         self.render_to(qr, &mut out)?;
@@ -827,11 +854,8 @@ impl Style {
         qr: &QrMatrix,
         out: &mut W,
     ) -> Result<(), RenderError> {
-        let report = self.check(qr);
-        if let Some(error) = report.errors.into_iter().next() {
-            return Err(error);
-        }
-        svg::write(self, qr, None, out).map_err(|_| RenderError::Write)
+        let style = self.resolved(qr)?;
+        svg::write(&style, qr, None, out).map_err(|_| RenderError::Write)
     }
 
     /// The animation as data (SPEC §8.5): layers and tracks, for players
@@ -841,11 +865,8 @@ impl Style {
     /// bakes it.
     #[cfg(feature = "animate")]
     pub fn plan(&self, qr: &QrMatrix) -> Result<crate::AnimationPlan, RenderError> {
-        let report = self.check(qr);
-        if let Some(error) = report.errors.into_iter().next() {
-            return Err(error);
-        }
-        Ok(crate::animate::plan(self, qr))
+        let style = self.resolved(qr)?;
+        Ok(crate::animate::plan(&style, qr))
     }
 
     /// Renders the animation stopped at `t_ms` from its trigger, as a
@@ -854,12 +875,9 @@ impl Style {
     /// on it looks like the finished code.
     #[cfg(feature = "animate")]
     pub fn render_frame(&self, qr: &QrMatrix, t_ms: u32) -> Result<String, RenderError> {
-        let report = self.check(qr);
-        if let Some(error) = report.errors.into_iter().next() {
-            return Err(error);
-        }
+        let style = self.resolved(qr)?;
         let mut out = String::new();
-        svg::write(self, qr, Some(t_ms), &mut out).map_err(|_| RenderError::Write)?;
+        svg::write(&style, qr, Some(t_ms), &mut out).map_err(|_| RenderError::Write)?;
         Ok(out)
     }
 

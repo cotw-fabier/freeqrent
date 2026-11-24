@@ -179,11 +179,11 @@ test('output modes and exit codes', () => {
   const report = bin([TEXT, '--check']);
   assert.equal(report.status, 0);
   assert.deepEqual(JSON.parse(report.stdout), fq.check(TEXT));
-  const refused = bin([TEXT, '--check', '--fg', '#eeeeee']);
+  const refused = bin([TEXT, '--check', '--fg', '#eeeeee', '--checks', 'strict']);
   assert.equal(refused.status, 1);
   assert.equal(JSON.parse(refused.stdout).ok, false);
 
-  const render = bin([TEXT, '--fg', '#eeeeee']);
+  const render = bin([TEXT, '--fg', '#eeeeee', '--checks', 'strict']);
   assert.equal(render.status, 1);
   assert.match(render.stderr, /^freeqrent: fg has contrast/);
   assert.equal(render.stdout, '');

@@ -58,6 +58,7 @@ Token = Literal[
     "fg.4",
     "caption",
 ]
+Checks = Literal["strict", "lenient", "off"]
 FrameName = Literal["square", "rounded", "circle", "none"]
 FrameRing = Literal["none", "solid", "dashed"]
 BorderName = Literal["solid", "double"]
@@ -107,7 +108,8 @@ class Style(Doc):
         palette: Token paints, merged onto the base's palette.
         replace_palette: Start from the default palette instead of the base's, as the CLI does with --palette-from-*.
         dark: Render the palette's dark twin and allow inverted colors.
-        allow_unscannable: Render what the measured glass limits refuse, as warnings; the report says scannable: false.
+        allow_unscannable: Deprecated (1.3.0): true is checks lenient, false checks strict. Not with checks.
+        checks: How strictly the checks hold the style (default lenient): strict refuses every error; lenient renders readability errors as warnings and refuses hard ones; off refuses nothing. The report says scannable: false when an error was rendered anyway.
         shadow: A hard shadow's offset down and right, in modules (0.25–3).
         color_spread: How data modules share fg and the data colors fg.2 to fg.4.
     """
@@ -124,6 +126,7 @@ class Style(Doc):
     quiet_zone: Optional[int] = None
     allow_inverted: Optional[bool] = None
     allow_unscannable: Optional[bool] = None
+    checks: Optional[Checks] = None
     frame: Optional[Frame] = None
     border: Optional[Border] = None
     shadow: Optional[float] = None
@@ -1003,6 +1006,7 @@ __all__ = [
     "Brackets",
     "Caption",
     "CaptionFont",
+    "Checks",
     "CircleEye",
     "CircleFrame",
     "CircleLogoShape",

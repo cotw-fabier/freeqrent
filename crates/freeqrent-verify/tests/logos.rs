@@ -8,7 +8,7 @@ use freeqrent::{
     Ecc, Frame, FrameRing, Logo, LogoShape, ModuleShape, QrCode, QrMatrix, RasterFormat,
     RenderError, Style, Version,
 };
-use freeqrent_verify::verify_style;
+use freeqrent_verify::{Guarantee, verify_style};
 use resvg::tiny_skia;
 
 /// The worst case for a scanner: dark, with light stripes, no margin.
@@ -25,7 +25,10 @@ fn code(text: &str, version: u8, ecc: Ecc) -> QrMatrix {
 
 /// The `max_scale` a code reports for an oversized logo.
 fn max_scale(logo: &Logo, qr: &QrMatrix) -> f32 {
-    let report = Style::new().logo(logo.clone().scale(0.5)).check(qr);
+    let report = Style::new()
+        .logo(logo.clone().scale(0.5))
+        .strict()
+        .check(qr);
     report
         .errors
         .iter()
@@ -55,7 +58,7 @@ fn the_largest_affordable_logo_scans() {
                         continue;
                     }
                     let style = Style::new().logo(logo.scale(max));
-                    let report = style.check(&qr);
+                    let report = style.strict().check(&qr);
                     assert!(report.ok(), "{report:?}");
                     if let Err(e) = verify_style(&style, &qr, &text) {
                         panic!("v{version} {ecc:?} {shape:?} backdrop {backdrop} at {max}: {e}");
@@ -72,12 +75,12 @@ fn encoding_for_a_style_grows_the_code_until_the_logo_fits() {
     let style = Style::new().logo(Logo::svg(DARK).unwrap().scale(0.3));
     let plain = QrCode::builder().encode_text(text).unwrap();
     assert!(matches!(
-        style.check(&plain).errors[..],
+        style.strict().check(&plain).errors[..],
         [RenderError::LogoTooLarge { .. }]
     ));
     let fitted = QrCode::builder().encode_text_for(text, &style).unwrap();
     assert!(fitted.version() > plain.version(), "{:?}", fitted.version());
-    assert!(style.check(&fitted).ok());
+    assert!(style.strict().check(&fitted).ok());
     verify_style(&style, &fitted, text).unwrap();
     // Pinned to a version that can't afford it: the plain code comes back.
     let pinned = QrCode::builder()
@@ -183,7 +186,7 @@ fn the_largest_logos_at_h_scan() {
                             .allow_inverted(dark);
                         let label =
                             format!("v{version} {frame:?} {shape:?} {modules:?} dark={dark}");
-                        let report = style.check(&qr);
+                        let report = style.strict().check(&qr);
                         assert!(report.ok(), "{label}: {report:?}");
                         assert!(report.ecc_budget_used <= DAMAGE_BUDGET_H, "{label}");
                         verify_style(&style, &qr, &text).unwrap_or_else(|e| panic!("{label}: {e}"));

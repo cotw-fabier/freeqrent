@@ -40,9 +40,17 @@ fn check_reports_and_sets_the_exit_code() {
     assert_eq!(ok.status.code(), Some(0));
     assert!(stdout(&ok).starts_with("ok: renders"));
     assert!(stdout(&ok).contains("warning: 2.1 px per module"));
-    let refused = freeqrent(&["HELLO", "--check", "--fg", "#aaa"]);
+    let refused = freeqrent(&["HELLO", "--check", "--fg", "#aaa", "--checks", "strict"]);
     assert_eq!(refused.status.code(), Some(1));
     assert!(stdout(&refused).contains("error: fg has contrast"));
+    // By default a readability error renders, with its warning.
+    let lenient = freeqrent(&["HELLO", "--check", "--fg", "#aaa"]);
+    assert_eq!(lenient.status.code(), Some(0));
+    let report = stdout(&lenient);
+    assert!(report.starts_with("ok: renders, NOT scannable"), "{report}");
+    assert!(report.contains("warning: fg has contrast"), "{report}");
+    let bad = freeqrent(&["HELLO", "--checks", "sometimes"]);
+    assert_eq!(bad.status.code(), Some(2));
 }
 
 #[test]
@@ -293,7 +301,16 @@ fn logos_grow_the_code_until_they_fit() {
     assert_eq!(missing.status.code(), Some(2));
     assert!(stderr(&missing).contains("--logo /nonexistent/logo.svg"));
     // Pinned too small, the logo is refused with the scale that would fit.
-    let pinned = freeqrent(&["HELLO", "--logo", "sample", "--version", "2", "--check"]);
+    let pinned = freeqrent(&[
+        "HELLO",
+        "--logo",
+        "sample",
+        "--version",
+        "2",
+        "--check",
+        "--checks",
+        "strict",
+    ]);
     assert_eq!(pinned.status.code(), Some(1));
     assert!(
         stdout(&pinned).contains("at most scale"),
@@ -670,7 +687,8 @@ fn glass_ink_embeds_the_picture_and_its_glass() {
     assert_eq!(svg.matches("<image").count(), 2);
     assert_eq!(svg.matches("href=\"data:image/png;base64,").count(), 2);
 
-    // The measured limits are refused, unless asked for.
+    // The measured limits are refused under --checks strict, and render
+    // with their warnings by default.
     let refused = freeqrent(&[
         "https://example.com",
         "--halftone",
@@ -678,6 +696,8 @@ fn glass_ink_embeds_the_picture_and_its_glass() {
         "--ink",
         "glass:halo=0",
         "--check",
+        "--checks",
+        "strict",
     ]);
     assert_eq!(refused.status.code(), Some(1));
     assert!(stdout(&refused).contains("error: a glass halo of 0 modules"));
@@ -687,7 +707,6 @@ fn glass_ink_embeds_the_picture_and_its_glass() {
         "sample",
         "--ink",
         "glass:halo=0",
-        "--allow-unscannable",
         "--check",
     ]);
     assert_eq!(allowed.status.code(), Some(0), "{}", stderr(&allowed));

@@ -2,10 +2,10 @@
 //! text after the flag, e.g. `dots:0.8` for `--shape`.
 
 use freeqrent::{
-    AlignmentShape, Axis, Border, CaptionFont, ColorSpread, Corner, CubicBezier, Ease, Ecc, Effect,
-    Emphasis, EyeShape, Fit, Frame, FrameRing, Glass, GlassRender, Idle, Ink, LogoFrame, LogoIntro,
-    LogoShape, LogoSize, LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder, Style, Texture,
-    TimingStyle, TrackingGrid, Trigger,
+    AlignmentShape, Axis, Border, CaptionFont, Checks, ColorSpread, Corner, CubicBezier, Ease, Ecc,
+    Effect, Emphasis, EyeShape, Fit, Frame, FrameRing, Glass, GlassRender, Idle, Ink, LogoFrame,
+    LogoIntro, LogoShape, LogoSize, LogoTiming, ModuleShape, Preset, RingShape, StaggerOrder,
+    Style, Texture, TimingStyle, TrackingGrid, Trigger,
 };
 
 /// Splits `name:param` and parses the parameter as a number.
@@ -286,6 +286,18 @@ pub fn spread(value: &str) -> Result<ColorSpread, String> {
         "modules" => Ok(ColorSpread::Modules),
         "regions" => Ok(ColorSpread::Regions),
         _ => Err(format!("unknown spread {value:?}: try modules or regions")),
+    }
+}
+
+/// `strict`, `lenient`, `off` (SPEC §9).
+pub fn checks(value: &str) -> Result<Checks, String> {
+    match value {
+        "strict" => Ok(Checks::Strict),
+        "lenient" => Ok(Checks::Lenient),
+        "off" => Ok(Checks::Off),
+        _ => Err(format!(
+            "unknown checks level {value:?}: try strict, lenient or off"
+        )),
     }
 }
 

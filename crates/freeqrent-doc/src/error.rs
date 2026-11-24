@@ -316,6 +316,8 @@ pub(crate) fn warning_parts(w: &Warning) -> (&'static str, Detail) {
             d.int("bytes", bytes);
             "large_output"
         }
+        // An error rendered anyway (SPEC §9): its own code and detail.
+        Warning::Unchecked(e) => return render_error_parts(e),
         _ => "warning",
     };
     (code, d)

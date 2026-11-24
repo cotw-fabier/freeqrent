@@ -43,7 +43,7 @@ test('the browser build loads over HTTP with await init()', async () => {
     const style = { preset: 'sunset', intro: 'iris', logo: { svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><rect width="4" height="4"/></svg>' } };
     assert.equal(browser.render('https://example.com', style), node.render('https://example.com', style));
     assert.deepEqual(browser.plan('https://example.com', style), node.plan('https://example.com', style));
-    assert.throws(() => browser.render('x', { quiet_zone: 0 }), browser.FreeQrentError);
+    assert.throws(() => browser.render('x', { quiet_zone: 0, checks: 'strict' }), browser.FreeQrentError);
   } finally {
     server.close();
   }

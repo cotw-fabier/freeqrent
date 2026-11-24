@@ -56,7 +56,9 @@ class CodeInfo:
 class Report:
     """A scan report: whether the style can be drawn, and how close to the
     limits it is. ``ok`` is false for a style ``render`` would refuse;
-    ``errors`` then says why."""
+    ``errors`` then says why. ``scannable`` is false when an error was
+    rendered anyway, as a warning of the same name (``checks`` lenient, the
+    default, or off): the code is outside the guarantee that it scans."""
 
     ok: bool
     errors: List[Issue]
@@ -66,6 +68,7 @@ class Report:
     logo_scale: Optional[float]
     steering: Optional[Steering]
     code: CodeInfo
+    scannable: bool = True
     json: str = field(repr=False, compare=False, default="")
 
     @classmethod
@@ -81,6 +84,7 @@ class Report:
             logo_scale=d["logo_scale"],
             steering=None if steering is None else Steering(**steering),
             code=CodeInfo(**d["code"]),
+            scannable=d["scannable"],
             json=text,
         )
 
