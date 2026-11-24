@@ -1292,7 +1292,7 @@ mod tests {
     fn refuses_and_supports(base: Glass) {
         let qr = code(&glass(base), 2);
         let g = || glass(base);
-        let cases: [(Style, &str); 8] = [
+        let mut cases: Vec<(Style, &str)> = alloc::vec![
             (
                 g().frame(Frame::Circle {
                     filler_density: 0.5,
@@ -1317,13 +1317,6 @@ mod tests {
                 "data colors (fg.2–fg.4)",
             ),
             (
-                g().effect(crate::Effect::Glow {
-                    radius: 0.2,
-                    strength: 0.1,
-                }),
-                "Style.effect",
-            ),
-            (
                 g().texture(crate::Texture::Grain { amount: 0.05 }),
                 "Style.textures",
             ),
@@ -1336,6 +1329,16 @@ mod tests {
                 "Halftone.clarity",
             ),
         ];
+        // Glow and emboss hold over vector glass only (W20261123231733).
+        let glow = crate::Effect::Glow {
+            radius: 0.2,
+            strength: 0.1,
+        };
+        let emboss = crate::Effect::Emboss { depth: 0.1 };
+        if !base.is_vector() {
+            cases.push((g().effect(glow), "Effect::Glow on baked glass"));
+            cases.push((g().effect(emboss), "Effect::Emboss on baked glass"));
+        }
         for (style, option) in cases {
             let report = style.check(&qr);
             assert!(
@@ -1367,11 +1370,66 @@ mod tests {
             g().palette(crate::Palette::new().dark_twin()),
             g().timing(TimingStyle::Dotted),
             Style::art(picture().ink(Ink::Glass(base))),
-        ] {
+            g().effect(crate::Effect::Sketch { roughness: 0.1 }),
+        ]
+        .into_iter()
+        .chain(
+            base.is_vector()
+                .then(|| [g().effect(glow), g().effect(emboss)])
+                .into_iter()
+                .flatten(),
+        ) {
             let qr = code(&style, 2);
             let report = style.check(&qr);
             assert!(report.ok(), "{report:?}");
             assert!(style.render(&qr).is_ok());
+        }
+    }
+
+    /// An effect filters the glass, never the photo under it (SPEC §7.9,
+    /// W20261123231733): the photo's `<image>` comes before the effect's
+    /// group, and the glass is inside it.
+    #[test]
+    fn effects_filter_the_glass_not_the_photo() {
+        for (g, effect) in [
+            (
+                baked().resolution(8),
+                crate::Effect::Sketch { roughness: 0.1 },
+            ),
+            (
+                vector_glass(),
+                crate::Effect::Glow {
+                    radius: 0.3,
+                    strength: 0.25,
+                },
+            ),
+        ] {
+            let style = glass(g).effect(effect);
+            let qr = code(&style, 2);
+            let svg = style.render(&qr).unwrap();
+            assert!(svg.contains("-fx\""), "{g:?}: no effect filter");
+            let (before, group) = svg.split_once("<g filter=\"url(#").unwrap();
+            let group = group.split_once("</g>").map_or(group, |(g, _)| g);
+            // The photo is the only image before the group.
+            assert_eq!(
+                before.matches("<image").count(),
+                1,
+                "{g:?}: the photo is filtered"
+            );
+            if g.is_vector() {
+                // Vector glass: veils and rims as paths, no image of its own.
+                assert!(
+                    group.contains("<path") && !group.contains("<image"),
+                    "{g:?}"
+                );
+            } else {
+                // Baked glass: its one PNG.
+                assert_eq!(
+                    group.matches("<image").count(),
+                    1,
+                    "{g:?}: the glass isn't filtered"
+                );
+            }
         }
     }
 

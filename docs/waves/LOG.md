@@ -2,6 +2,13 @@
 
 One short entry per W wave, newest first. The protocol is in `README.md`.
 
+## 20261123231733 · 1.2 · Effects on glass
+
+- Landed: §7.5's effect on glass ink filters the glass, not the photo (`LayerRole::Photo` stays out of the `{prefix}-fx` group). Sketch on both renders; glow and emboss on vector glass. Over baked glass glow and emboss stay `GlassUnsupported`, with the options `"Effect::Glow on baked glass"` and `"Effect::Emboss on baked glass"`.
+- Measured (7 pictures, v3/5/8/11/14 × M/Q on the bar; 40 noise seeds × v3/5/7/10/14 at M): vector glow 0.25, emboss 0.12, sketch 0.15 and baked sketch 0.15 pass 70/70 and match bare glass over seeds (vector 1400/1400, baked 1390 against 1391). Baked glow fails the bar at dusk v11 from strength 0.05 (seeds: about one read in 1400); baked emboss passes the bar but loses 1374–1381 of 1400 seeds (rings v7 11–14 of 40) at every depth.
+- Decision: refuse rather than limit the two baked effects; the measurement is in SPEC §7.9, what would lift them in ROADMAP.
+- Checks: new verify `glass::effects_scan` (4 pictures × v3, v8 per allowed pair, plus the two refusals), a unit test that the photo stays outside the group, 4 conformance cases (108; existing hashes unchanged).
+
 ## 20261031121341 · 1.2 · Custom shapes: SVG and PNG glyphs for modules, rings and eyes
 
 - Landed: `Glyph` (SVG sanitized as a logo; PNG/GIF/WebP inlined once, JPEG refused), `Style::module_glyph`, `finder_glyphs`, `corner_glyphs`; drawn as one definition per picture and box size, `<use>`d per module under an alpha mask on the layer's path (silhouette in the token, the default) or bare (`keep_colors`). Warnings `custom_modules`, `custom_finder`, `glyph_colors`; error `glyph_on_picture`; `PlanLayer::glyph`. Document `{"kind":"glyph",…}` under `modules` and finder rings/eyes, `invalid_glyph`; CLI and npm bin `--shape-file`, `--ring-file`, `--eye-file`, `--corner-ring-file`, `--corner-eye-file`, `--keep-glyph-colors`; typed glyph variants in every binding; Flutter stamps glyphs with `drawAtlas` (raster from the style, SVG via `glyphImage`).

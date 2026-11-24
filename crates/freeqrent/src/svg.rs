@@ -1936,9 +1936,10 @@ pub(crate) fn has_effects(style: &Style) -> bool {
 
 /// The layers the effect filters, as one group: the code, a picture's
 /// sub-cells included, but not the frame's chrome, the logo or the
-/// shimmer.
+/// shimmer. On glass the code is the glass: the photo under it stays
+/// as it is (SPEC §7.9, W20261123231733).
 pub(crate) fn takes_effects(role: LayerRole) -> bool {
-    !role.is_chrome() && !role.is_logo() && role != LayerRole::Shimmer
+    !role.is_chrome() && !role.is_logo() && role != LayerRole::Shimmer && role != LayerRole::Photo
 }
 
 /// The effect's filter, over the whole canvas in its own units: an emboss

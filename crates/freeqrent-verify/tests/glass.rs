@@ -8,7 +8,7 @@ mod common;
 
 use common::{PHOTOS, photo_with_file};
 use freeqrent::{
-    Border, Caption, Ecc, Frame, GLASS_FULL_BAR_VERSION, GLASS_VECTOR_FULL_BAR_LENS,
+    Border, Caption, Ecc, Effect, Frame, GLASS_FULL_BAR_VERSION, GLASS_VECTOR_FULL_BAR_LENS,
     GLASS_VECTOR_FULL_BAR_VERSION, GLASS_VECTOR_NARROW_FULL_BAR_VERSION, Glass, GlassRender,
     Halftone, Idle, Ink, Intro, Logo, LogoShape, Palette, Preset, QrCode, QrMatrix, RasterFormat,
     RenderError, Style, Trigger, Version, Warning,
@@ -297,6 +297,64 @@ fn vector_options_scan() {
                 );
             }
         }
+    }
+}
+
+/// Effects filter the glass (W20261123231733): sketch on both renders,
+/// glow and emboss on vector glass, each at its strongest, still scan at
+/// their own bar. (Over the baked layer glow lost the bar and emboss lost
+/// noise seeds, so those two are refused there; filters are slow to
+/// rasterize, so this keeps to two versions.)
+#[test]
+fn effects_scan() {
+    let cases = [
+        (BAKED, "sketch 0.15", Effect::Sketch { roughness: 0.15 }),
+        (VECTOR, "sketch 0.15", Effect::Sketch { roughness: 0.15 }),
+        (
+            VECTOR,
+            "glow 0.5 / 0.25",
+            Effect::Glow {
+                radius: 0.5,
+                strength: 0.25,
+            },
+        ),
+        (VECTOR, "emboss 0.12", Effect::Emboss { depth: 0.12 }),
+    ];
+    for kind in ["face", "rings", "dusk", "photo"] {
+        for (render, label, effect) in cases {
+            let style = Style::new()
+                .halftone(halftone(kind, glass(render)))
+                .effect(effect);
+            for version in [3u8, 8] {
+                let qr = code(&style, version, Ecc::M);
+                assert_scans(&style, &qr, render, &format!("{kind} {render:?} {label}"));
+            }
+        }
+    }
+    // Refused, not ignored, over the baked layer.
+    for (effect, option) in [
+        (
+            Effect::Glow {
+                radius: 0.3,
+                strength: 0.1,
+            },
+            "Effect::Glow on baked glass",
+        ),
+        (
+            Effect::Emboss { depth: 0.1 },
+            "Effect::Emboss on baked glass",
+        ),
+    ] {
+        let style = Style::new()
+            .halftone(halftone("face", glass(BAKED)))
+            .effect(effect);
+        let report = style.check(&code(&style, 3, Ecc::M));
+        assert!(
+            report
+                .errors
+                .contains(&RenderError::GlassUnsupported { option }),
+            "{option}: {report:?}"
+        );
     }
 }
 

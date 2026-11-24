@@ -943,8 +943,22 @@ fn check_glass(
         scene::data_tokens(style).len() > 1,
         "data colors (fg.2–fg.4)",
     );
-    unsupported(style.effect.is_some(), "Style.effect");
     unsupported(!style.textures.is_empty(), "Style.textures");
+    // Effects filter the glass, not the photo (W20261123231733). Sketch
+    // holds on both renders and every effect on vector glass; over the
+    // baked layer a glow lost the bar (dusk v11, from strength 0.05) and
+    // an emboss lost 11–14 of 40 noise seeds on the rings at v7 at every
+    // depth, so those two stay refused there (SPEC §7.9).
+    if !g.is_vector() {
+        unsupported(
+            matches!(style.effect, Some(Effect::Glow { .. })),
+            "Effect::Glow on baked glass",
+        );
+        unsupported(
+            matches!(style.effect, Some(Effect::Emboss { .. })),
+            "Effect::Emboss on baked glass",
+        );
+    }
     unsupported(
         h.clarity != crate::halftone::Clarity::default(),
         "Halftone.clarity",

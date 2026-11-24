@@ -408,6 +408,16 @@ pub fn inputs() -> Vec<String> {
         render("glass vector settling", &format!(r#"{{"halftone":{vector},"intro":"settle"}}"#)),
         case("plan glass vector", "plan", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{vector},"intro":"develop"}}"#)),
         case("check glass vector", "check", &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{vector}}}"#)),
+        // Effects on glass (W20261123231733): the glass filtered, the photo
+        // not. Sketch on both renders; glow and emboss on vector glass only.
+        render("glass sketch", &format!(r#"{{"halftone":{glass},"effect":{{"kind":"sketch","roughness":0.1}}}}"#)),
+        render("glass vector glow", &format!(r#"{{"halftone":{vector},"effect":{{"kind":"glow","radius":0.3,"strength":0.2}}}}"#)),
+        render("glass vector emboss", &format!(r#"{{"halftone":{vector},"effect":{{"kind":"emboss","depth":0.1}}}}"#)),
+        case(
+            "error glass glow baked",
+            "render",
+            &format!(r#""payload":{{"text":"{URL}"}},"style":{{"halftone":{glass},"effect":{{"kind":"glow","radius":0.3,"strength":0.2}}}}"#),
+        ),
     ]);
     cases
 }
